@@ -1,0 +1,35 @@
+# Local application and database data
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# Credentials and local configuration
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Build and dependency output
+node_modules/
+target/
+dist/
+build/
+coverage/
+
+# Local editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+
+# Business source files and exports
+*.xlsx
+*.xls
+*.csv
+*.pptx
+*.pdf
+exports/
+data/

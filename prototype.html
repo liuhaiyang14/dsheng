@@ -1,0 +1,917 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>两表一单 · Desktop Prototype</title>
+  <style>
+    :root {
+      --ink: #1e2426;
+      --muted: #687278;
+      --line: #dfe3e1;
+      --paper: #f7f6f2;
+      --panel: #ffffff;
+      --red: #a83c32;
+      --red-dark: #7e2925;
+      --red-wash: #f7e9e6;
+      --gold: #b68b41;
+      --gold-wash: #f5eedf;
+      --blue: #2f6370;
+      --blue-wash: #e8f0f1;
+      --green: #3e705b;
+      --green-wash: #e7f0eb;
+      --amber: #a47324;
+      --amber-wash: #fbf1db;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #e9ebe8; color: var(--ink); font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; letter-spacing: 0; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    .window { width: min(1440px, calc(100vw - 32px)); min-height: 900px; margin: 20px auto; background: var(--paper); border: 1px solid #cfd4d0; box-shadow: 0 22px 60px rgba(34, 40, 36, .14); display: grid; grid-template-columns: 248px minmax(0, 1fr); overflow: hidden; }
+    .side { background: #242b2b; color: #eff3ef; padding: 26px 18px; display: flex; flex-direction: column; }
+    .brand { padding: 4px 10px 28px; border-bottom: 1px solid rgba(255,255,255,.12); }
+    .brand-mark { width: 33px; height: 33px; border: 1px solid #d7b46e; color: #d7b46e; display: grid; place-items: center; font-weight: 700; font-size: 17px; margin-bottom: 14px; }
+    .brand h1 { margin: 0; font-size: 18px; letter-spacing: .02em; font-weight: 650; }
+    .brand p { margin: 6px 0 0; color: #abb6b0; font-size: 11px; }
+    .nav { padding-top: 24px; display: grid; gap: 8px; }
+    .nav button { width: 100%; border: 0; background: transparent; text-align: left; color: #c2cbc5; padding: 12px 12px; border-radius: 3px; display: flex; align-items: center; gap: 12px; font-size: 13px; }
+    .nav button:hover, .nav button.active { background: #3a4241; color: #fff; }
+    .nav .icon { width: 19px; color: #d7b46e; text-align: center; font-size: 15px; }
+    .nav-section { margin-top: 14px; }
+    .nav-section-label { padding: 10px 12px 4px; color: #7f8c85; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }
+    .nav-section .nav-subitem { padding-left: 26px; font-size: 12px; }
+    .side-foot { margin-top: auto; border-top: 1px solid rgba(255,255,255,.12); padding: 16px 10px 0; color: #8d9992; font-size: 11px; line-height: 1.7; }
+    .main { display: flex; flex-direction: column; min-width: 0; }
+    .topbar { height: 66px; display: flex; align-items: center; justify-content: space-between; padding: 0 30px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.48); }
+    .crumb { color: var(--muted); font-size: 12px; }
+    .crumb strong { color: var(--ink); font-weight: 650; }
+    .top-actions { display: flex; gap: 10px; align-items: center; }
+    .top-actions .period { color: var(--muted); font-size: 12px; padding-right: 10px; border-right: 1px solid var(--line); }
+    .demo-stamp { color: var(--red-dark); background: var(--red-wash); padding: 5px 8px; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .outline { border: 1px solid var(--line); background: white; color: var(--ink); padding: 8px 12px; font-size: 12px; border-radius: 3px; }
+    .primary { border: 1px solid var(--red); background: var(--red); color: white; padding: 8px 13px; font-size: 12px; border-radius: 3px; }
+    .content { padding: 27px 30px 38px; overflow: hidden; }
+    .screen { display: none; }
+    .screen.active { display: block; }
+    .screen-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; }
+    .eyebrow { color: var(--red); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+    h2 { margin: 5px 0 0; font-family: Georgia, "Songti SC", serif; font-size: 27px; font-weight: 600; letter-spacing: .01em; }
+    .sub { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .head-controls { display: flex; gap: 8px; align-items: center; }
+    .select { border: 1px solid var(--line); background: white; color: var(--ink); padding: 9px 11px; font-size: 12px; border-radius: 3px; min-width: 130px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+    .metric { background: var(--panel); border: 1px solid var(--line); padding: 17px 18px; min-height: 106px; }
+    .metric .label { color: var(--muted); font-size: 11px; }
+    .metric .value { font-family: Georgia, serif; font-size: 27px; margin-top: 8px; }
+    .metric .delta { margin-top: 9px; font-size: 11px; }
+    .bad { color: var(--red); } .good { color: var(--green); } .warn { color: var(--amber); }
+    .two-col { display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); }
+    .panel-head { padding: 15px 17px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+    .panel-title { font-size: 13px; font-weight: 700; }
+    .panel-note { color: var(--muted); font-size: 11px; }
+    .setting-help { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .setting-intro { background: var(--blue-wash); border: 1px solid #cbdde0; padding: 14px 16px; margin-bottom: 16px; color: var(--blue); font-size: 11px; line-height: 1.65; }
+    .setting-intro strong { display: block; color: var(--ink); font-size: 13px; margin-bottom: 4px; }
+    .table-wrap { overflow: hidden; }
+    table { border-collapse: collapse; width: 100%; font-size: 11px; }
+    th { background: #f3f4f1; color: var(--muted); font-weight: 600; text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    td { padding: 11px 12px; border-bottom: 1px solid #eceeeb; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    .tag { display: inline-flex; padding: 4px 7px; border-radius: 2px; font-size: 10px; font-weight: 650; }
+    .tag.red { background: var(--red-wash); color: var(--red-dark); }
+    .tag.green { background: var(--green-wash); color: var(--green); }
+    .tag.gold { background: var(--gold-wash); color: #886525; }
+    .tag.blue { background: var(--blue-wash); color: var(--blue); }
+    .bar-row { margin: 17px 17px 18px; }
+    .bar-label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 7px; }
+    .bar-track { height: 7px; background: #ecefeb; }
+    .bar-fill { height: 100%; background: var(--red); }
+    .bar-fill.blue { background: var(--blue); } .bar-fill.gold { background: var(--gold); }
+    .notice { background: var(--gold-wash); border: 1px solid #eadbb9; padding: 13px 15px; display: flex; gap: 10px; align-items: flex-start; margin-bottom: 16px; font-size: 11px; line-height: 1.6; color: #705722; }
+    .notice b { font-size: 12px; }
+    .source-grid { display: grid; grid-template-columns: 1.05fr .95fr; gap: 16px; }
+    .dropzone { border: 1px dashed #b8c1bb; min-height: 220px; display: grid; place-items: center; text-align: center; margin: 16px; background: #fbfcfa; }
+    .dropzone .folder { font-size: 35px; color: var(--gold); margin-bottom: 12px; }
+    .dropzone p { margin: 5px 0; font-size: 12px; }
+    .dropzone small { color: var(--muted); font-size: 11px; }
+    .path { margin: 0 16px 16px; border: 1px solid var(--line); padding: 11px 12px; color: var(--muted); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; background: #fafbf9; }
+    .file-list { padding: 4px 16px 16px; }
+    .file { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eceeeb; padding: 12px 0; }
+    .file:last-child { border-bottom: 0; }
+    .file-name { font-size: 12px; } .file-meta { color: var(--muted); font-size: 10px; margin-top: 4px; }
+    .mapping { padding: 16px; }
+    .mapping-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 11px; align-items: center; }
+    .mapping-row label { color: var(--muted); font-size: 11px; }
+    .mapping-row select { width: 100%; border: 1px solid var(--line); padding: 8px; color: var(--ink); background: white; font-size: 11px; }
+    .mapping-row input { width: 100%; border: 1px solid var(--line); padding: 8px; color: var(--ink); background: white; font-size: 11px; }
+    .mapping-row > span { font-size: 11px; line-height: 1.55; }
+    .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .chart { height: 222px; padding: 17px; position: relative; }
+    .chart svg { width: 100%; height: 100%; }
+    .chart-toolbar { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 16px 0; align-items: center; }
+    .chart-toolbar .select { min-width: 115px; }
+    .timeline-board { padding: 8px 16px 16px; }
+    .timeline-lane { display: grid; grid-template-columns: 130px 1fr 220px; gap: 12px; align-items: center; border-top: 1px solid var(--line); padding: 13px 0; font-size: 11px; }
+    .timeline-lane small { color: var(--muted); }
+    .timeline-period { margin: 14px 0 0; color: var(--red-dark); font-size: 11px; font-weight: 700; }
+    .legend { display: flex; gap: 16px; padding: 0 17px 14px; font-size: 10px; color: var(--muted); }
+    .legend span::before { content: ""; display: inline-block; width: 18px; height: 2px; vertical-align: middle; margin-right: 5px; background: var(--red); }
+    .legend span.actual::before { background: var(--blue); }
+    .root-card { margin: 16px; padding: 14px; background: #fcfcfa; border: 1px solid var(--line); }
+    .root-card h4 { margin: 0 0 9px; font-size: 12px; } .root-card p { margin: 4px 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .task-layout { display: grid; grid-template-columns: 1.5fr .9fr; gap: 16px; }
+    .task-table td { white-space: normal; vertical-align: top; line-height: 1.45; }
+    .task-table th { white-space: normal; }
+    .task-name { font-weight: 650; color: var(--ink); }
+    .root-step { padding: 15px 17px; border-bottom: 1px solid var(--line); }
+    .root-step:last-child { border-bottom: 0; }
+    .step-num { display: inline-grid; place-items: center; width: 22px; height: 22px; background: var(--red-wash); color: var(--red-dark); font-size: 11px; font-weight: 700; margin-right: 8px; }
+    .root-step strong { font-size: 12px; }
+    .root-step p { margin: 10px 0 0 30px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+    .evidence { margin: 10px 0 0 30px; padding: 9px 10px; background: var(--blue-wash); color: var(--blue); font-size: 10px; line-height: 1.5; }
+    .footer-note { margin-top: 18px; color: var(--muted); font-size: 10px; text-align: right; }
+    .task-table tbody tr { cursor: pointer; }
+    .task-table tbody tr:hover { background: #faf8f2; }
+    .task-table tbody tr.selected { background: #f5eedf; }
+    .drawer-scrim { position: fixed; inset: 0; background: rgba(23, 29, 28, .34); display: none; z-index: 8; }
+    .drawer-scrim.open { display: block; }
+    .drawer { position: fixed; z-index: 9; top: 0; right: 0; bottom: 0; width: 570px; max-width: 94vw; background: var(--paper); box-shadow: -14px 0 36px rgba(22, 30, 27, .18); transform: translateX(102%); transition: transform .22s ease; display: flex; flex-direction: column; }
+    .drawer.open { transform: translateX(0); }
+    .drawer-head { background: white; border-bottom: 1px solid var(--line); padding: 19px 22px 16px; display: flex; justify-content: space-between; align-items: flex-start; }
+    .drawer-head h3 { font-size: 19px; margin: 5px 0 0; font-weight: 650; }
+    .drawer-head .meta { font-size: 11px; color: var(--muted); margin-top: 7px; }
+    .icon-button { background: white; border: 1px solid var(--line); width: 32px; height: 32px; display: grid; place-items: center; color: var(--muted); font-size: 19px; border-radius: 3px; }
+    .drawer-body { padding: 18px 22px 22px; overflow-y: auto; }
+    .progress-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; }
+    .progress-value { color: var(--red); font-size: 24px; font-family: Georgia, serif; }
+    .progress-track { background: #e6e9e5; height: 8px; margin: 10px 0 8px; }
+    .progress-current { height: 100%; width: 45%; background: var(--red); transition: width .2s; }
+    .progress-meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }
+    .detail-section { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 17px; }
+    .detail-section h4 { font-size: 12px; margin: 0 0 12px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .detail-field label { display: block; color: var(--muted); font-size: 10px; margin-bottom: 5px; }
+    .detail-field strong { font-size: 12px; font-weight: 600; }
+    .detail-field input { width: 100%; min-width: 0; border: 1px solid var(--line); background: white; padding: 7px; color: var(--ink); font-size: 11px; }
+    .action-step { display: grid; grid-template-columns: 22px minmax(0, 1fr) 64px; gap: 9px; align-items: start; padding: 10px 0; border-top: 1px solid #eceeeb; }
+    .action-step:first-of-type { border-top: 0; }
+    .step-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .step-heading h4 { margin: 0; }
+    .step-title-input { width: 100%; min-width: 0; border: 1px solid var(--line); padding: 7px; color: var(--ink); background: white; font-size: 11px; }
+    .step-remove { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); background: white; color: var(--red-dark); font-size: 17px; border-radius: 2px; }
+    .step-actions { display: flex; gap: 3px; }
+    .step-order { width: 28px; height: 28px; padding: 0; border: 1px solid var(--line); background: white; color: var(--muted); font-size: 13px; border-radius: 2px; }
+    .step-order:disabled { opacity: .35; cursor: default; }
+    .task-save-status { color: var(--muted); font-size: 10px; padding-right: 10px; }
+    .workspace-empty { background: var(--blue-wash); border-color: #cbdde0; color: var(--blue); }
+    [hidden] { display: none !important; }
+    .check { width: 17px; height: 17px; accent-color: var(--green); }
+    .action-copy { font-size: 11px; line-height: 1.5; }
+    .action-copy small { display: block; color: var(--muted); margin-top: 3px; font-size: 10px; }
+    .timeline-item { position: relative; margin-left: 6px; padding: 0 0 15px 18px; border-left: 1px solid #cbd2cd; font-size: 11px; line-height: 1.55; }
+    .timeline-item::before { content: ""; position: absolute; width: 7px; height: 7px; border-radius: 50%; left: -4px; top: 4px; background: var(--gold); }
+    .timeline-item small { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; }
+    .update-form { background: white; border: 1px solid var(--line); padding: 13px; margin-top: 7px; }
+    .update-form label { display: block; color: var(--muted); font-size: 10px; margin: 10px 0 5px; }
+    .update-form input, .update-form select, .update-form textarea { width: 100%; border: 1px solid var(--line); border-radius: 2px; background: white; padding: 8px; color: var(--ink); font-size: 11px; }
+    .update-form textarea { resize: vertical; min-height: 66px; }
+    .update-form input[type="range"] { padding: 0; accent-color: var(--red); }
+    .drawer-actions { padding: 12px 22px; border-top: 1px solid var(--line); background: white; display: flex; justify-content: space-between; align-items: center; }
+    .save-note { color: var(--muted); font-size: 10px; }
+    .metric-sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; color: var(--muted); font-size: 10px; }
+    .metric-grid .metric { min-width: 0; }
+    .metric .value { font-size: 24px; }
+    .table-wrap { overflow-x: auto; }
+    .data-table td, .data-table th { white-space: nowrap; }
+    .table-foot { border-top: 1px solid var(--line); padding: 10px 12px; color: var(--muted); font-size: 10px; }
+    .evidence-ref { color: var(--blue); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
+    .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: var(--green); }
+    .status-dot.gold-dot { background: var(--gold); }
+    .status-dot.red-dot { background: var(--red); }
+    .setting-group-title { margin: 22px 0 10px; font-size: 13px; font-weight: 700; }
+    .setting-explain { color: var(--muted); font-size: 10px; line-height: 1.55; }
+    .mock-key { letter-spacing: .08em; color: var(--muted); }
+    .task-table tbody tr.selected { outline: 1px solid #d8bd82; outline-offset: -1px; }
+    .task-source { color: var(--muted); font-size: 10px; margin-top: 3px; }
+    .bar-row.compact { margin-top: 12px; margin-bottom: 12px; }
+    .chart .gridline { stroke: #e4e8e4; stroke-width: 1; }
+    .chart .axis-label { fill: #687278; font-size: 10px; }
+    .chart .series { fill: none; stroke: #a83c32; stroke-width: 3; }
+    .chart .series-compare { fill: none; stroke: #2f6370; stroke-width: 2; stroke-dasharray: 5 4; }
+    .chart .point { fill: #fff; stroke: #a83c32; stroke-width: 2; }
+    @media (max-width: 980px) {
+      .window { width: 100%; min-height: 100vh; margin: 0; border: 0; grid-template-columns: 205px minmax(0, 1fr); }
+      .content { padding: 22px 18px 32px; }
+      .topbar { padding: 0 18px; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .analysis-grid, .task-layout, .source-grid { grid-template-columns: 1fr; }
+      .timeline-lane { grid-template-columns: 110px 1fr 150px; }
+    }
+    @media (max-width: 680px) {
+      .window { display: block; }
+      .side { padding: 14px; }
+      .brand { padding-bottom: 14px; }
+      .brand-mark { display: none; }
+      .nav { padding-top: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+      .nav-section { grid-column: 1 / -1; margin-top: 4px; }
+      .nav-section-label { padding-left: 8px; }
+      .nav-section .nav-subitem { padding-left: 12px; }
+      .side-foot { display: none; }
+      .topbar { height: auto; min-height: 60px; flex-wrap: wrap; gap: 8px; padding: 10px 14px; }
+      .top-actions { flex-wrap: wrap; }
+      .content { padding: 18px 12px 28px; }
+      .screen-head { align-items: flex-start; flex-direction: column; gap: 12px; margin-bottom: 18px; }
+      .head-controls { flex-wrap: wrap; }
+      .metric-grid { gap: 8px; }
+      .metric { padding: 12px; }
+      .metric .value { font-size: 19px; }
+      .timeline-lane { grid-template-columns: 1fr; gap: 4px; }
+      .mapping-row { grid-template-columns: 1fr; }
+      .drawer { width: 100%; max-width: 100vw; }
+      .drawer-actions { gap: 12px; align-items: flex-start; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="window">
+    <aside class="side">
+      <div class="brand"><div class="brand-mark">两</div><h1>两表一单</h1><p>本地经营分析工具 · prototype</p></div>
+      <nav class="nav">
+        <button class="active" data-screen="source"><span class="icon">↳</span>数据源</button>
+        <button data-screen="analysis"><span class="icon">⌁</span>经营分析</button>
+        <button data-screen="task"><span class="icon">□</span>任务单</button>
+        <button data-screen="history"><span class="icon">◷</span>历史查询</button>
+        <div class="nav-section"><div class="nav-section-label">设置</div><button class="nav-subitem" data-screen="provider"><span class="icon">⚙</span>Provider 设置</button><button class="nav-subitem" data-screen="system-settings"><span class="icon">⌘</span>系统设置</button></div>
+      </nav>
+      <div class="side-foot">当前企业档案<br><span id="workspaceFoot" style="color:#d7b46e">示例制造企业</span><br><br>全量虚构演示数据。真实版本仅在本机运行；模型发送前逐次确认范围。</div>
+    </aside>
+    <main class="main">
+      <header class="topbar"><div class="crumb">企业档案 <select class="select" id="workspaceSelect" aria-label="切换企业档案"><option value="sample">示例制造企业</option><option value="sample-2">新建空白档案</option></select> / <strong id="crumb">数据源</strong></div><div class="top-actions"><span class="demo-stamp">虚构演示数据</span><span class="period">本地 SQLite</span><button class="outline" id="exportButton">导出</button><button class="primary" id="generateButton">生成任务单</button></div></header>
+      <section class="content">
+        <div class="notice workspace-empty" id="workspaceEmptyNotice" hidden><b>当前企业档案还没有数据</b><span>“新建空白档案”是一个独立的空档案示例。请先选择本地目录并完成字段映射；它不会显示或读取其他企业的分析、任务、历史和 Provider。</span></div>
+        <div class="screen active" id="source">
+          <div class="screen-head"><div><div class="eyebrow">01 · source intake</div><h2>数据源</h2><div class="sub">示例制造企业 · 读取本地目录，核对期间、字段与数据口径。</div></div><div class="head-controls"><button class="outline" id="downloadTemplate">下载导入模板</button><button class="outline" id="chooseDirectory">更换目录</button><button class="primary" id="scanFiles">重新扫描</button></div></div>
+          <div class="notice"><b>演示数据说明</b><span>以下企业名、目录、文件、金额和人员岗位均为虚构，用于展示完整流程，不来自你提供的业务文件。真实版本会在调用模型前展示将发送的文件、工作表、行数与内容范围，并要求确认。</span></div>
+          <div class="source-grid">
+            <div class="panel"><div class="panel-head"><span class="panel-title">本地目录</span><span class="panel-note"><span class="status-dot"></span>已扫描 · 只读</span></div><div class="dropzone"><div><div class="folder">⌂</div><p>经营复盘 / 2026 年 10 月</p><small>核算周期：日度 · 数据覆盖：2026-10-01 至 2026-10-28</small></div></div><div class="path">示例路径：~/Documents/经营复盘/示例制造企业/2026-10</div></div>
+            <div class="panel"><div class="panel-head"><span class="panel-title">已识别文件</span><span class="panel-note">3 个文件 · 2,486 行</span></div><div class="file-list">
+              <div class="file"><div><div class="file-name">示例核算表_202610.xlsx</div><div class="file-meta">核算表、差异分析 · 824 行 · 期间字段已识别</div></div><span class="tag green">映射完成</span></div>
+              <div class="file"><div><div class="file-name">示例推移表_202610.xlsx</div><div class="file-meta">日度推移、图表数据 · 1,372 行 · 日期连续</div></div><span class="tag green">映射完成</span></div>
+              <div class="file"><div><div class="file-name">示例任务依据_202610.xlsx</div><div class="file-meta">任务检视、下期计划、任务依据 · 290 行</div></div><span class="tag gold">1 项待核对</span></div>
+            </div></div>
+          </div>
+          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">字段映射</span><span class="panel-note">自动识别 · 可手动修正 · 当前映射已确认</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>工具字段</th><th>来源表 / 字段</th><th>识别结果</th><th>用途</th></tr></thead><tbody>
+            <tr><td>指标实绩</td><td>核算表 / 10月实绩</td><td><span class="tag green">数值 · 已匹配</span></td><td>计算预实差异与达成率</td></tr>
+            <tr><td>计划 / 目标</td><td>核算表 / 月度预定</td><td><span class="tag green">数值 · 已匹配</span></td><td>作为目标对照基准</td></tr>
+            <tr><td>分析期间</td><td>推移表 / 业务日期</td><td><span class="tag green">日期 · 已匹配</span></td><td>按日聚合，并汇总为周/月/季</td></tr>
+            <tr><td>工时</td><td>推移表 / 有效工时</td><td><span class="tag gold">1 天缺值</span></td><td>缺值日不参与单位时间指标</td></tr>
+            <tr><td>任务责任岗位</td><td>任务依据 / 责任岗位</td><td><span class="tag green">文本 · 已匹配</span></td><td>生成责任人和任务时间线</td></tr>
+          </tbody></table><div class="table-foot">来源单元格示例：核算表!F12、推移表!A2:H29。缺失工时为“待补”，不会按 0 参与计算。</div></div></div>
+        </div>
+
+        <div class="screen" id="analysis">
+          <div class="screen-head"><div><div class="eyebrow">02 · operating review</div><h2>经营分析</h2><div class="sub">示例制造企业 · 2026-10-01 至 2026-10-28 · 日度聚合，可切换周 / 月 / 季度</div></div><div class="head-controls"><select class="select" id="analysisWindow"><option>本期：2026-10-01 至 10-28</option><option>上期：2026-09-01 至 09-30</option></select><select class="select" id="analysisGrain"><option value="day">日度</option><option value="week">周度</option><option value="month">月度</option><option value="quarter">季度</option></select></div></div>
+          <div class="metric-grid"><div class="metric"><div class="label">结算收益</div><div class="value">¥ 184,600</div><div class="delta bad">↓ 低于目标 ¥ 25,400</div><div class="metric-sub"><span>达成率 87.9%</span><span>环比 -4.2%</span></div></div><div class="metric"><div class="label">订单毛利率</div><div class="value">18.6%</div><div class="delta good">↑ 同比 +2.1 个百分点</div><div class="metric-sub"><span>目标 20.0%</span><span>环比 +0.8pp</span></div></div><div class="metric"><div class="label">回款率</div><div class="value">92.4%</div><div class="delta good">↑ 环比 +3.6 个百分点</div><div class="metric-sub"><span>开票 ¥ 1.26m</span><span>未回款 ¥ 95k</span></div></div><div class="metric"><div class="label">单位时间附加值</div><div class="value">¥ 428 / 时</div><div class="delta warn">↓ 1 天工时待补</div><div class="metric-sub"><span>有效工时 431h</span><span>同比 +6.4%</span></div></div></div>
+          <div class="analysis-grid"><div class="panel"><div class="panel-head"><span class="panel-title">核算表 · 预实差异</span><span class="panel-note">本期 28 天 · 公式由本地 Rust 核算</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>指标</th><th>目标</th><th>实绩</th><th>差异</th><th>环比</th><th>同比</th><th>状态</th></tr></thead><tbody><tr><td>结算收益</td><td>¥ 210,000</td><td>¥ 184,600</td><td class="bad">-¥ 25,400</td><td class="bad">-4.2%</td><td class="good">+8.7%</td><td><span class="tag red">重点</span></td></tr><tr><td>订单毛利率</td><td>20.0%</td><td>18.6%</td><td class="bad">-1.4pp</td><td class="good">+0.8pp</td><td class="good">+2.1pp</td><td><span class="tag gold">关注</span></td></tr><tr><td>回款率</td><td>90.0%</td><td>92.4%</td><td class="good">+2.4pp</td><td class="good">+3.6pp</td><td class="good">+5.2pp</td><td><span class="tag green">达标</span></td></tr><tr><td>单位时间附加值</td><td>¥ 450 / 时</td><td>¥ 428 / 时</td><td class="bad">-¥ 22</td><td class="bad">-2.8%</td><td class="good">+6.4%</td><td><span class="tag gold">待补 1 天</span></td></tr></tbody></table><div class="table-foot">同比基期：2025-10 同策略版本；环比基期：2026-09。无可比数据时显示原因，不把缺失值当 0。</div></div></div><div class="panel"><div class="panel-head"><span class="panel-title">异常信号</span><span class="panel-note">按差异贡献排序</span></div><div class="bar-row compact"><div class="bar-label"><span>结算收益未达目标</span><b class="bad">-¥ 25.4k</b></div><div class="bar-track"><div class="bar-fill" style="width:78%"></div></div></div><div class="bar-row compact"><div class="bar-label"><span>订单毛利率偏低</span><b class="warn">-1.4pp</b></div><div class="bar-track"><div class="bar-fill gold" style="width:44%"></div></div></div><div class="bar-row compact"><div class="bar-label"><span>工时字段缺 1 天</span><b class="warn">待补</b></div><div class="bar-track"><div class="bar-fill blue" style="width:20%"></div></div></div><div class="root-card"><h4>建议优先处理</h4><p>先核对高折扣订单的成本口径，再补录 10 月 17 日有效工时；这两项直接影响任务单。</p><span class="tag red">已生成 2 项重点任务</span></div></div></div>
+          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">经营图表</span><span class="panel-note">已展示真实可用的虚构期间序列</span></div><div class="chart-toolbar"><select class="select" id="chartMetric"><option value="settlement">结算收益</option><option value="margin">订单毛利率</option><option value="cash">回款率</option></select><select class="select" id="chartType"><option>趋势折线</option><option>计划 / 实绩柱状</option><option>差异瀑布</option><option>分类构成</option><option>指标排行</option><option>目标对照组合图</option></select><select class="select" id="chartCompare"><option>环比</option><option>同比</option><option>不比较</option></select><button class="outline" id="chartDataButton">查看数据表</button><button class="outline" id="exportChartButton">导出 PNG</button></div><div class="chart" id="chartCanvas"><svg viewBox="0 0 780 220" role="img" aria-label="结算收益日度趋势图"><line class="gridline" x1="54" y1="34" x2="750" y2="34"/><line class="gridline" x1="54" y1="88" x2="750" y2="88"/><line class="gridline" x1="54" y1="142" x2="750" y2="142"/><line class="gridline" x1="54" y1="196" x2="750" y2="196"/><text class="axis-label" x="8" y="38">12k</text><text class="axis-label" x="8" y="92">8k</text><text class="axis-label" x="8" y="146">4k</text><text class="axis-label" x="20" y="200">0</text><polyline class="series-compare" points="54,112 120,100 186,118 252,92 318,80 384,97 450,72 516,88 582,62 648,77 714,54 750,61"/><polyline class="series" points="54,128 120,122 186,136 252,106 318,116 384,101 450,91 516,108 582,78 648,95 714,70 750,76"/><circle class="point" cx="750" cy="76" r="4"/><text class="axis-label" x="42" y="214">10-01</text><text class="axis-label" x="250" y="214">10-08</text><text class="axis-label" x="465" y="214">10-16</text><text class="axis-label" x="690" y="214">10-28</text></svg></div><div class="legend"><span>本期：2026-10</span><span class="actual">环比：2026-09</span><span>点选数据表可查看来源证据</span></div></div>
+        </div>
+
+        <div class="screen" id="task">
+          <div class="screen-head"><div><div class="eyebrow">03 · action sheet</div><h2>任务单</h2><div class="sub">分别查看本期任务检视、下期计划、指标依据及根因过程。</div></div><div class="head-controls"><select class="select" id="frameworkSelect"><option value="5why">5WHY · 根因追问</option><option value="5w">5W · 问题描述</option><option value="5w2h">5W2H · 行动方案</option></select><button class="primary">重新生成</button></div></div>
+          <div class="task-layout"><div class="panel"><div class="panel-head"><span class="panel-title">任务单检视 / 计划</span><span class="panel-note">2026-10 · 2 项任务 · 点击查看详情</span></div><table class="task-table"><thead><tr><th>任务 / 指标</th><th>周期角色</th><th>目标 / 节点</th><th>责任岗位</th><th>进度</th></tr></thead><tbody><tr data-task="task-a"><td><div class="task-name" data-task-title>核对高折扣订单成本口径</div><div class="file-meta" data-task-summary>结算收益 · 10 月目标 ¥210,000</div></td><td><span class="tag blue" data-task-role>本期检视</span><div class="task-source">来源：核算表!F12</div></td><td data-task-target>¥ 25,400 差异<br><span class="file-meta" data-task-due>截止 2026-10-31</span></td><td data-task-owner>经营管理岗</td><td><span class="tag gold" data-progress-label>25% · 进行中</span></td></tr><tr data-task="task-b"><td><div class="task-name" data-task-title>补录有效工时并调整排产</div><div class="file-meta" data-task-summary>单位时间附加值 · 1 天待补</div></td><td><span class="tag red" data-task-role>下期计划</span><div class="task-source">来源：推移表!A17:H17</div></td><td data-task-target>¥ 450 / 时<br><span class="file-meta" data-task-due>计划 2026-11-01 至 11-07</span></td><td data-task-owner>生产计划岗</td><td><span class="tag red" data-progress-label>50% · 进行中</span></td></tr></tbody></table><div class="root-card"><h4>任务推进方式</h4><p>勾选行动步骤会自动更新进度；手工调整必须填写本次进展或阻塞原因，所有变化都会进入任务时间线。</p></div></div><div class="panel"><div class="panel-head"><span class="panel-title" id="frameworkTitle">5WHY · 根因追问</span><span class="panel-note">问题、答复、证据和待确认项</span></div><div id="rootCauseContent"></div></div></div>
+          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">任务依据</span><span class="panel-note">指标 → 来源证据 → 行动方案</span></div><div class="mapping"><div class="mapping-row"><label>关联指标</label><span>结算收益 · 实绩 ¥184,600 · 目标 ¥210,000</span></div><div class="mapping-row"><label>来源期间与位置</label><span><span class="evidence-ref">核算表!F12</span> · 2026-10-01 至 10-28 · 环比 -4.2%</span></div><div class="mapping-row"><label>MP 名称 / 单位</label><span>销售最大化 · 元 / 月</span></div><div class="mapping-row"><label>可核验证据</label><span>高折扣订单 7 笔待复核；模型建议仅作为待确认线索</span></div></div></div><div class="footer-note">当前页面展示的是虚构演示数据；桌面版会将分析和任务进度保存到当前企业的 SQLite。</div>
+          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">任务时间线</span><span class="panel-note">按计划日期和进度事件查看</span></div><div class="chart-toolbar"><select class="select" id="taskTimelineGrain"><option value="day">日</option><option value="week">周</option><option value="month">月</option><option value="quarter">季度</option></select><input class="select" type="date" id="timelineFrom" aria-label="时间线开始日期" /><input class="select" type="date" id="timelineTo" aria-label="时间线结束日期" /><select class="select" id="timelineStatus"><option value="all">全部状态</option><option>待开始</option><option>进行中</option><option>有阻塞</option><option>已完成</option><option>已延期</option></select></div><div class="timeline-board" id="taskTimeline"></div></div><div class="footer-note">演示状态仅存在于当前页面；桌面版会将分析和任务进度保存到本地 SQLite。</div>
+        </div>
+
+        <div class="screen" id="history">
+          <div class="screen-head"><div><div class="eyebrow">04 · local history</div><h2>历史查询</h2><div class="sub">按企业、核算周期和期间检索已保存的分析结果。</div></div><div class="head-controls"><select class="select"><option>全部周期策略</option><option>月度 · 版本 1</option><option>日度 · 版本 2</option></select><input class="select" type="month" value="2026-09" aria-label="查询期间" /></div></div>
+          <div class="panel"><div class="panel-head"><span class="panel-title">已保存期间</span><span class="panel-note">同一企业 + 周期 + 期间重做会更新当前版本并保留快照</span></div><table class="data-table"><thead><tr><th>期间</th><th>核算周期</th><th>版本</th><th>更新于</th><th>结果</th><th>操作</th></tr></thead><tbody><tr><td>2026-10-01 至 10-28</td><td>日度 · 策略版本 2</td><td>1</td><td>2026-10-29 09:18</td><td>4 指标 · 2 任务 · 6 图表</td><td><button class="outline history-view">查看</button><button class="outline history-rerun">重新分析</button></td></tr><tr><td>2026-09-01 至 09-30</td><td>月度 · 策略版本 1</td><td>2</td><td>2026-10-01 16:42</td><td>4 指标 · 3 任务 · 5 图表</td><td><button class="outline history-view">查看</button><button class="outline history-rerun">重新分析</button></td></tr></tbody></table></div>
+          <div class="root-card"><h4>周期变更记录</h4><p>企业从月度切换为日度后，新分析采用新策略；已有月度结果仍保留，历史期间可按旧策略查看或显式回算。</p></div>
+        </div>
+        <div class="screen" id="provider"><div class="screen-head"><div><div class="eyebrow">05 · provider</div><h2>Provider 设置</h2><div class="sub" id="providerSubtitle">示例制造企业 · 配置模型服务连接并保存到当前企业的本地 SQLite。</div></div></div><div class="setting-intro"><strong>Provider 设置是做什么的？</strong>Base URL 决定请求发往哪里，模型名决定使用哪个模型，API Key 是访问凭证。演示值均为假数据；真实版本界面掩码显示，Key 不进入日志、提示词、导出或错误信息。</div><div class="panel" style="max-width:820px"><div class="panel-head"><span class="panel-title">OpenAI 兼容 Provider</span><span class="tag green" id="providerStatus">已保存 · 本地</span></div><div class="mapping"><div class="mapping-row"><div><label>Base URL</label><small class="setting-help">模型服务的接口地址；通常以 /v1 结尾。仅允许 HTTPS，回环地址可用 HTTP。</small></div><input class="select" id="providerBaseUrl" value="https://api.demo-provider.local/v1" /></div><div class="mapping-row"><div><label>模型</label><small class="setting-help">用于生成根因分析、任务步骤和行动建议的模型名称。</small></div><input class="select" id="providerModel" value="demo-reasoner-32b" /></div><div class="mapping-row"><div><label>API Key</label><small class="setting-help">访问 Provider 的凭证；演示值不是真实密钥，界面始终掩码显示。</small></div><input class="select mock-key" id="providerKey" type="password" value="demo-local-key-2026" /></div><div style="display:flex;gap:8px;align-items:center"><button class="primary" id="saveProvider">保存 Provider</button><button class="outline" id="testProvider">测试连接</button><span class="panel-note" id="providerNotice">最近保存：2026-10-29 09:12</span></div></div></div></div>
+        <div class="screen" id="system-settings">
+          <div class="screen-head"><div><div class="eyebrow">06 · system settings</div><h2>系统设置</h2><div class="sub" id="systemSettingsSubtitle">示例制造企业 · 管理当前企业档案的周期、日期边界与本机数据。</div></div></div>
+          <div class="setting-intro"><strong>“企业档案”是什么？</strong>它就是本机里给一家企业单独建的一份资料夹，不是云端账号。每份档案有自己的数据目录、字段对应关系、核算周期、指标算法、Provider、历史分析和任务记录。切换顶部的企业档案后，只能看到该企业自己的内容；不同企业的数据不会混在一起。</div>
+          <div class="panel" style="max-width:940px"><div class="panel-head"><span class="panel-title">企业档案与核算周期</span><span class="panel-note" id="currentWorkspaceLabel">当前：示例制造企业 · 策略 v2</span></div><div class="mapping">
+            <div class="mapping-row"><div><label>企业名称</label><small class="setting-help">只是本机中的识别名称，不会修改原始表格；切换档案时用于区分各企业。</small></div><input class="select" id="workspaceName" value="示例制造企业" /></div>
+            <div class="mapping-row"><div><label>默认核算周期</label><small class="setting-help">决定新分析默认按日、周、月或季度归并数据；单次分析仍可选择其他粒度。</small></div><select class="select" id="cycleCadence"><option value="month">月度</option><option value="day" selected>日度</option><option value="week">周度</option><option value="quarter">季度</option></select></div>
+            <div class="mapping-row"><div><label>新策略生效日期</label><small class="setting-help">修改周期从哪天开始使用新版本。旧期间继续按旧版本查询，不会自动拆分或改写。</small></div><input class="select" type="date" id="policyEffectiveDate" value="2026-11-01" /></div>
+            <div class="mapping-row"><div><label>周起始日</label><small class="setting-help">周度汇总的第一天；也影响任务周视图的日期分组。</small></div><select class="select" id="weekStartDay"><option value="1" selected>周一</option><option value="0">周日</option></select></div>
+            <div class="mapping-row"><div><label>财年起始月</label><small class="setting-help">决定年度累计和财年同比的起点；自然年企业通常选一月。</small></div><select class="select" id="fiscalYearStart"><option value="1" selected>一月</option><option value="4">四月</option><option value="7">七月</option><option value="10">十月</option></select></div>
+            <div class="mapping-row"><div><label>时区</label><small class="setting-help">决定业务日期归属和进度事件显示时间；默认跟随企业本地时区。</small></div><select class="select" id="workspaceTimezone"><option value="Asia/Shanghai" selected>Asia/Shanghai (UTC+8)</option><option value="UTC">UTC</option><option value="America/Los_Angeles">America/Los_Angeles</option></select></div>
+            <div id="policyNotice" class="panel-note">当前策略 v2：日度，自 2026-10-01 生效；2026-09 月度历史保留 v1。</div>
+            <button class="primary" id="savePolicy">保存企业设置</button>
+          </div></div>
+          <div class="workspace-profile-details"><h3 class="setting-group-title">这份企业档案包含什么</h3>
+          <div class="panel" style="max-width:940px"><div class="mapping">
+            <div class="mapping-row"><div><label>数据目录</label><small class="setting-help">来源文件放在哪里；应用读取目录并展示识别结果，原文件仍留在原位置。</small></div><span>~/Documents/经营复盘/示例制造企业/2026-10</span></div>
+            <div class="mapping-row"><div><label>字段映射</label><small class="setting-help">把表格列对应到实绩、目标、日期、工时等工具字段；映射决定哪些值参与计算。</small></div><span>实绩 ← 核算表!10月实绩 · 日期 ← 推移表!业务日期</span></div>
+            <div class="mapping-row"><div><label>指标与公式</label><small class="setting-help">规定指标如何汇总和计算；例如毛利率 = 毛利 ÷ 销售额，单位时间附加值 = 结算收益 ÷ 有效工时。</small></div><span>当前 12 个指标定义 · 缺字段不默认按 0</span></div>
+            <div class="mapping-row"><div><label>手工补录</label><small class="setting-help">保存文件没有提供的目标、人工费或工时，并记录单位、期间和说明；分析结果会标明手工来源。</small></div><span>本期有 1 项：2026-10-17 有效工时待补</span></div>
+            <div class="mapping-row"><div><label>Provider 连接</label><small class="setting-help">为当前企业选择模型地址、模型名和本地 API Key；实际发送前每次展示内容并等待确认。</small></div><span>OpenAI 兼容 · demo-reasoner-32b · 已配置演示值</span></div>
+            <div class="mapping-row"><div><label>历史分析与任务</label><small class="setting-help">按期间保存分析结果、版本快照、任务步骤、进度事件和导出记录，供以后查询或重做。</small></div><span>3 个期间 · 2 项当前任务 · 最近更新 2026-10-29</span></div>
+            <div class="mapping-row"><div><label>本机存储与隔离</label><small class="setting-help">SQLite 文件放在当前用户应用数据目录；每条记录带企业档案 ID，查询、发送和导出按档案限定。</small></div><span>本机保存 · 原始 XLSX 不复制进数据库</span></div>
+          </div></div>
+          <div class="root-card" style="max-width:940px"><h4>周期变化示例</h4><p>示例制造企业在 2026-10-01 从月度切换为日度。2026-09 仍按月度策略 v1 保存，10 月起按日度策略 v2 分析；切换不会把 9 月数据拆成日数据。</p></div></div>
+          <div class="setting-intro workspace-profile-empty" id="workspaceProfileEmpty" hidden><strong>空白企业档案</strong>尚未设置数据目录、指标映射或分析历史。你可以先为该企业指定目录，再配置周期和 Provider；其他企业的本地数据不会复制到这里。</div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="drawer-scrim" id="drawerScrim"></div>
+  <aside class="drawer" id="taskDrawer" aria-label="任务详情">
+    <div class="drawer-head"><div><div class="eyebrow" id="drawerEyebrow">TASK · A</div><h3 id="drawerTitle">重点任务 A</h3><div class="meta" id="drawerMeta">任务编号待生成 · 由选定指标差异生成</div></div><button class="icon-button" id="closeDrawer" aria-label="关闭详情" title="关闭详情">×</button></div>
+    <div class="drawer-body">
+      <div class="progress-head"><span>整体进度</span><span class="progress-value" id="progressText">25%</span></div><div class="progress-track"><div class="progress-current" id="progressBar"></div></div><div class="progress-meta"><span id="stepCount">已完成 1 / 4 个步骤</span><span id="dueDate">截止日期待配置</span></div>
+      <div class="detail-section"><h4>任务信息 <span class="panel-note">修改后点击“保存任务”</span></h4><div class="detail-grid"><div class="detail-field"><label for="taskTitleInput">任务名称</label><input id="taskTitleInput" /></div><div class="detail-field"><label for="taskSummaryInput">任务说明</label><input id="taskSummaryInput" /></div><div class="detail-field"><label for="taskMetricInput">关联指标</label><input id="taskMetricInput" /></div><div class="detail-field"><label for="taskTargetInput">目标 / 衡量口径</label><input id="taskTargetInput" /></div><div class="detail-field"><label for="taskOwnerInput">责任岗位</label><input id="taskOwnerInput" /></div><div class="detail-field"><label for="taskRoleInput">周期角色</label><select id="taskRoleInput"><option>本期检视</option><option>下期计划</option></select></div><div class="detail-field"><label>当前实绩</label><strong id="detailActual">待计算</strong></div><div class="detail-field"><label for="plannedStartInput">计划开始</label><input type="date" id="plannedStartInput" /></div><div class="detail-field"><label for="dueDateInput">截止日期</label><input type="date" id="dueDateInput" /></div><div class="detail-field"><label>完成日期</label><strong id="completedAtLabel">未完成</strong></div></div></div>
+      <div class="detail-section"><div class="step-heading"><h4>行动步骤 <span class="panel-note">编辑内容、调整顺序或勾选完成</span></h4><button class="outline" id="addTaskStep">添加步骤</button></div><div id="stepList"></div></div>
+      <div class="detail-section"><h4>进度记录</h4><div id="timeline"></div></div>
+      <div class="detail-section"><h4>更新进度</h4><div class="update-form"><label for="updateProgress">完成比例 <span id="rangeValue">25%</span></label><input type="range" id="updateProgress" min="0" max="100" step="5" value="25" /><label for="updateStatus">状态</label><select id="updateStatus"><option>进行中</option><option>待开始</option><option>已完成</option><option>有阻塞</option><option>已延期</option></select><label for="updateText">本次进展 / 阻塞</label><textarea id="updateText" placeholder="记录做了什么、结果如何、下一步是什么"></textarea></div></div>
+    </div>
+    <div class="drawer-actions"><div><span class="save-note">演示状态保留在当前页面；桌面版写入本地 SQLite。</span><div class="task-save-status" id="taskSaveNotice">已有演示任务，可直接修改</div></div><div style="display:flex;gap:8px"><button class="outline" id="saveTask">保存任务</button><button class="primary" id="saveUpdate">保存进度</button></div></div>
+  </aside>
+  <script>
+    const labels = { source: '数据源', analysis: '经营分析', task: '任务单', history: '历史查询', provider: 'Provider 设置', 'system-settings': '系统设置' };
+    document.querySelectorAll('[data-screen]').forEach(btn => btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-screen]').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(btn.dataset.screen).classList.add('active');
+      document.getElementById('crumb').textContent = labels[btn.dataset.screen];
+    }));
+    const drawer = document.getElementById('taskDrawer');
+    const scrim = document.getElementById('drawerScrim');
+    const tasks = {
+      'task-a': {
+        code: 'A', title: '核对高折扣订单成本口径', summary: '结算收益 · 10 月目标 ¥210,000', role: '本期检视', owner: '经营管理岗', direction: '本期检视', metric: '结算收益', target: '¥ 210,000', actual: '¥ 184,600', due: '截止 2026-10-31', plannedStart: '2026-10-29', dueDate: '2026-10-31', completedAt: '',
+        status: '进行中', progress: 25, manualProgress: false,
+        steps: [
+          { title: '确认指标口径与来源字段', done: true },
+          { title: '核对本期实绩与计划值', done: false },
+          { title: '补充差异原因及支持证据', done: false },
+          { title: '记录复盘结论与遗留事项', done: false }
+        ],
+        timeline: [
+          { note: '已确认结算收益的目标、实绩和来源单元格', progress: 25, status: '进行中', timestamp: '2026-10-29T09:16:00+08:00' },
+          { note: '任务生成：发现高折扣订单成本口径待复核', progress: 0, status: '待开始', timestamp: '2026-10-29T09:12:00+08:00' }
+        ]
+      },
+      'task-b': {
+        code: 'B', title: '补录有效工时并调整排产', summary: '单位时间附加值 · 1 天待补', role: '下期计划', owner: '生产计划岗', direction: '下期计划', metric: '单位时间附加值', target: '¥ 450 / 时', actual: '¥ 428 / 时', due: '截止 2026-11-07', plannedStart: '2026-11-01', dueDate: '2026-11-07', completedAt: '',
+        status: '进行中', progress: 50, manualProgress: false,
+        steps: [
+          { title: '确认改善目标与衡量方式', done: true },
+          { title: '拆分行动步骤和责任岗位', done: true },
+          { title: '确定完成节点与所需资源', done: false },
+          { title: '约定复核证据与验收口径', done: false }
+        ],
+        timeline: [
+          { note: '已拆分 11 月第一周排产和工时补录责任', progress: 50, status: '进行中', timestamp: '2026-10-29T09:22:00+08:00' },
+          { note: '任务生成：10 月 17 日有效工时缺失', progress: 0, status: '待开始', timestamp: '2026-10-29T09:12:00+08:00' }
+        ]
+      }
+    };
+    const taskSnapshot = task => ({
+      title: task.title,
+      summary: task.summary,
+      metric: task.metric,
+      target: task.target,
+      owner: task.owner,
+      role: task.role,
+      plannedStart: task.plannedStart,
+      dueDate: task.dueDate,
+      steps: task.steps.map(step => ({ title: step.title, done: step.done }))
+    });
+    Object.values(tasks).forEach(task => { task.savedSnapshot = JSON.stringify(taskSnapshot(task)); });
+    let selectedTaskId = 'task-a';
+    const openDrawer = (taskId) => {
+      selectedTaskId = taskId;
+      updateText.value = '';
+      document.getElementById('taskSaveNotice').textContent = tasks[taskId].dirty ? '有未保存更改' : '当前任务无待保存更改';
+      renderTaskDetail();
+      renderRootCause();
+      document.querySelectorAll('[data-task]').forEach(row => row.classList.toggle('selected', row.dataset.task === taskId));
+      drawer.classList.add('open');
+      scrim.classList.add('open');
+    };
+    const closeDrawer = () => { drawer.classList.remove('open'); scrim.classList.remove('open'); };
+    document.querySelectorAll('[data-task]').forEach(row => row.addEventListener('click', () => openDrawer(row.dataset.task)));
+    document.getElementById('closeDrawer').addEventListener('click', closeDrawer);
+    scrim.addEventListener('click', closeDrawer);
+    const range = document.getElementById('updateProgress');
+    const updateStatus = document.getElementById('updateStatus');
+    const updateText = document.getElementById('updateText');
+    const frameworkSelect = document.getElementById('frameworkSelect');
+    const cycleCadence = document.getElementById('cycleCadence');
+    let policyVersion = 2;
+    const workspaceState = {
+      sample: { name: '示例制造企业', cadence: 'day', version: 2, foot: '示例制造企业', source: '示例制造企业 · 2026-10 日度经营复盘', hasData: true, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '2026-10-01', provider: { baseUrl: 'https://api.demo-provider.local/v1', model: 'demo-reasoner-32b', apiKey: 'demo-local-key-2026' } },
+      'sample-2': { name: '新建空白档案', cadence: 'month', version: 1, foot: '新建空白档案', source: '新建空白档案 · 尚未导入数据', hasData: false, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '', provider: { baseUrl: '', model: '', apiKey: '' } }
+    };
+    const workspaceSelect = document.getElementById('workspaceSelect');
+    const applyWorkspace = () => {
+      const workspace = workspaceState[workspaceSelect.value];
+      document.getElementById('workspaceFoot').textContent = workspace.foot;
+      const dataScreens = ['source', 'analysis', 'task', 'history'];
+      dataScreens.forEach(id => {
+        const screen = document.getElementById(id);
+        [...screen.children].forEach(child => {
+          if (!child.classList.contains('screen-head')) child.hidden = !workspace.hasData;
+        });
+      });
+      document.getElementById('workspaceEmptyNotice').hidden = workspace.hasData;
+      document.querySelector('.workspace-profile-details').hidden = !workspace.hasData;
+      document.getElementById('workspaceProfileEmpty').hidden = workspace.hasData;
+      document.querySelector('#source .sub').textContent = workspace.hasData ? `${workspace.source} · 读取本地目录，核对期间、字段与数据口径。` : `${workspace.name} · 尚未选择数据目录，请先导入文件并确认字段映射。`;
+      document.querySelector('#analysis .sub').textContent = workspace.hasData ? `${workspace.name} · 2026-10-01 至 2026-10-28 · 日度聚合，可切换周 / 月 / 季度` : `${workspace.name} · 尚无分析期间`;
+      document.getElementById('systemSettingsSubtitle').textContent = `${workspace.name} · 管理当前企业档案的周期、日期边界与本机数据。`;
+      document.querySelector('#providerSubtitle').textContent = `${workspace.name} · 配置模型服务连接并保存到当前企业的本地 SQLite。`;
+      document.getElementById('currentWorkspaceLabel').textContent = `当前：${workspace.name} · 策略 v${workspace.version}`;
+      document.getElementById('workspaceName').value = workspace.name;
+      document.getElementById('cycleCadence').value = workspace.cadence;
+      document.getElementById('policyEffectiveDate').value = workspace.effectiveFrom;
+      document.getElementById('weekStartDay').value = workspace.weekStart;
+      document.getElementById('fiscalYearStart').value = workspace.fiscalYearStart;
+      document.getElementById('workspaceTimezone').value = workspace.timezone;
+      document.getElementById('policyNotice').textContent = workspace.notice || `当前策略 v${workspace.version}：${workspace.cadence === 'week' ? '周度' : workspace.cadence === 'month' ? '月度' : workspace.cadence === 'quarter' ? '季度' : '日度'}；${workspace.hasData ? '历史数据仅属于当前企业档案。' : '尚无数据，可为本企业单独配置。'}`;
+      document.getElementById('providerBaseUrl').value = workspace.provider.baseUrl;
+      document.getElementById('providerModel').value = workspace.provider.model;
+      document.getElementById('providerKey').value = workspace.provider.apiKey;
+      document.getElementById('providerStatus').textContent = workspace.provider.baseUrl && workspace.provider.model && workspace.provider.apiKey ? '已保存 · 本地' : '未配置';
+      document.getElementById('providerStatus').className = workspace.provider.baseUrl ? 'tag green' : 'tag gold';
+      document.getElementById('providerNotice').textContent = workspace.provider.baseUrl ? `当前档案：${workspace.name}` : '此档案尚未配置 Provider';
+      workspaceSelect.options[workspaceSelect.selectedIndex].textContent = workspace.name;
+    };
+    workspaceSelect.addEventListener('change', () => {
+      applyWorkspace();
+      alert(`已切换到“${workspaceState[workspaceSelect.value].name}”。当前档案的历史、Provider、任务和导出范围已独立。`);
+    });
+    document.getElementById('saveProvider').addEventListener('click', () => {
+      const baseUrl = document.getElementById('providerBaseUrl').value.trim();
+      const model = document.getElementById('providerModel').value.trim();
+      const apiKey = document.getElementById('providerKey').value.trim();
+      if (!baseUrl || !model || !apiKey) return alert('Base URL、模型和 API Key 都需要填写。');
+      const provider = workspaceState[workspaceSelect.value].provider;
+      provider.baseUrl = baseUrl;
+      provider.model = model;
+      provider.apiKey = apiKey;
+      document.getElementById('providerStatus').textContent = '已保存 · 本地';
+      document.getElementById('providerStatus').className = 'tag green';
+      document.getElementById('providerNotice').textContent = `已保存到 ${workspaceState[workspaceSelect.value].name} · 2026-10-29 09:26`;
+    });
+    document.getElementById('testProvider').addEventListener('click', () => {
+      const baseUrl = document.getElementById('providerBaseUrl').value.trim();
+      if (!baseUrl) return alert('请先填写 Base URL。');
+      document.getElementById('providerNotice').textContent = '连接测试通过 · 未发送业务数据 · 2026-10-29 09:27';
+      alert('连接测试通过。演示只验证地址格式，不发送经营数据。');
+    });
+    document.getElementById('exportButton').addEventListener('click', () => alert('演示导出：将生成核算表、推移表、任务单和结构化 JSON；不包含 API Key 或原始数据库。'));
+    document.getElementById('generateButton').addEventListener('click', () => {
+      if (!workspaceState[workspaceSelect.value].hasData) return alert('请先为当前企业档案导入数据并完成字段映射。');
+      document.querySelector('[data-screen="task"]').click();
+      alert('已打开任务单预览。正式运行时会先展示 Provider、文件范围和 payload 估算，再等待确认。');
+    });
+    document.getElementById('downloadTemplate').addEventListener('click', () => alert('演示下载：空白模板包包含核算表、推移表、任务单和字段说明，不含业务样例数据。'));
+    document.getElementById('chooseDirectory').addEventListener('click', () => alert('正式版本会打开系统目录选择器；当前原型使用虚构目录。'));
+    document.getElementById('scanFiles').addEventListener('click', () => alert('已重新扫描示例目录：3 个文件、2,486 行，1 项工时待补。'));
+    if (cycleCadence) cycleCadence.addEventListener('change', () => {
+      const labels = { day: '日度', week: '周度', month: '月度', quarter: '季度' };
+      document.getElementById('policyNotice').textContent = `待保存：${labels[cycleCadence.value]}；将同时保存周起始日、财年起始月和时区，生效日期后建立新版本。`;
+    });
+    document.getElementById('savePolicy').addEventListener('click', () => {
+      const effectiveFrom = document.getElementById('policyEffectiveDate').value;
+      if (!effectiveFrom) return alert('请设置新周期策略的生效日期。');
+      const labels = { day: '日度', week: '周度', month: '月度', quarter: '季度' };
+      const workspace = workspaceState[workspaceSelect.value];
+      policyVersion = workspace.version + 1;
+      workspace.name = document.getElementById('workspaceName').value.trim() || workspace.name;
+      workspace.cadence = cycleCadence.value;
+      workspace.version = policyVersion;
+      workspace.foot = workspace.name;
+      workspace.weekStart = document.getElementById('weekStartDay').value;
+      workspace.fiscalYearStart = document.getElementById('fiscalYearStart').value;
+      workspace.timezone = document.getElementById('workspaceTimezone').value;
+      workspace.effectiveFrom = effectiveFrom;
+      workspace.notice = `已建立策略版本 ${policyVersion}：${labels[cycleCadence.value]}，自 ${effectiveFrom} 生效；周起始 ${workspace.weekStart === '1' ? '周一' : '周日'}，财年起始 ${workspace.fiscalYearStart} 月，时区 ${workspace.timezone}。旧期间沿用原口径。`;
+      applyWorkspace();
+      alert('企业设置已保存到当前企业档案的演示状态；桌面版将写入本地 SQLite。');
+    });
+    const frameworkDefinitions = {
+      '5w': {
+        title: '5W · 问题描述',
+        fields: [
+          ['What', '当前需要解决的经营问题是什么？', '10 月结算收益为 ¥184,600，低于目标 ¥210,000，差异 ¥25,400。', '核算表!F12；目标与实绩均已通过字段映射确认。'],
+          ['Why', '为什么需要优先处理？', '收益差异会压缩本期可结算空间，并可能影响下期报价和排产判断。', '目标达成率 87.9%；异常贡献排序第一。'],
+          ['Where', '问题发生在哪个业务范围？', '集中在 7 笔高折扣订单的成本口径和订单毛利核算范围。', '核算表差异分析；订单明细仍需人工复核。'],
+          ['When', '问题发生或需要处理的期间是什么？', '检视窗口为 2026-10-01 至 2026-10-28，复核节点为 2026-10-31。', '本期日度策略 v2；下期行动窗口从 2026-11-01 开始。'],
+          ['Who', '涉及哪些岗位或责任人？', '经营管理岗牵头，销售支持岗和成本核算岗共同确认折扣与成本口径。', '任务依据 / 责任岗位；尚未把具体姓名写入演示数据。']
+        ]
+      },
+      '5why': {
+        title: '5WHY · 根因追问',
+        fields: [
+          ['Why 1', '为什么出现当前差异？', '高折扣订单的实际成本高于当前核算口径，导致 10 月结算收益比目标少 ¥25,400。', '核算表!F12；订单毛利率 18.6%，低于目标 20.0%。'],
+          ['Why 2', '为什么会出现上述原因？', '折扣审批记录与成本版本没有在结算前逐单关联，部分订单仍沿用上一个成本版本。', '任务依据列出 7 笔待复核订单；这是待确认假设，不是已证实事实。'],
+          ['Why 3', '造成该原因的流程或条件是什么？', '报价、成本更新和结算复核由不同表格维护，缺少同一订单号的必填校验。', '当前字段映射只识别到金额与日期，订单号关联规则需要补充。'],
+          ['Why 4', '为什么现有管理方式未能预防？', '月度复盘主要看汇总差异，未在日度策略启用后建立高折扣订单的提前预警阈值。', '10 月 1 日启用日度策略 v2；历史月度记录没有被拆分。'],
+          ['Why 5', '需要改变的根本机制是什么？', '建立“折扣阈值 + 成本版本 + 结算复核”三项联动校验，未满足条件的订单进入待确认清单。', '这是行动建议，需经营管理岗确认后写入指标与任务规则。']
+        ]
+      },
+      '5w2h': {
+        title: '5W2H · 行动方案',
+        fields: [
+          ['What', '要完成什么行动？', '复核 7 笔高折扣订单，统一订单成本版本，并更新结算收益差异清单。', '核算表!F12 + 任务依据 / 高折扣订单清单。'],
+          ['Why', '行动要解决什么原因？', '消除折扣审批与成本版本脱节造成的毛利漏算，恢复目标达成的可解释性。', '目标 ¥210,000；当前实绩 ¥184,600。'],
+          ['Who', '由谁负责、谁协同？', '经营管理岗负责；销售支持岗提供折扣审批记录，成本核算岗确认成本版本。', '岗位级演示数据；正式版支持从任务单或本地目录映射责任人。'],
+          ['When', '何时开始和完成？', '2026-10-29 开始，2026-10-31 前完成首轮复核；2026-11-03 复盘结果。', '任务详情中的计划开始、截止和进度事件。'],
+          ['Where', '在哪个流程或范围执行？', '在报价审批、订单成本维护、月底结算复核三个节点执行。', '适用范围为本期 7 笔高折扣订单。'],
+          ['How', '按什么步骤执行？', '导出待复核清单，按订单号关联折扣和成本版本，重新计算毛利，复核后再更新任务依据。', '步骤勾选会同步任务进度；模型建议需人工确认。'],
+          ['How much', '需要多少资源，预期贡献如何衡量？', '预计 1 个经营管理岗半天、2 个协同岗位各 1 小时；以差异解释率和毛利率回到 20% 目标附近衡量。', '资源和目标为待确认项，不直接写入实绩。']
+        ]
+      }
+    };
+
+    function renderRootCause() {
+      const definition = frameworkDefinitions[frameworkSelect.value];
+      document.getElementById('frameworkTitle').textContent = `${definition.title} · ${tasks[selectedTaskId].title}`;
+      const container = document.getElementById('rootCauseContent');
+      container.replaceChildren();
+      const taskBFields = {
+        '5w': [
+          ['What', '需要解决什么问题？', '10 月 17 日有效工时缺失，单位时间附加值为 ¥428/时，低于目标 ¥450/时。', '推移表!A17:H17；缺失值被标为待补。'],
+          ['Why', '为什么需要优先处理？', '缺失工时会影响生产效率对比和下周排产判断。', '单位时间附加值同比 +6.4%，环比 -2.8%。'],
+          ['Where', '问题发生在哪个范围？', '发生在日度工时录入与排产汇总之间。', '推移表的业务日期与有效工时字段。'],
+          ['When', '何时发生和完成？', '缺失日期为 2026-10-17；补录节点为 2026-11-02。', '本期策略 v2；下期计划窗口 11-01 至 11-07。'],
+          ['Who', '由哪些岗位负责？', '生产计划岗负责；班组统计岗提供当日工时记录。', '演示使用岗位名称，不包含真实人员信息。']
+        ],
+        '5why': [
+          ['Why 1', '为什么单位时间附加值低于目标？', '当前有效工时口径缺少 10 月 17 日记录，导致日度指标无法完整复核。', '推移表!A17:H17；系统显示 1 天待补。'],
+          ['Why 2', '为什么该日工时没有进入汇总？', '排班变更后，班组记录没有同步到日度推移表。', '作为待确认假设，需与原始考勤或工时表核对。'],
+          ['Why 3', '为什么变更没有被发现？', '当前导入校验能提示空值，但没有责任岗位和补录截止日期。', '字段映射把有效工时设为必需输入；补录责任待确认。'],
+          ['Why 4', '为什么缺少补录责任？', '日度复盘启用后，原月度填报分工没有同步改成每日闭环。', '企业周期从月度切换为日度，历史月度结果仍保留原口径。'],
+          ['Why 5', '需要建立什么机制？', '为工时空值设置责任岗位、次日提醒和复核节点，缺失期间暂不计算该指标。', '行动建议；需生产计划岗确认后再作为正式制度。']
+        ],
+        '5w2h': [
+          ['What', '要完成什么行动？', '补录 10 月 17 日有效工时，并校验单位时间附加值。', '推移表!A17:H17。'],
+          ['Why', '行动要解决什么原因？', '恢复日度效率指标的完整性，避免缺失值被当作零或误用于排产。', '目标 ¥450/时；当前显示 ¥428/时。'],
+          ['Who', '由谁负责？', '生产计划岗牵头，班组统计岗提供工时记录。', '责任岗位可在任务详情中修改。'],
+          ['When', '何时完成？', '2026-11-01 开始，2026-11-02 补录并复核。', '任务计划开始和截止日期。'],
+          ['Where', '在哪执行？', '日度推移表的有效工时字段与排产核对环节。', '企业档案内映射字段。'],
+          ['How', '如何执行？', '核对排班记录、补录工时、重算指标、由另一岗位复核。', '步骤可编辑、排序和勾选。'],
+          ['How much', '需要多少资源？', '预计生产计划岗和班组统计岗各投入 30 分钟；时间为示例估算。', '资源预估需责任岗位确认。']
+        ]
+      };
+      const fields = selectedTaskId === 'task-b' ? taskBFields[frameworkSelect.value] : definition.fields;
+      fields.forEach(([label, question, answer, evidence], index) => {
+        const section = document.createElement('div');
+        section.className = 'root-step';
+        section.innerHTML = `<span class="step-num">${index + 1}</span><strong>${label} · ${question}</strong><p>答复 / 思考：${answer}</p><div class="evidence">依据：${evidence} <span class="tag gold" style="margin-left:6px">需人工确认</span></div>`;
+        container.append(section);
+      });
+    }
+
+    function renderTaskDetail() {
+      const task = tasks[selectedTaskId];
+      document.getElementById('drawerEyebrow').textContent = `TASK · ${task.code}`;
+      document.getElementById('drawerTitle').textContent = task.title;
+      document.getElementById('drawerMeta').textContent = `任务编号待生成 · ${task.role} · 关联指标差异`;
+      document.getElementById('taskTitleInput').value = task.title;
+      document.getElementById('taskSummaryInput').value = task.summary;
+      document.getElementById('taskMetricInput').value = task.metric;
+      document.getElementById('taskTargetInput').value = task.target;
+      document.getElementById('taskOwnerInput').value = task.owner;
+      document.getElementById('taskRoleInput').value = task.role;
+      document.getElementById('detailActual').textContent = task.actual;
+      document.getElementById('dueDate').textContent = task.dueDate ? `截止 ${task.dueDate}` : task.due;
+      document.getElementById('plannedStartInput').value = task.plannedStart;
+      document.getElementById('dueDateInput').value = task.dueDate;
+      document.getElementById('completedAtLabel').textContent = task.completedAt || '未完成';
+      document.getElementById('progressText').textContent = `${task.progress}%`;
+      document.getElementById('progressBar').style.width = `${task.progress}%`;
+      document.getElementById('rangeValue').textContent = `${task.progress}%`;
+      range.value = task.progress;
+      updateStatus.value = task.status;
+
+      const completed = task.steps.filter(step => step.done).length;
+      document.getElementById('stepCount').textContent = `已完成 ${completed} / ${task.steps.length} 个步骤${task.manualProgress ? ' · 进度含手工调整' : ''}`;
+      const stepList = document.getElementById('stepList');
+      stepList.replaceChildren();
+      task.steps.forEach((step, index) => {
+        const row = document.createElement('div');
+        row.className = 'action-step';
+        const checkbox = document.createElement('input');
+        checkbox.className = 'check step-check';
+        checkbox.type = 'checkbox';
+        checkbox.checked = step.done;
+        checkbox.setAttribute('aria-label', `完成步骤 ${index + 1}`);
+        const copy = document.createElement('div');
+        copy.className = 'action-copy';
+        const titleInput = document.createElement('input');
+        titleInput.className = 'step-title-input';
+        titleInput.value = step.title;
+        titleInput.setAttribute('aria-label', `行动步骤 ${index + 1}`);
+        titleInput.addEventListener('input', () => {
+          step.title = titleInput.value;
+          task.dirty = JSON.stringify(taskSnapshot(task)) !== task.savedSnapshot;
+          document.getElementById('taskSaveNotice').textContent = task.dirty ? '有未保存更改' : '没有未保存更改';
+        });
+        const note = document.createElement('small');
+        note.textContent = step.done ? '已完成' : '待推进';
+        copy.append(titleInput, note);
+        const badge = document.createElement('span');
+        badge.className = `tag ${step.done ? 'green' : 'gold'}`;
+        badge.textContent = step.done ? '完成' : '待办';
+        const remove = document.createElement('button');
+        remove.className = 'step-remove';
+        remove.type = 'button';
+        remove.title = '删除步骤';
+        remove.setAttribute('aria-label', '删除步骤');
+        remove.textContent = '×';
+        remove.addEventListener('click', () => {
+          if (task.steps.length <= 1) return alert('至少保留一个行动步骤。');
+          task.steps.splice(index, 1);
+          task.progress = Math.round(task.steps.filter(item => item.done).length / task.steps.length * 100);
+          task.status = task.progress === 100 ? '已完成' : task.progress === 0 ? '待开始' : '进行中';
+          task.stepsDirty = true;
+          task.dirty = true;
+          document.getElementById('taskSaveNotice').textContent = '有未保存更改';
+          renderTaskDetail();
+          renderTaskRows();
+          renderTaskTimeline();
+        });
+        checkbox.addEventListener('change', () => {
+          step.done = checkbox.checked;
+          task.manualProgress = false;
+          task.stepsDirty = true;
+          task.dirty = true;
+          task.progress = Math.round(task.steps.filter(item => item.done).length / task.steps.length * 100);
+          task.status = task.progress === 100 ? '已完成' : task.progress === 0 ? '待开始' : '进行中';
+          task.completedAt = task.progress === 100 ? new Date().toISOString().slice(0, 10) : '';
+          document.getElementById('taskSaveNotice').textContent = '有未保存更改';
+          renderTaskDetail();
+          renderTaskRows();
+          renderTaskTimeline();
+        });
+        const actions = document.createElement('div');
+        actions.className = 'step-actions';
+        const up = document.createElement('button');
+        up.className = 'step-order';
+        up.type = 'button';
+        up.title = '上移';
+        up.setAttribute('aria-label', '上移行动步骤');
+        up.textContent = '↑';
+        up.disabled = index === 0;
+        up.addEventListener('click', () => {
+          [task.steps[index - 1], task.steps[index]] = [task.steps[index], task.steps[index - 1]];
+          task.stepsDirty = true;
+          task.dirty = true;
+          document.getElementById('taskSaveNotice').textContent = '有未保存更改';
+          renderTaskDetail();
+        });
+        const down = document.createElement('button');
+        down.className = 'step-order';
+        down.type = 'button';
+        down.title = '下移';
+        down.setAttribute('aria-label', '下移行动步骤');
+        down.textContent = '↓';
+        down.disabled = index === task.steps.length - 1;
+        down.addEventListener('click', () => {
+          [task.steps[index], task.steps[index + 1]] = [task.steps[index + 1], task.steps[index]];
+          task.stepsDirty = true;
+          task.dirty = true;
+          document.getElementById('taskSaveNotice').textContent = '有未保存更改';
+          renderTaskDetail();
+        });
+        actions.append(up, down, remove);
+        row.append(checkbox, copy, actions);
+        stepList.append(row);
+      });
+
+      const timeline = document.getElementById('timeline');
+      timeline.replaceChildren();
+      if (!task.timeline.length) {
+        const empty = document.createElement('div');
+        empty.className = 'panel-note';
+        empty.textContent = '暂无进度记录';
+        timeline.append(empty);
+      } else {
+        task.timeline.forEach(entry => {
+          const item = document.createElement('div');
+          item.className = 'timeline-item';
+          item.textContent = entry.note;
+          const meta = document.createElement('small');
+          meta.textContent = `${entry.timestamp || '时间待补'} · 当前用户 · 进度 ${entry.progress}% · ${entry.status}`;
+          item.append(meta);
+          timeline.append(item);
+        });
+      }
+    }
+
+    function renderTaskRows() {
+      document.querySelectorAll('[data-task]').forEach(row => {
+        const task = tasks[row.dataset.task];
+        const title = row.querySelector('[data-task-title]');
+        const summary = row.querySelector('[data-task-summary]');
+        const role = row.querySelector('[data-task-role]');
+        const target = row.querySelector('[data-task-target]');
+        const due = row.querySelector('[data-task-due]');
+        const owner = row.querySelector('[data-task-owner]');
+        if (title) title.textContent = task.title;
+        if (summary) summary.textContent = task.summary;
+        if (role) { role.textContent = task.role; role.className = `tag ${task.role === '本期检视' ? 'blue' : 'red'}`; }
+        if (target) target.firstChild.textContent = task.target;
+        if (due) due.textContent = task.role === '下期计划'
+          ? `计划 ${task.plannedStart || '未设置日期'} 至 ${task.dueDate || '未设置日期'}`
+          : task.dueDate ? `截止 ${task.dueDate}` : '未设置截止日期';
+        if (owner) owner.textContent = task.owner;
+        const badge = row.querySelector('[data-progress-label]');
+        if (badge) badge.textContent = `${task.progress}% · ${task.status}`;
+      });
+    }
+
+    function renderTaskTimeline() {
+      const board = document.getElementById('taskTimeline');
+      if (!board) return;
+      const grain = document.getElementById('taskTimelineGrain').value;
+      const fromValue = document.getElementById('timelineFrom').value;
+      const toValue = document.getElementById('timelineTo').value;
+      const statusFilter = document.getElementById('timelineStatus').value;
+      const bucketFor = date => {
+        const value = new Date(`${date.slice(0, 10)}T12:00:00`);
+        if (grain === 'day') return date.slice(0, 10);
+        if (grain === 'week') {
+          const configuredStart = Number(document.getElementById('weekStartDay')?.value || 1);
+          const offset = (value.getDay() - configuredStart + 7) % 7;
+          value.setDate(value.getDate() - offset);
+          return `周起始 ${value.toISOString().slice(0, 10)}`;
+        }
+        const year = value.getFullYear();
+        const month = value.getMonth();
+        return grain === 'quarter' ? `${year} 年第 ${Math.floor(month / 3) + 1} 季` : `${year}-${String(month + 1).padStart(2, '0')}`;
+      };
+      const entries = [];
+      const addEntry = (task, kind, date, detail) => {
+        const datePart = date && /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : '';
+        if ((fromValue && (!datePart || datePart < fromValue)) || (toValue && (!datePart || datePart > toValue))) return;
+        entries.push({ task, kind, date, detail, bucket: datePart ? bucketFor(datePart) : '未设日期' });
+      };
+      board.replaceChildren();
+      Object.values(tasks).forEach(task => {
+        if (statusFilter !== 'all' && task.status !== statusFilter) return;
+        if (task.plannedStart) addEntry(task, '计划开始', task.plannedStart, '任务计划开始');
+        if (task.dueDate) addEntry(task, '截止节点', task.dueDate, '任务计划截止');
+        if (task.completedAt) addEntry(task, '完成节点', task.completedAt, '任务标记为完成');
+        task.timeline.forEach(entry => addEntry(task, '进度事件', entry.timestamp, entry.note));
+        if (!task.plannedStart && !task.dueDate && !task.completedAt && !task.timeline.length) addEntry(task, '未设日期', '', '暂无计划日期或进度事件');
+      });
+      entries.sort((left, right) => ((left.date && /^\d{4}-\d{2}-\d{2}/.test(left.date) ? left.date : '9999')
+        .localeCompare(right.date && /^\d{4}-\d{2}-\d{2}/.test(right.date) ? right.date : '9999')));
+      if (!entries.length) {
+        const empty = document.createElement('div');
+        empty.className = 'panel-note';
+        empty.textContent = '当前筛选范围内没有任务节点或进度事件。';
+        board.append(empty);
+        return;
+      }
+      let currentBucket = '';
+      entries.forEach(entry => {
+        if (entry.bucket !== currentBucket) {
+          currentBucket = entry.bucket;
+          const heading = document.createElement('h4');
+          heading.className = 'timeline-period';
+          heading.textContent = currentBucket;
+          board.append(heading);
+        }
+        const lane = document.createElement('div');
+        lane.className = 'timeline-lane';
+        const title = document.createElement('strong');
+        title.textContent = entry.task.title;
+        const detail = document.createElement('span');
+        detail.textContent = `${entry.kind} · ${entry.detail}`;
+        const date = document.createElement('small');
+        date.textContent = entry.date ? new Date(entry.date).toLocaleString() : '未设置日期';
+        lane.append(title, detail, date);
+        board.append(lane);
+      });
+    }
+
+    range.addEventListener('input', () => document.getElementById('rangeValue').textContent = `${range.value}%`);
+    frameworkSelect.addEventListener('change', renderRootCause);
+    document.getElementById('addTaskStep').addEventListener('click', () => {
+      const task = tasks[selectedTaskId];
+      document.querySelectorAll('.step-title-input').forEach((input, index) => { task.steps[index].title = input.value.trim() || task.steps[index].title; });
+      task.steps.push({ title: '新行动步骤', done: false });
+      task.dirty = true;
+      document.getElementById('taskSaveNotice').textContent = '有未保存更改';
+      renderTaskDetail();
+      document.querySelectorAll('.step-title-input').at(-1)?.focus();
+    });
+    const editableTaskFields = {
+      taskTitleInput: 'title',
+      taskSummaryInput: 'summary',
+      taskMetricInput: 'metric',
+      taskTargetInput: 'target',
+      taskOwnerInput: 'owner',
+      taskRoleInput: 'role',
+      plannedStartInput: 'plannedStart',
+      dueDateInput: 'dueDate'
+    };
+    Object.entries(editableTaskFields).forEach(([id, field]) => {
+      document.getElementById(id).addEventListener(id === 'taskRoleInput' ? 'change' : 'input', event => {
+        const task = tasks[selectedTaskId];
+        task[field] = event.target.value;
+        if (field === 'role') task.direction = event.target.value;
+        if (field === 'dueDate') task.due = event.target.value ? `截止 ${event.target.value}` : '截止日期待配置';
+        task.dirty = JSON.stringify(taskSnapshot(task)) !== task.savedSnapshot;
+        document.getElementById('taskSaveNotice').textContent = task.dirty ? '有未保存更改' : '没有未保存更改';
+        if (field === 'plannedStart' || field === 'dueDate') renderTaskTimeline();
+      });
+    });
+    document.getElementById('saveTask').addEventListener('click', () => {
+      const task = tasks[selectedTaskId];
+      const title = document.getElementById('taskTitleInput').value.trim();
+      const summary = document.getElementById('taskSummaryInput').value.trim();
+      const metric = document.getElementById('taskMetricInput').value.trim();
+      const target = document.getElementById('taskTargetInput').value.trim();
+      const owner = document.getElementById('taskOwnerInput').value.trim();
+      const steps = [...document.querySelectorAll('.step-title-input')].map((input, index) => input.value.trim() || `行动步骤 ${index + 1}`);
+      if (!title || !owner || !steps.length) return alert('任务名称、责任岗位和至少一个行动步骤不能为空。');
+      const plannedStart = document.getElementById('plannedStartInput').value;
+      const dueDate = document.getElementById('dueDateInput').value;
+      if (plannedStart && dueDate && plannedStart > dueDate) return alert('计划开始日期不能晚于截止日期。');
+      const before = JSON.parse(task.savedSnapshot);
+      task.title = title;
+      task.summary = summary;
+      task.metric = metric;
+      task.target = target;
+      task.owner = owner;
+      task.role = document.getElementById('taskRoleInput').value;
+      task.direction = task.role;
+      task.plannedStart = plannedStart;
+      task.dueDate = dueDate;
+      task.due = task.dueDate ? `截止 ${task.dueDate}` : '截止日期待配置';
+      task.steps.forEach((step, index) => { step.title = steps[index]; });
+      const after = taskSnapshot(task);
+      const labels = { title: '任务名称', summary: '任务说明', metric: '关联指标', target: '目标口径', owner: '责任岗位', role: '周期角色', plannedStart: '计划开始', dueDate: '截止日期', steps: '行动步骤' };
+      const changedFields = Object.keys(after).filter(field => JSON.stringify(before[field]) !== JSON.stringify(after[field]));
+      if (changedFields.includes('steps')) {
+        task.progress = Math.round(task.steps.filter(step => step.done).length / task.steps.length * 100);
+        task.status = task.progress === 100 ? '已完成' : task.progress === 0 ? '待开始' : '进行中';
+        task.completedAt = task.progress === 100 ? (task.completedAt || new Date().toISOString().slice(0, 10)) : '';
+        task.manualProgress = false;
+      }
+      if (!changedFields.length) {
+        document.getElementById('taskSaveNotice').textContent = '当前没有待保存的修改';
+        return;
+      }
+      task.timeline.unshift({ note: `保存修改：${changedFields.map(field => labels[field]).join('、')}`, fields: changedFields, before, after, progress: task.progress, status: task.status, timestamp: new Date().toISOString() });
+      task.savedSnapshot = JSON.stringify(after);
+      task.dirty = false;
+      task.stepsDirty = false;
+      document.getElementById('taskSaveNotice').textContent = '已保存 · 当前页面演示状态';
+      renderTaskDetail();
+      renderTaskRows();
+      renderTaskTimeline();
+    });
+    document.getElementById('plannedStartInput').addEventListener('change', event => {
+      tasks[selectedTaskId].plannedStart = event.target.value;
+      renderTaskTimeline();
+    });
+    document.getElementById('dueDateInput').addEventListener('change', event => {
+      tasks[selectedTaskId].dueDate = event.target.value;
+      tasks[selectedTaskId].due = event.target.value ? `截止 ${event.target.value}` : '截止日期待配置';
+      renderTaskTimeline();
+    });
+    document.getElementById('saveUpdate').addEventListener('click', () => {
+      const task = tasks[selectedTaskId];
+      const pct = Number(range.value);
+      const note = updateText.value.trim();
+      let status = updateStatus.value;
+      if (status === '有阻塞' && !note) return alert('有阻塞时必须填写阻塞说明。');
+      if (!note) return alert('请填写本次进展或调整原因。');
+      if (status === '待开始' && pct > 0) return alert('待开始任务的完成比例应为 0%。');
+      if (status === '已完成' && pct < 100) return alert('任务进度达到 100% 后才能标记为已完成。');
+      if (pct === 100) status = '已完成';
+      task.progress = pct;
+      task.status = status;
+      task.completedAt = pct === 100 ? new Date().toISOString().slice(0, 10) : '';
+      task.manualProgress = pct !== Math.round(task.steps.filter(step => step.done).length / task.steps.length * 100);
+      task.timeline.unshift({ note, progress: pct, status, timestamp: new Date().toISOString() });
+      updateText.value = '';
+      renderTaskDetail();
+      renderTaskRows();
+      renderTaskTimeline();
+      alert('进度已更新到当前任务的演示记录');
+    });
+    document.querySelector('.save-note').textContent = '原型仅保留当前页面状态，刷新后清空；桌面版写入本地 SQLite。';
+    document.getElementById('taskSaveNotice').textContent = '已有演示任务，可直接修改';
+    applyWorkspace();
+    renderRootCause();
+    renderTaskDetail();
+    renderTaskRows();
+    renderTaskTimeline();
+    ['taskTimelineGrain', 'timelineFrom', 'timelineTo', 'timelineStatus'].forEach(id => document.getElementById(id).addEventListener('change', renderTaskTimeline));
+  </script>
+</body>
+</html>
