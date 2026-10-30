@@ -1,133 +1,347 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "task-output-v1",
-  "title": "Task output v1",
+  "$id": "task-output-v2",
+  "title": "Task output v2",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "summary", "tasks"],
+  "required": [
+    "schema_version",
+    "summary",
+    "tasks"
+  ],
   "properties": {
-    "schema_version": { "const": "1" },
-    "summary": { "type": "string" },
+    "schema_version": {
+      "const": "2"
+    },
+    "summary": {
+      "type": "string"
+    },
     "tasks": {
       "type": "array",
-      "items": { "$ref": "#/$defs/task" }
+      "items": {
+        "$ref": "#/$defs/task"
+      }
     }
   },
   "$defs": {
-    "nullableString": { "type": ["string", "null"] },
-    "date": { "type": ["string", "null"], "format": "date" },
+    "nullableString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "date": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date"
+    },
     "period": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": false,
-      "required": ["from", "to"],
+      "required": [
+        "from",
+        "to"
+      ],
       "properties": {
-        "from": { "$ref": "#/$defs/date" },
-        "to": { "$ref": "#/$defs/date" }
+        "from": {
+          "$ref": "#/$defs/date"
+        },
+        "to": {
+          "$ref": "#/$defs/date"
+        }
       }
     },
     "smartCriterion": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["status", "rationale", "evidence_ids"],
+      "required": [
+        "status",
+        "rationale",
+        "evidence_ids"
+      ],
       "properties": {
-        "status": { "enum": ["met", "needs_confirmation", "not_applicable"] },
-        "rationale": { "$ref": "#/$defs/nullableString" },
-        "evidence_ids": { "$ref": "#/$defs/evidenceIds" }
+        "status": {
+          "enum": [
+            "met",
+            "needs_confirmation",
+            "not_applicable"
+          ]
+        },
+        "rationale": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/evidenceIds"
+        }
       }
     },
     "smartCriteria": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["S", "M", "A", "R", "T"],
+      "required": [
+        "S",
+        "M",
+        "A",
+        "R",
+        "T"
+      ],
       "properties": {
-        "S": { "$ref": "#/$defs/smartCriterion" },
-        "M": { "$ref": "#/$defs/smartCriterion" },
-        "A": { "$ref": "#/$defs/smartCriterion" },
-        "R": { "$ref": "#/$defs/smartCriterion" },
-        "T": { "$ref": "#/$defs/smartCriterion" }
+        "S": {
+          "$ref": "#/$defs/smartCriterion"
+        },
+        "M": {
+          "$ref": "#/$defs/smartCriterion"
+        },
+        "A": {
+          "$ref": "#/$defs/smartCriterion"
+        },
+        "R": {
+          "$ref": "#/$defs/smartCriterion"
+        },
+        "T": {
+          "$ref": "#/$defs/smartCriterion"
+        }
       }
     },
     "evidenceIds": {
       "type": "array",
       "uniqueItems": true,
-      "items": { "type": "string", "minLength": 1 }
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
     },
     "step": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["step_id", "order", "action", "owner", "start_date", "due_date", "done_criteria", "evidence_ids", "status"],
+      "required": [
+        "step_id",
+        "order",
+        "action",
+        "owner",
+        "start_date",
+        "due_date",
+        "done_criteria",
+        "evidence_ids",
+        "status"
+      ],
       "properties": {
-        "step_id": { "type": "string", "minLength": 1 },
-        "order": { "type": "integer", "minimum": 1 },
-        "action": { "type": "string", "minLength": 1 },
-        "owner": { "$ref": "#/$defs/nullableString" },
-        "start_date": { "$ref": "#/$defs/date" },
-        "due_date": { "$ref": "#/$defs/date" },
-        "done_criteria": { "$ref": "#/$defs/nullableString" },
-        "evidence_ids": { "$ref": "#/$defs/evidenceIds" },
-        "status": { "enum": ["not_started", "in_progress", "completed", "blocked"] }
+        "step_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "start_date": {
+          "$ref": "#/$defs/date"
+        },
+        "due_date": {
+          "$ref": "#/$defs/date"
+        },
+        "done_criteria": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/evidenceIds"
+        },
+        "status": {
+          "enum": [
+            "not_started",
+            "in_progress",
+            "completed",
+            "blocked"
+          ]
+        }
       }
     },
     "task": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["task_key", "title", "summary", "category", "metric_id", "source_period", "target_period", "baseline", "target_value", "unit", "owner", "planned_start", "due_date", "steps", "resource_need", "success_criteria", "evidence_ids", "assumptions", "needs_review", "smart_check"],
+      "required": [
+        "task_key",
+        "title",
+        "summary",
+        "category",
+        "metric_id",
+        "source_period",
+        "target_period",
+        "baseline",
+        "target_value",
+        "unit",
+        "owner",
+        "planned_start",
+        "due_date",
+        "steps",
+        "resource_need",
+        "success_criteria",
+        "evidence_ids",
+        "assumptions",
+        "needs_review",
+        "smart_check"
+      ],
       "properties": {
-        "task_key": { "type": "string", "minLength": 1 },
-        "title": { "type": "string", "minLength": 1 },
-        "summary": { "type": "string" },
-        "category": { "type": "string" },
-        "metric_id": { "$ref": "#/$defs/nullableString" },
-        "source_period": { "$ref": "#/$defs/period" },
-        "target_period": { "$ref": "#/$defs/period" },
+        "task_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "summary": {
+          "type": "string"
+        },
+        "category": {
+          "enum": [
+            "revenue",
+            "cost",
+            "efficiency",
+            "other"
+          ]
+        },
+        "metric_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_period": {
+          "$ref": "#/$defs/period"
+        },
+        "target_period": {
+          "$ref": "#/$defs/period"
+        },
         "baseline": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
-          "required": ["value", "unit"],
+          "required": [
+            "value",
+            "unit"
+          ],
           "properties": {
-            "value": { "type": ["number", "null"] },
-            "unit": { "$ref": "#/$defs/nullableString" }
+            "value": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "unit": {
+              "$ref": "#/$defs/nullableString"
+            }
           }
         },
-        "target_value": { "type": ["number", "null"] },
-        "unit": { "$ref": "#/$defs/nullableString" },
-        "owner": { "$ref": "#/$defs/nullableString" },
-        "planned_start": { "$ref": "#/$defs/date" },
-        "due_date": { "$ref": "#/$defs/date" },
+        "target_value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "unit": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "owner": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "planned_start": {
+          "$ref": "#/$defs/date"
+        },
+        "due_date": {
+          "$ref": "#/$defs/date"
+        },
         "steps": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/$defs/step" }
+          "items": {
+            "$ref": "#/$defs/step"
+          }
         },
-        "resource_need": { "$ref": "#/$defs/nullableString" },
-        "success_criteria": { "$ref": "#/$defs/nullableString" },
-        "evidence_ids": { "$ref": "#/$defs/evidenceIds" },
+        "resource_need": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "success_criteria": {
+          "$ref": "#/$defs/nullableString"
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/evidenceIds"
+        },
         "assumptions": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["statement", "evidence_ids", "confidence"],
+            "required": [
+              "statement",
+              "evidence_ids",
+              "confidence"
+            ],
             "properties": {
-              "statement": { "type": "string" },
-              "evidence_ids": { "$ref": "#/$defs/evidenceIds" },
-              "confidence": { "enum": ["high", "medium", "low", "unknown"] }
+              "statement": {
+                "type": "string"
+              },
+              "evidence_ids": {
+                "$ref": "#/$defs/evidenceIds"
+              },
+              "confidence": {
+                "enum": [
+                  "high",
+                  "medium",
+                  "low",
+                  "unknown"
+                ]
+              }
             }
           }
         },
-        "needs_review": { "type": "array", "items": { "type": "string" } },
+        "needs_review": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
         "smart_check": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["overall_goal", "subgoals"],
+          "required": [
+            "overall_goal",
+            "subgoals"
+          ],
           "properties": {
             "overall_goal": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["goal_text", "criteria"],
+              "required": [
+                "goal_text",
+                "criteria"
+              ],
               "properties": {
-                "goal_text": { "type": "string" },
-                "criteria": { "$ref": "#/$defs/smartCriteria" }
+                "goal_text": {
+                  "type": "string"
+                },
+                "criteria": {
+                  "$ref": "#/$defs/smartCriteria"
+                }
               }
             },
             "subgoals": {
@@ -135,17 +349,51 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["subgoal_id", "goal_text", "criteria"],
+                "required": [
+                  "subgoal_id",
+                  "goal_text",
+                  "criteria"
+                ],
                 "properties": {
-                  "subgoal_id": { "type": "string", "minLength": 1 },
-                  "goal_text": { "type": "string" },
-                  "criteria": { "$ref": "#/$defs/smartCriteria" }
+                  "subgoal_id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "goal_text": {
+                    "type": "string"
+                  },
+                  "criteria": {
+                    "$ref": "#/$defs/smartCriteria"
+                  }
                 }
               }
             }
           }
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "category": {
+                "enum": [
+                  "revenue",
+                  "cost",
+                  "efficiency"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "metric_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

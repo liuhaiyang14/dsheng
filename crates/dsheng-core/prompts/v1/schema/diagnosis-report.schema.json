@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "diagnosis-report-v2",
-  "title": "Business diagnosis report v2",
+  "$id": "diagnosis-report-v3",
+  "title": "Business diagnosis report v3",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -24,11 +24,13 @@
     "stop_reason",
     "can_continue",
     "created_at",
-    "updated_at"
+    "updated_at",
+    "analysis_revision_no",
+    "analysis_input_fingerprint"
   ],
   "properties": {
     "schema_version": {
-      "const": "2"
+      "const": "3"
     },
     "report_id": {
       "type": "string",
@@ -171,6 +173,14 @@
     "updated_at": {
       "type": "string",
       "format": "date-time"
+    },
+    "analysis_revision_no": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "analysis_input_fingerprint": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
     }
   },
   "allOf": [
@@ -480,7 +490,8 @@
         "file_label",
         "sheet",
         "selected_range",
-        "content_hash"
+        "content_hash",
+        "selection_hash"
       ],
       "properties": {
         "source_id": {
@@ -497,13 +508,16 @@
           ]
         },
         "selected_range": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string",
+          "minLength": 1
         },
         "content_hash": {
-          "type": "string"
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "selection_hash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
         }
       }
     },
@@ -822,6 +836,7 @@
         "warning_id",
         "message",
         "status",
+        "resolution_requirement",
         "evidence_ids",
         "fact_ids",
         "resolution_note"
@@ -861,6 +876,12 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "resolution_requirement": {
+          "enum": [
+            "source_record",
+            "user_confirmation"
           ]
         }
       },

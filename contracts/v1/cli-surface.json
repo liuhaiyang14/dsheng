@@ -1,0 +1,806 @@
+{
+  "schema_version": "1",
+  "status": "planning_contract",
+  "spec": "docs/specs/provider-config-delivery.md",
+  "secrets_in_examples": false,
+  "command_defaults": {
+    "json_version": "1",
+    "active_workspace": "explicit flag else confirmed app preference; never infer from object ID",
+    "provider": "explicit flag else confirmed workspace active_provider_id",
+    "request_maximum": 1,
+    "automatic_retries": 0,
+    "stream": false,
+    "dry_run": "local preview only",
+    "generation_confirmation": [
+      "confirmation_id",
+      "confirm_send"
+    ],
+    "confirmation_ttl_seconds": 600,
+    "stdout": "single final JSON object for --json; progress and diagnostics only stderr",
+    "credential_input": "only api-key-stdin, never JSON/argv"
+  },
+  "aliases": {
+    "map": "Deprecated read alias of mapping show; no implicit mutation",
+    "task update --progress/--status/--note": "CLI sugar normalized to same task-edit schema, requires expected revision; no separate validation path"
+  },
+  "response_contract": {
+    "success": {
+      "schema_version": "1",
+      "ok": true,
+      "data": "command-specific object"
+    },
+    "error": {
+      "schema_version": "1",
+      "ok": false,
+      "error": {
+        "code": "catalog enum",
+        "message": "safe Chinese text",
+        "field": "nullable JSON-pointer or flag",
+        "details": "safe allowlisted metadata object"
+      }
+    }
+  },
+  "commands": [
+    {
+      "command": "workspace list",
+      "syntax": "dsheng workspace list --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": [],
+      "output_contract": "contracts/v1/settings.schema.json#/$defs/workspaceView (array for list)"
+    },
+    {
+      "command": "workspace create",
+      "syntax": "dsheng workspace create --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/settings.schema.json#/$defs/workspace_create",
+      "notes": [],
+      "output_contract": "contracts/v1/settings.schema.json#/$defs/workspaceView (array for list)"
+    },
+    {
+      "command": "workspace update",
+      "syntax": "dsheng workspace update --workspace <id> --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/settings.schema.json#/$defs/workspace_update",
+      "notes": [],
+      "output_contract": "contracts/v1/settings.schema.json#/$defs/workspaceView (array for list)"
+    },
+    {
+      "command": "workspace use",
+      "syntax": "dsheng workspace use --workspace <id> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/settings.schema.json#/$defs/workspace_use",
+      "notes": []
+    },
+    {
+      "command": "workspace period list",
+      "syntax": "dsheng workspace period list --workspace <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": [],
+      "output_contract": "contracts/v1/settings.schema.json#/$defs/periodPolicyView array inside data.policies"
+    },
+    {
+      "command": "workspace period set",
+      "syntax": "dsheng workspace period set --workspace <id> --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/settings.schema.json#/$defs/period_policy_set",
+      "notes": [
+        "cadence/effective_from explicit; week_start_day defaults ISO1, fiscal_year_start_month 1, timezone Asia/Shanghai before schema validation; output all applied defaults"
+      ]
+    },
+    {
+      "command": "provider list",
+      "syntax": "dsheng provider list --workspace <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": [
+        "Public fields and key_present only; no Key or Key hash"
+      ],
+      "output_contract": "contracts/v1/settings.schema.json#/$defs/providerView array inside data.providers"
+    },
+    {
+      "command": "provider set",
+      "syntax": "dsheng provider set --workspace <id> --input-json <file|-> [--api-key-stdin] --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/settings.schema.json#/$defs/provider_upsert",
+      "notes": [
+        "stdin cannot be used by both flags; key_action replace requires api-key-stdin; keep is default only in CLI sugar; no model connection test"
+      ]
+    },
+    {
+      "command": "provider use",
+      "syntax": "dsheng provider use --workspace <id> --provider <id|none> --expected-revision <workspace-revision> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/settings.schema.json#/$defs/provider_use",
+      "notes": []
+    },
+    {
+      "command": "provider clear-key",
+      "syntax": "dsheng provider clear-key --workspace <id> --provider <id> --expected-revision <provider-revision> --confirm-local --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/settings.schema.json#/$defs/provider_clear_key",
+      "notes": []
+    },
+    {
+      "command": "provider delete",
+      "syntax": "dsheng provider delete --workspace <id> --provider <id> --expected-revision <provider-revision> --confirm-local --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/settings.schema.json#/$defs/provider_delete",
+      "notes": [
+        "preview dependency count first; refuse active attempts; deleting default clears active_provider_id"
+      ]
+    },
+    {
+      "command": "scan",
+      "syntax": "dsheng scan --workspace <id> --dir <path> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": []
+    },
+    {
+      "command": "mapping show",
+      "syntax": "dsheng mapping show --workspace <id> --run <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": []
+    },
+    {
+      "command": "mapping set",
+      "syntax": "dsheng mapping set --workspace <id> --run <id> --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": [
+        "atomic versioned draft; explicit expected_revision; analysis recalculation required"
+      ]
+    },
+    {
+      "command": "manual-input list",
+      "syntax": "dsheng manual-input list --workspace <id> --period-key <key> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": []
+    },
+    {
+      "command": "manual-input set",
+      "syntax": "dsheng manual-input set --workspace <id> --period-key <key> --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": [
+        "source_note and expected_revision required; decimal strings remain decimal; no implicit reanalysis"
+      ]
+    },
+    {
+      "command": "metric list",
+      "syntax": "dsheng metric list --workspace <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/metric-catalog.json",
+      "notes": []
+    },
+    {
+      "command": "metric set",
+      "syntax": "dsheng metric set --workspace <id> --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/metric-catalog.json",
+      "notes": [
+        "versioned definition with expected_revision/effective_from; only permitted AST; no code execution"
+      ]
+    },
+    {
+      "command": "source-conflict list",
+      "syntax": "dsheng source-conflict list --workspace <id> --run <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": []
+    },
+    {
+      "command": "source-conflict resolve",
+      "syntax": "dsheng source-conflict resolve --workspace <id> --run <id> --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": [
+        "selected source evidence IDs, reason and expected_revision required; originals never overwritten"
+      ]
+    },
+    {
+      "command": "analyze",
+      "syntax": "dsheng analyze --workspace <id> --dir <path> --from <date> --to <date> --grain <auto|day|week|month|quarter> [--policy <id>] [--recalculate] [--input-json <file|->] --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": [
+        "no Provider; explicit policy required for boundary-crossing range; preserve historical snapshots"
+      ]
+    },
+    {
+      "command": "diagnosis generate",
+      "syntax": "dsheng diagnosis generate --workspace <id> --run <id> --framework <5why|5w|5w2h> --problem <text> [--focus-metric <id>] --evidence <id>... [--provider <id>] [--dry-run | --confirmation-id <id> --confirm-send] --json",
+      "kind": "generation",
+      "provider_calls_maximum": 1,
+      "input_contract": "diagnosis input contract in implementation plan and context specification",
+      "notes": [
+        "no confirmation flags means preview only, no HTTP; task objects forbidden"
+      ],
+      "preview_output_contract": "contracts/v1/settings.schema.json#/$defs/confirmationPreview"
+    },
+    {
+      "command": "diagnosis continue",
+      "syntax": "dsheng diagnosis continue --workspace <id> --session <id> --answers-stdin [--provider <id>] [--dry-run | --confirmation-id <id> --confirm-send] --json",
+      "kind": "generation",
+      "provider_calls_maximum": 1,
+      "input_contract": "diagnosis continuation contract in context specification",
+      "notes": [
+        "pending clarification/short answer behavior per context contract; do not auto-loop"
+      ],
+      "preview_output_contract": "contracts/v1/settings.schema.json#/$defs/confirmationPreview"
+    },
+    {
+      "command": "diagnosis revise",
+      "syntax": "dsheng diagnosis revise --workspace <id> --session <id> --fact <id> --replacement-stdin --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "replacement input; freezes old session and prepares a new report; no Provider request",
+      "notes": [
+        "requires the user's full replacement statement on stdin",
+        "does not mutate or retract the accepted fact in the original report",
+        "new report must pass normal preview and confirmation before any request"
+      ]
+    },
+    {
+      "command": "diagnosis pending cancel",
+      "syntax": "dsheng diagnosis pending cancel --workspace <id> --session <id> --turn <id> --expected-revision <n> --confirm-local --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": [
+        "clears only the matching pending clarification; preserves its turn history and does not alter the report"
+      ]
+    },
+    {
+      "command": "diagnosis list",
+      "syntax": "dsheng diagnosis list --workspace <id> --run <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "diagnosis show",
+      "syntax": "dsheng diagnosis show --workspace <id> --report <id> [--revision <n>] --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "diagnosis export",
+      "syntax": "dsheng diagnosis export --workspace <id> --report <id> [--revision <n>] --format <md|json|pdf> --out <path>",
+      "kind": "export",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "task generate",
+      "syntax": "dsheng task generate --workspace <id> --run <id> [--diagnosis-report <id>] [--provider <id>] [--dry-run | --confirmation-id <id> --confirm-send] --json",
+      "kind": "generation",
+      "provider_calls_maximum": 1,
+      "input_contract": "task input contract in implementation plan",
+      "notes": [
+        "optional report requires same analysis revision; local candidate identity/reconciliation per task-lifecycle.md"
+      ],
+      "preview_output_contract": "contracts/v1/settings.schema.json#/$defs/confirmationPreview"
+    },
+    {
+      "command": "generation retry",
+      "syntax": "dsheng generation retry --workspace <id> --attempt <id> [--provider <id>] [--dry-run | --confirmation-id <id> --confirm-send] --json",
+      "kind": "generation",
+      "provider_calls_maximum": 1,
+      "input_contract": "docs/specs/provider-config-delivery.md",
+      "notes": [
+        "only terminal unsuccessful attempt; fresh preview/confirmation; max one new request"
+      ],
+      "preview_output_contract": "contracts/v1/settings.schema.json#/$defs/confirmationPreview"
+    },
+    {
+      "command": "generation status",
+      "syntax": "dsheng generation status --workspace <id> --attempt <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "generation cancel",
+      "syntax": "dsheng generation cancel --workspace <id> --attempt <id> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": [
+        "only local cancellation; cannot guarantee remote billing stopped"
+      ]
+    },
+    {
+      "command": "task list",
+      "syntax": "dsheng task list --workspace <id> [--run <id>] --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "task show",
+      "syntax": "dsheng task show --workspace <id> --task <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "task update",
+      "syntax": "dsheng task update --workspace <id> --task <id> --patch-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/task-edit.schema.json",
+      "notes": []
+    },
+    {
+      "command": "task step update",
+      "syntax": "dsheng task step update --workspace <id> --step <id> --patch-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/task-edit.schema.json",
+      "notes": []
+    },
+    {
+      "command": "task step add",
+      "syntax": "dsheng task step add --workspace <id> --task <id> --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/task-edit.schema.json",
+      "notes": []
+    },
+    {
+      "command": "task step delete",
+      "syntax": "dsheng task step delete --workspace <id> --step <id> --expected-revision <n> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/task-lifecycle.md",
+      "notes": []
+    },
+    {
+      "command": "task step move",
+      "syntax": "dsheng task step move --workspace <id> --step <id> --before <step-id> --expected-revision <n> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/task-lifecycle.md",
+      "notes": []
+    },
+    {
+      "command": "task reconcile",
+      "syntax": "dsheng task reconcile --workspace <id> --run <id> --input-json <file|-> (--dry-run | --apply) --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/task-reconcile.schema.json",
+      "notes": [
+        "Schema includes candidate identity, expected revisions and apply_token; --dry-run returns diff/apply_token; --apply requires token; no model identity matching"
+      ]
+    },
+    {
+      "command": "task timeline",
+      "syntax": "dsheng task timeline --workspace <id> --from <date> --to <date> --grain <day|week|month|quarter> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "history list",
+      "syntax": "dsheng history list --workspace <id>  --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/task-lifecycle.md",
+      "notes": []
+    },
+    {
+      "command": "history show",
+      "syntax": "dsheng history show --workspace <id> --run <id> [--revision <n>] --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/task-lifecycle.md",
+      "notes": []
+    },
+    {
+      "command": "history revisions",
+      "syntax": "dsheng history revisions --workspace <id> --run <id> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/task-lifecycle.md",
+      "notes": []
+    },
+    {
+      "command": "history compare",
+      "syntax": "dsheng history compare --workspace <id> --run <id> [--revision <n>] --type <mom|yoy> --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/task-lifecycle.md",
+      "notes": []
+    },
+    {
+      "command": "history delete",
+      "syntax": "dsheng history delete --workspace <id> --run <id> (--dry-run | --confirm-delete <delete_preview_id>) --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/task-lifecycle.md",
+      "notes": [
+        "dependency-aware physical delete; separate delete preview is not Provider confirmation"
+      ]
+    },
+    {
+      "command": "export bundle",
+      "syntax": "dsheng export --workspace <id> --run <id> [--revision <n>] --bundle business --out <path.zip>",
+      "kind": "export",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "export workbook",
+      "syntax": "dsheng export --workspace <id> --run <id> [--revision <n>] --workbook <accounting|trend|task> --out <path.xlsx>",
+      "kind": "export",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "export meeting",
+      "syntax": "dsheng export --workspace <id> --run <id> [--revision <n>] --meeting --format <md|json> --out <path>",
+      "kind": "export",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "export chart",
+      "syntax": "dsheng export --workspace <id> --run <id> [--revision <n>] --chart <id> --format <png|csv|xlsx> --out <path>",
+      "kind": "export",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    },
+    {
+      "command": "template download",
+      "syntax": "dsheng template download --package import --out <path.zip>",
+      "kind": "export",
+      "provider_calls_maximum": 0,
+      "input_contract": "docs/specs/data-period-import.md",
+      "notes": []
+    },
+    {
+      "command": "version",
+      "syntax": "dsheng --version --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": [
+        "app version, schema version, contract versions, platform, architecture; no user data"
+      ]
+    },
+    {
+      "command": "help",
+      "syntax": "dsheng --help",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": []
+    }
+  ],
+  "errors": {
+    "INVALID_ARGUMENT": {
+      "exit_code": 2,
+      "meaning": "Invalid CLI or schema input"
+    },
+    "WORKSPACE_REQUIRED": {
+      "exit_code": 2,
+      "meaning": "No explicit or selected workspace"
+    },
+    "WORKSPACE_MISMATCH": {
+      "exit_code": 2,
+      "meaning": "Object outside selected workspace"
+    },
+    "REVISION_CONFLICT": {
+      "exit_code": 2,
+      "meaning": "Expected version differs"
+    },
+    "PROVIDER_REQUIRED": {
+      "exit_code": 2,
+      "meaning": "No explicit/default provider"
+    },
+    "PROVIDER_KEY_MISSING": {
+      "exit_code": 2,
+      "meaning": "Provider has no Key"
+    },
+    "PROVIDER_URL_INVALID": {
+      "exit_code": 2,
+      "meaning": "Invalid or forbidden URL"
+    },
+    "PROVIDER_IN_USE": {
+      "exit_code": 2,
+      "meaning": "Active attempt prevents deletion"
+    },
+    "CONFIRMATION_REQUIRED": {
+      "exit_code": 2,
+      "meaning": "Preview/confirmation required"
+    },
+    "CONFIRMATION_STALE": {
+      "exit_code": 2,
+      "meaning": "Snapshot changed or token expired"
+    },
+    "CONFIRMATION_CANCELLED": {
+      "exit_code": 2,
+      "meaning": "Cancelled before request"
+    },
+    "REQUEST_TOO_LARGE": {
+      "exit_code": 2,
+      "meaning": "Final body exceeds 1MiB"
+    },
+    "USER_MESSAGE_TOO_LARGE": {
+      "exit_code": 2,
+      "meaning": "User input exceeds 8000 Unicode scalars"
+    },
+    "CONTEXT_BUDGET_EXCEEDED": {
+      "exit_code": 2,
+      "meaning": "Conservative budget exceeded"
+    },
+    "INVALID_TIMEOUT_BUDGET": {
+      "exit_code": 2,
+      "meaning": "Timeout bounds or sum invalid"
+    },
+    "INVALID_CONTEXT_BUDGET": {
+      "exit_code": 2,
+      "meaning": "Reserve/context constraint invalid"
+    },
+    "RUNTIME_MISSING": {
+      "exit_code": 2,
+      "meaning": "Required desktop runtime absent"
+    },
+    "DATA_VALIDATION_FAILED": {
+      "exit_code": 3,
+      "meaning": "Input domain validation failed"
+    },
+    "DATA_DIRECTORY_UNAVAILABLE": {
+      "exit_code": 3,
+      "meaning": "Cannot resolve/create/open user data directory"
+    },
+    "LOCAL_SAVE_FAILED": {
+      "exit_code": 3,
+      "meaning": "Transaction failed"
+    },
+    "SOURCE_CHANGED": {
+      "exit_code": 3,
+      "meaning": "Locked source identity/range/hash changed"
+    },
+    "NETWORK_ERROR": {
+      "exit_code": 4,
+      "meaning": "Network or DNS error"
+    },
+    "TLS_ERROR": {
+      "exit_code": 4,
+      "meaning": "TLS validation error"
+    },
+    "REDIRECT_REJECTED": {
+      "exit_code": 4,
+      "meaning": "Unexpected redirect"
+    },
+    "CONNECT_TIMEOUT": {
+      "exit_code": 4,
+      "meaning": "Connection deadline exceeded"
+    },
+    "RESPONSE_TIMEOUT": {
+      "exit_code": 4,
+      "meaning": "Read deadline exceeded"
+    },
+    "TOTAL_TIMEOUT": {
+      "exit_code": 4,
+      "meaning": "Total deadline exceeded"
+    },
+    "AUTH_FAILED": {
+      "exit_code": 4,
+      "meaning": "401"
+    },
+    "ACCESS_DENIED": {
+      "exit_code": 4,
+      "meaning": "403"
+    },
+    "ENDPOINT_OR_MODEL_NOT_FOUND": {
+      "exit_code": 4,
+      "meaning": "404"
+    },
+    "RATE_LIMITED": {
+      "exit_code": 4,
+      "meaning": "Known rate limit"
+    },
+    "QUOTA_EXHAUSTED": {
+      "exit_code": 4,
+      "meaning": "Known quota/package exhaustion"
+    },
+    "PROVIDER_REJECTED_UNKNOWN": {
+      "exit_code": 4,
+      "meaning": "Provider rejected with unknown cause"
+    },
+    "PROVIDER_SERVER_ERROR": {
+      "exit_code": 4,
+      "meaning": "5xx"
+    },
+    "CONTEXT_REJECTED": {
+      "exit_code": 4,
+      "meaning": "Provider rejected context length"
+    },
+    "RESPONSE_TOO_LARGE": {
+      "exit_code": 4,
+      "meaning": "Response body exceeds 2MiB"
+    },
+    "INCOMPLETE_OUTPUT": {
+      "exit_code": 4,
+      "meaning": "Non-stop explicit finish reason"
+    },
+    "PROTOCOL_ERROR": {
+      "exit_code": 4,
+      "meaning": "Missing or invalid envelope content"
+    },
+    "INVALID_JSON": {
+      "exit_code": 4,
+      "meaning": "Content JSON parse failed"
+    },
+    "SCHEMA_VALIDATION_FAILED": {
+      "exit_code": 4,
+      "meaning": "Output schema failed"
+    },
+    "SEMANTIC_VALIDATION_FAILED": {
+      "exit_code": 4,
+      "meaning": "Output domain validation failed"
+    },
+    "CANCELLED": {
+      "exit_code": 4,
+      "meaning": "Cancelled after dispatch"
+    },
+    "INTERRUPTED": {
+      "exit_code": 4,
+      "meaning": "Owner instance closed/crashed"
+    },
+    "EXPORT_FAILED": {
+      "exit_code": 5,
+      "meaning": "Export could not complete"
+    },
+    "DB_SCHEMA_UNSUPPORTED": {
+      "exit_code": 3,
+      "meaning": "Client does not support database version"
+    },
+    "INPUT_REVISION_CHANGED": {
+      "exit_code": 2,
+      "exit_code_after_dispatch": 4,
+      "meaning": "Analysis/report/input revision changed; no commit to current result; no silent automatic retry"
+    },
+    "DB_MIGRATION_BUSY": {
+      "exit_code": 3,
+      "meaning": "Migration or active writer prevents operation"
+    },
+    "DB_MIGRATION_FAILED": {
+      "exit_code": 3,
+      "meaning": "Migration failed; original database protected"
+    },
+    "DELETE_DEPENDENCY_BLOCKED": {
+      "exit_code": 3,
+      "meaning": "Deletion blocked by live dependency"
+    },
+    "IDEMPOTENCY_CONFLICT": {
+      "exit_code": 2,
+      "meaning": "Reused idempotency key with different payload"
+    },
+    "STALE_DIAGNOSIS_REFERENCE": {
+      "exit_code": 2,
+      "meaning": "Optional diagnosis does not match analysis/report revision"
+    },
+    "UNIT_MISMATCH": {
+      "exit_code": 3,
+      "meaning": "Metric/unit incompatible"
+    },
+    "STEP_STILL_BLOCKED": {
+      "exit_code": 3,
+      "meaning": "Unresolved blocked step prevents completion"
+    },
+    "DB_BACKUP_FAILED": {
+      "exit_code": 3,
+      "meaning": "Consistent local backup failed; do not migrate"
+    },
+    "DB_INTEGRITY_FAILED": {
+      "exit_code": 3,
+      "meaning": "Database integrity check failed; preserve files and stop"
+    },
+    "DB_RESTORE_FAILED": {
+      "exit_code": 3,
+      "meaning": "Explicit local restore failed; preserve original files"
+    },
+    "CONTEXT_INVALID": {
+      "exit_code": 2,
+      "meaning": "Cross-field or historical context is inconsistent"
+    },
+    "SCOPE_SELECTION_REQUIRED": {
+      "exit_code": 2,
+      "meaning": "Multiple business scopes require explicit selection"
+    },
+    "CLARIFICATION_RESTATEMENT_REQUIRED": {
+      "exit_code": 2,
+      "meaning": "An isolated confirmation cannot replace a full clarification"
+    },
+    "MUTATION_RESULT_DELETED": {
+      "exit_code": 2,
+      "meaning": "Idempotent mutation result was removed with deleted business objects"
+    },
+    "TASK_CATEGORY_METRIC_MISMATCH": {
+      "exit_code": 3,
+      "meaning": "Non-other category requires a valid metric; other may omit metric"
+    },
+    "TASK_CATEGORY_UNRECOGNIZED": {
+      "exit_code": 3,
+      "meaning": "Unknown task category rejects the entire candidate"
+    },
+    "DELETE_PREVIEW_STALE": {
+      "exit_code": 2,
+      "meaning": "Deletion dependencies changed after preview"
+    },
+    "DUPLICATE_CANDIDATE_KEY": {
+      "exit_code": 3,
+      "meaning": "Candidate-local task key is duplicated"
+    },
+    "DUPLICATE_RECONCILE_TARGET": {
+      "exit_code": 3,
+      "meaning": "Multiple candidates target one persistent task"
+    },
+    "STATE_PROGRESS_MISMATCH": {
+      "exit_code": 3,
+      "meaning": "Task completion state and progress disagree"
+    },
+    "STEP_OUTSIDE_TASK_PERIOD": {
+      "exit_code": 3,
+      "meaning": "Step schedule is outside the task period"
+    },
+    "AT_LEAST_ONE_STEP": {
+      "exit_code": 3,
+      "meaning": "A task must retain an active step"
+    },
+    "INPUT_CONTRACT_INVALID": {
+      "exit_code": 2,
+      "meaning": "Metric, target, conflict, unit, scope or evidence projection is inconsistent"
+    }
+  },
+  "compatibility": {
+    "breaking_change": "increment contract major/schema_version; old --json clients reject unsupported version",
+    "additive_output_fields": "minor app version allowed; existing meaning unchanged; schemas use explicit additionalProperties policy",
+    "unknown_cli_flags": "reject with INVALID_ARGUMENT",
+    "unknown_input_json_fields": "reject; never silently ignore",
+    "defaults": "CLI/UI apply only documented defaults before common schema validation, return chosen defaults in preview",
+    "domain_cross_checks": "Schema does not replace IDs/workspace/revision and cross-field validators"
+  },
+  "validation_note": "Planning contract only; static validation does not establish product implementation or model-content acceptance."
+}

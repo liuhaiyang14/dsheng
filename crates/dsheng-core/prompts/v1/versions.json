@@ -3,43 +3,51 @@
   "status": "candidate",
   "prompt_bundles": {
     "task": {
-      "prompt_version": "1.3",
+      "prompt_version": "2.0",
       "files": [
         "task/system.md",
         "task/user.md"
       ],
       "response_schema": "schema/task-output.schema.json",
-      "schema_version": "1"
+      "schema_version": "2",
+      "input_schema": "../../../../contracts/v1/task-input.schema.json",
+      "input_schema_version": "2"
     },
     "diagnosis_5why": {
-      "prompt_version": "1.3",
+      "prompt_version": "2.0",
       "files": [
         "diagnosis/system.md",
         "diagnosis/user.md",
         "diagnosis/framework-5why.md"
       ],
       "response_schema": "schema/diagnosis-turn-5why.schema.json",
-      "schema_version": "2"
+      "schema_version": "3",
+      "input_schema": "../../../../contracts/v1/diagnosis-input.schema.json",
+      "input_schema_version": "2"
     },
     "diagnosis_5w": {
-      "prompt_version": "1.4",
+      "prompt_version": "2.0",
       "files": [
         "diagnosis/system.md",
         "diagnosis/user.md",
         "diagnosis/framework-5w.md"
       ],
       "response_schema": "schema/diagnosis-turn-5w.schema.json",
-      "schema_version": "2"
+      "schema_version": "3",
+      "input_schema": "../../../../contracts/v1/diagnosis-input.schema.json",
+      "input_schema_version": "2"
     },
     "diagnosis_5w2h": {
-      "prompt_version": "1.4",
+      "prompt_version": "2.0",
       "files": [
         "diagnosis/system.md",
         "diagnosis/user.md",
         "diagnosis/framework-5w2h.md"
       ],
       "response_schema": "schema/diagnosis-turn-5w2h.schema.json",
-      "schema_version": "2"
+      "schema_version": "3",
+      "input_schema": "../../../../contracts/v1/diagnosis-input.schema.json",
+      "input_schema_version": "2"
     }
   },
   "diagnosis_report_schema": "schema/diagnosis-report.schema.json",
@@ -730,12 +738,13 @@
     "current_diagnosis_schema_version": "2",
     "remaining_authorized_attempts": 0,
     "message": "All authorized 8+5+2 attempts completed. Current task1.3 daily/monthly and diagnosis initial/related/scope/off-topic samples passed reviewed checks. Positive warning resolution was not observed; acceptance remains incomplete and the prompt/Provider work package remains unfrozen. No automatic retries or product E2E claims.",
-    "current_task_prompt_version": "1.3"
+    "current_task_prompt_version": "1.3",
+    "scope": "Historical last Provider batch; it did not test current prompt 2.0/schema 3 resources."
   },
   "manifest_schema_version": "1",
   "schema_version_semantics": "Manifest format only; runtime output schema version comes from the selected prompt bundle.",
-  "diagnosis_report_schema_version": "2",
-  "current_revision_reason": "Task1.3 step scheduling P1 repaired and tested in daily/monthly cases. Diagnosis schema2 warning upsert and conservative evidence handling reviewed. Positive active-to-resolved content acceptance remains unverified.",
+  "diagnosis_report_schema_version": "3",
+  "current_revision_reason": "Close plan contracts: typed metric/scope/target inputs, full fixed-source context, clarification/restate/revise lifecycle and evidence-typed warning resolution. All affected bundles need fresh real content validation.",
   "validation_totals": {
     "confirmed_dispatched_all_providers": 37,
     "additional_unobserved_dispatches_maximum": 5,
@@ -745,51 +754,37 @@
     "diagnosis/framework-5w.md": "1c67af076f4a7d1155c906a9bcb4223a50458d8d1af0d34e9fe89f77b0efac10",
     "diagnosis/framework-5w2h.md": "826863a3e4e5888b95a5c34464e9247cc1d39e31d454e2b7ec07af7fce417d85",
     "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
-    "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
-    "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
-    "schema/diagnosis-report.schema.json": "d08b0f8b90f0cd0ba4d689d831aee08070ce68b09521d8938498adb3ca7f92ce",
-    "schema/diagnosis-turn-5w.schema.json": "066b446444d43513b11f852c4c8f70c234b2aff0bf4453b323293545df89de76",
-    "schema/diagnosis-turn-5w2h.schema.json": "5718e2ca7d0d1fff355821e7676fa308b30aa08bbc601e539fdab5a0bebafd27",
-    "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13",
-    "schema/task-output.schema.json": "29ca980a63c219d6ec3e7b34804477e0ad9ccff88119380947d4578040a7c7e6",
-    "task/system.md": "50db8bd0fef85065b82c0a484e57f9cb15331106103c336b98fa1c4507aa5e8c",
-    "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1"
+    "diagnosis/system.md": "000f078d8a47b4f6903211838b84fbc3d82a35d2ced86c1f5cf65da1cf8bb643",
+    "diagnosis/user.md": "19325dc4cc6ea094ad696341eb19b46f81d8dd4306bebd4f8d6defd0a04380f9",
+    "schema/diagnosis-report.schema.json": "70297418d31838c14e216377698618334d4deaabbde7681352c8eefee858e15b",
+    "schema/diagnosis-turn-5w.schema.json": "721e1733a5e75baa3db48a0d3fa20e37cc94454885bc72c386feee1653b55d4b",
+    "schema/diagnosis-turn-5w2h.schema.json": "c286dc4b1b01f68acb6d2f72b83fe35f0c3ced90fdc3a48b44a44d5e343e6c26",
+    "schema/diagnosis-turn-5why.schema.json": "fcf1381052eeea6234a1ce7933c941978183e62e3cdb00916668c6d06bd9e0bd",
+    "schema/task-output.schema.json": "a8a134b4ea7d8de687b3d498368b5592264a1dd052363a76d3bebf12e4072137",
+    "task/system.md": "64967faccbf8207b471e7a45799304288deb836d346caae66255ff862e7e47fd",
+    "task/user.md": "8fe4664d28345c3eef91e7dfae1badfba815fdcf3ea2c408719a15891824ed70"
   },
   "current_acceptance": {
-    "state": "candidate_pending_plan_contracts_and_content_validation",
+    "state": "candidate_live_validation_complete_contract_incomplete",
     "date": "2026-10-30",
-    "static_review_unresolved_p0": 0,
-    "static_review_unresolved_p1": 10,
+    "static_review_unresolved_p0": null,
+    "static_review_unresolved_p1": null,
     "prompt_and_provider_work_package_frozen": false,
-    "task_prompt13": {
-      "daily_unknown_target_and_schedule": "passed",
-      "monthly_comparable_floor_and_expense_conflict": "passed"
-    },
-    "diagnosis_schema2": {
-      "initial_5why": "passed",
-      "initial_5w": "passed",
-      "initial_5w2h": "passed",
-      "relevant_continuation_full_actual_report": "passed",
-      "unsupported_warning_resolution_refused": "passed",
-      "scope_mismatch": "passed",
-      "off_topic_override": "passed",
-      "mapping_confirmation_keeps_source_boundary": "passed",
-      "positive_warning_resolution": "not_observed"
-    },
+    "engineering_ready": false,
+    "current_version_confirmed_dispatches": 16,
+    "remaining_authorized_attempts": 0,
+    "required_live_matrix": "docs/specs/prompt-context-validation.md#6",
+    "proposed_maximum_attempts": 16,
+    "proposed_is_authorized": false,
     "limits": [
-      "Sample-level checks do not establish statistical reliability.",
-      "5W/5W2H continuation, optional diagnosis reference in task generation, and product E2E remain unverified.",
-      "Pure schema checks and prototype state assertions are not Provider or application E2E tests."
+      "Current candidate 2.0/2/3 was dispatched 16 times to Z.ai Coding Plan glm-5.3 using synthetic inputs only; live validation is complete for this allowance.",
+      "Diagnosis initial/continuation and off-topic samples passed reviewed checks; scope clarification timed out.",
+      "Task responses in this batch lack retained bodies; useful-field extraction is unverified rather than rejected solely for provider formatting.",
+      "Warning resolution, correction/restate, and several matrix scenarios remain unverified.",
+      "Prompt output guidance changed after the live batch; affected task/diagnosis behavior is unverified until a future authorized run."
     ],
-    "remaining_planning_gate": "Close PR-01 through PR-10, complete the PR-11 through PR-13 handoff specifications, synchronize affected prompt/schema versions and run affected LV-01 through LV-08 live-content checks before engineering handoff. See docs/plan-readiness-review-2026-10-30.md. No new Provider allowance is granted.",
-    "previous_focused_review": {
-      "date": "2026-10-30",
-      "baseline_commit": "02fc2ff",
-      "unresolved_p0": 0,
-      "unresolved_p1": 0,
-      "scope": "Focused prompt/schema and observed sample fixes before the later overall plan-readiness audit; not overall engineering readiness."
-    },
-    "static_review_scope": "Overall plan-readiness review, grouped PR-01 through PR-10; includes business/data/lifecycle/context contracts. Counts are specification gaps, not implemented software defects."
+    "remaining_planning_gate": "Repair task JSON reliability and complete only explicitly authorized affected regressions; keep failed and unverified scenarios open.",
+    "task_output_schema_version": "2"
   },
   "plan_readiness_review": {
     "date": "2026-10-30",
@@ -799,10 +794,211 @@
     "unresolved_p0": 0,
     "unresolved_p1_groups": 10,
     "p2_handoff_items": 3,
-    "recommendations_status": "proposed_not_frozen",
+    "recommendations_status": "specified_pending_independent_review",
     "provider_calls_in_this_review": 0,
     "remaining_authorized_attempts": 0,
     "owner": "planning_main_agent",
-    "note": "Provider sample results and resource hashes are unchanged. No prompt or product implementation was changed by this review."
+    "note": "Original review counts remain a historical baseline; current closure review is separate.",
+    "followup_report": "docs/plan-closure-review-2026-10-30.md"
+  },
+  "historical_acceptance_snapshots": [
+    {
+      "baseline_commit": "b6303c8",
+      "acceptance": {
+        "state": "candidate_pending_plan_contracts_and_content_validation",
+        "date": "2026-10-30",
+        "static_review_unresolved_p0": 0,
+        "static_review_unresolved_p1": 10,
+        "prompt_and_provider_work_package_frozen": false,
+        "task_prompt13": {
+          "daily_unknown_target_and_schedule": "passed",
+          "monthly_comparable_floor_and_expense_conflict": "passed"
+        },
+        "diagnosis_schema2": {
+          "initial_5why": "passed",
+          "initial_5w": "passed",
+          "initial_5w2h": "passed",
+          "relevant_continuation_full_actual_report": "passed",
+          "unsupported_warning_resolution_refused": "passed",
+          "scope_mismatch": "passed",
+          "off_topic_override": "passed",
+          "mapping_confirmation_keeps_source_boundary": "passed",
+          "positive_warning_resolution": "not_observed"
+        },
+        "limits": [
+          "Sample-level checks do not establish statistical reliability.",
+          "5W/5W2H continuation, optional diagnosis reference in task generation, and product E2E remain unverified.",
+          "Pure schema checks and prototype state assertions are not Provider or application E2E tests."
+        ],
+        "remaining_planning_gate": "Close PR-01 through PR-10, complete the PR-11 through PR-13 handoff specifications, synchronize affected prompt/schema versions and run affected LV-01 through LV-08 live-content checks before engineering handoff. See docs/plan-readiness-review-2026-10-30.md. No new Provider allowance is granted.",
+        "previous_focused_review": {
+          "date": "2026-10-30",
+          "baseline_commit": "02fc2ff",
+          "unresolved_p0": 0,
+          "unresolved_p1": 0,
+          "scope": "Focused prompt/schema and observed sample fixes before the later overall plan-readiness audit; not overall engineering readiness."
+        },
+        "static_review_scope": "Overall plan-readiness review, grouped PR-01 through PR-10; includes business/data/lifecycle/context contracts. Counts are specification gaps, not implemented software defects."
+      },
+      "latest_provider_attempt": {
+        "batch_id": "zai-schema2-final-two",
+        "state": "partial_validated_pending_positive_warning_resolution",
+        "tested_model": "glm-5.3",
+        "current_requested_model": "glm-5.3",
+        "current_base_url": "https://api.z.ai/api/coding/paas/v4",
+        "current_diagnosis_schema_version": "2",
+        "remaining_authorized_attempts": 0,
+        "message": "All authorized 8+5+2 attempts completed. Current task1.3 daily/monthly and diagnosis initial/related/scope/off-topic samples passed reviewed checks. Positive warning resolution was not observed; acceptance remains incomplete and the prompt/Provider work package remains unfrozen. No automatic retries or product E2E claims.",
+        "current_task_prompt_version": "1.3",
+        "scope": "Historical last Provider batch; it did not test current prompt 2.0/schema 3 resources."
+      }
+    }
+  ],
+  "context_policy_version": "2",
+  "current_input_contract_hashes": {
+    "contracts/v1/diagnosis-input.schema.json": "e54bd7728f368474fb44e6fdbc5569f496094306ab4b9f6ba2cca3c2b3d7ebd4",
+    "contracts/v1/task-input.schema.json": "58ba2a2597ec0271b10e4de640aed66f6c53db27f1ca521fb1886359405e2d2a"
+  },
+  "current_live_validation": {
+    "batch_id": "zai-glm53-current-16",
+    "date": "2026-10-30",
+    "provider": "Z.ai Coding Plan",
+    "base_url": "https://api.z.ai/api/coding/paas/v4",
+    "endpoint": "/chat/completions",
+    "model": "glm-5.3",
+    "prompt_versions": {
+      "task": "2.0",
+      "diagnosis_5why": "2.0",
+      "diagnosis_5w": "2.0",
+      "diagnosis_5w2h": "2.0"
+    },
+    "schema_versions": {
+      "task": "2",
+      "diagnosis_turn": "3",
+      "diagnosis_report": "3",
+      "input": "2",
+      "context_policy": "2"
+    },
+    "authorized_maximum": 16,
+    "confirmed_dispatched": 16,
+    "automatic_retries": 0,
+    "authentication_or_quota_errors": 0,
+    "remaining_authorized_attempts": 0,
+    "scenario_counts": {
+      "diagnosis_schema_and_review_passes": 6,
+      "off_topic_schema_and_guard_passes": 1,
+      "scope_clarification_timeouts": 2,
+      "connectivity_probe_not_business_evidence": 1,
+      "task_useful_extraction_unavailable": 5
+    },
+    "scenario_results": [
+      {
+        "scenario": "5why_initial",
+        "result": "schema_and_semantic_pass",
+        "response_sha256": "040a5d31ff85591010f6d1bfa92e86914076173973dde1894696fe0db00f8f88",
+        "content_sha256": "b1b310d7cec70853377ce05c51439b8c0964d058b731e17a4bbf8d749446449f"
+      },
+      {
+        "scenario": "5why_continuation",
+        "result": "schema_and_semantic_pass",
+        "response_sha256": "8a4df7b7a91ee75af5731c24c0c5fe7e3c8a2dab5b9e039870bfd70a05e7f9cd",
+        "content_sha256": "d304a35dfa576c46ee82a734b077494d53dc0510da275a6b10b386511f89bfbb"
+      },
+      {
+        "scenario": "5w_initial",
+        "result": "schema_and_semantic_pass",
+        "response_sha256": "755cdc29fbb2dea3f270d64014c60c2ab0a5df610adbd561b97fa54898c29801",
+        "content_sha256": "1e83f17877df549a01db4d49dd35b302062a28eaa46f0117cbce05f0cc7e2a8e"
+      },
+      {
+        "scenario": "5w_continuation",
+        "result": "schema_and_semantic_pass",
+        "response_sha256": "63d371a5cfe81acb1e8950922d2be36fee6e34b74003936b3ea99cca354f7173",
+        "content_sha256": "56ad57c8349731b38d9b880f9c57fd43bc3778b85788e239c31837ae7212c705"
+      },
+      {
+        "scenario": "5w2h_initial",
+        "result": "schema_and_semantic_pass",
+        "response_sha256": "45b5906febac33233716d573e1f4e06c08ec8ebd5ea6d5d53828c11ac4a5f4a5",
+        "content_sha256": "c38be84f1b6f5bb42594b95806f03d9b765e7d4295c221bc8020f2eae4c22b09"
+      },
+      {
+        "scenario": "5w2h_continuation",
+        "result": "schema_and_semantic_pass",
+        "response_sha256": "3f5650780533ad06cd2ba2cdb3f7d65100b690e936f21a415b5925efa0c0deff",
+        "content_sha256": "7ccaa12b2791d489d9a929cc2573a9e144f7334e89a16ef4f76a1219be5a6511"
+      },
+      {
+        "scenario": "5why_off_topic",
+        "result": "schema_and_guard_pass",
+        "response_sha256": "f1ce2bc573953411f308e14cc362fa8732fcebd41ebe1d21f6841ce16f00368f",
+        "content_sha256": "4fa914adaabd6a65f45eabbe774410d85bb1863359020e63c2eeef228f9faddd"
+      },
+      {
+        "scenario": "5why_scope_guard",
+        "result": "transport_timeout",
+        "response_sha256": null,
+        "content_sha256": null
+      },
+      {
+        "scenario": "5why_scope_guard_final",
+        "result": "transport_timeout",
+        "response_sha256": null,
+        "content_sha256": null
+      },
+      {
+        "scenario": "task_monthly_floor",
+        "result": "content_json_error",
+        "response_sha256": "212aeaea002abee2ad9e64518cf209fca2dbeead404b7386ff94316b1f7ec6e9",
+        "content_sha256": "b3f7afd9f3f7701831a8330ff08f1506970c975a90154add653a314058d8f34d"
+      },
+      {
+        "scenario": "task_daily_no_schedule",
+        "result": "content_json_error",
+        "response_sha256": "fbb39b18476bab2c7b052a01ea9e849fa681d06b0ed15d73c2bc8707f103ccb6",
+        "content_sha256": "d74a2f9916c69d23927d610901acad60531f26088e792dcfb0aec8413fdaac5e"
+      },
+      {
+        "scenario": "task_with_real_diagnosis_reference",
+        "result": "content_json_error",
+        "response_sha256": "912e965d8681cfdba969d50ef90da340e8f11666ab1fc21e6e4fb9c765ace1af",
+        "content_sha256": "b4cad1e1736ce1ae39087335a965b2d3b2d15fb5f087ece1bcc96d0c8d29544a"
+      },
+      {
+        "scenario": "task_explicit_target_only_unknown",
+        "result": "content_json_error",
+        "response_sha256": "fd6a0bc3568281fadb4cbc0b988f533488fcb8782957e8a2906b0c671c7e007c",
+        "content_sha256": "bb469906aab5ded33c37ee76346d69dddc60b841490f65e414548ac7215ebfba"
+      },
+      {
+        "scenario": "task_compact_prompt_regression",
+        "result": "content_json_error",
+        "response_sha256": "1c433bd5e53217c7535c846722979ca8cdfd7fdf438ee00823be6de1959df420",
+        "content_sha256": "7415e48fd89f28cefcf4de22a79e86078eefbb78c9d74a3dabbd4dadea5f3b31"
+      },
+      {
+        "scenario": "connectivity_probe",
+        "result": "http_200_non_business_evidence",
+        "response_sha256": "21977a3ad26e525552ba71aa7eceb6fcdd020c07dc9c102058af4dbe4c01331",
+        "content_sha256": null
+      }
+    ],
+    "semantic_summary": "Provider envelope/text format is adapted without strict format rejection. Extracted objects must pass the dsheng output contract and semantic checks. Diagnosis initial/continuation and off-topic guard passed contract/semantic review. Scope clarification timed out twice. Five task responses lack retained bodies, so extraction and output-contract validation are unverified.",
+    "data_handling": "Synthetic structured inputs only; full requests/responses and credentials were not written to repository. Hashes are identifiers only.",
+    "validation_policy": {
+      "mode": "provider_format_adaptation_then_contract_validation",
+      "full_output_schema_role": "required output-contract validation after extraction",
+      "provider_outer_shape_difference_is_failure": false,
+      "hard_reject_conditions": [
+        "output_contract_schema_failure",
+        "required_field_unavailable",
+        "unsafe_reference",
+        "semantic_conflict"
+      ],
+      "retained_artifact_limit": "Task and scope responses in this batch retain hashes but not full bodies, so useful-field extraction is unverified.",
+      "prompt_revision_after_live_batch": "task/diagnosis output guidance now prefers contract-shaped JSON while allowing provider wrappers; extracted objects still require output-contract validation. No additional live request was available.",
+      "provider_format_strict_validation": false,
+      "output_contract_validation_required": true
+    }
   }
 }

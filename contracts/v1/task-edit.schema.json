@@ -1,0 +1,621 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dsheng-task-edit-v1",
+  "title": "Task edit input v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "task_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "expected_task_revision": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "mutation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "content"
+            },
+            "patch": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "category": {
+                  "enum": [
+                    "revenue",
+                    "cost",
+                    "efficiency",
+                    "other"
+                  ]
+                },
+                "metric_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "uuid"
+                },
+                "target_value": {
+                  "$ref": "#/$defs/decimalInput"
+                },
+                "planned_value": {
+                  "$ref": "#/$defs/decimalInput"
+                },
+                "actual_value": {
+                  "$ref": "#/$defs/decimalInput"
+                },
+                "current_value": {
+                  "$ref": "#/$defs/decimalInput"
+                },
+                "unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "mp_label": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "mp_unit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "owner": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "planned_start": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date"
+                },
+                "due_date": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date"
+                },
+                "resource_need": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "success_criteria": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "note": {
+                  "type": "string"
+                },
+                "review_note": {
+                  "type": "string"
+                },
+                "target_period": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "from",
+                    "to"
+                  ],
+                  "properties": {
+                    "from": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "to": {
+                      "type": "string",
+                      "format": "date"
+                    }
+                  }
+                }
+              },
+              "required": [],
+              "minProperties": 1
+            },
+            "step_operations": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "op": {
+                        "const": "add"
+                      },
+                      "client_step_key": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "content": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "owner": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "start_date": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date"
+                          },
+                          "due_date": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date"
+                          },
+                          "done_criteria": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "owner",
+                          "start_date",
+                          "due_date",
+                          "done_criteria"
+                        ]
+                      },
+                      "before_step_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "op",
+                      "client_step_key",
+                      "content",
+                      "before_step_id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "op": {
+                        "const": "update"
+                      },
+                      "step_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "patch": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "owner": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "start_date": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date"
+                          },
+                          "due_date": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "format": "date"
+                          },
+                          "done_criteria": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "enum": [
+                              "not_started",
+                              "in_progress",
+                              "completed",
+                              "blocked"
+                            ]
+                          },
+                          "blocked_reason": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [],
+                        "minProperties": 1
+                      }
+                    },
+                    "required": [
+                      "op",
+                      "step_id",
+                      "patch"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "op": {
+                        "const": "delete"
+                      },
+                      "step_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "op",
+                      "step_id"
+                    ]
+                  },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "op": {
+                        "const": "move"
+                      },
+                      "step_id": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "before_step_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "uuid"
+                      }
+                    },
+                    "required": [
+                      "op",
+                      "step_id",
+                      "before_step_id"
+                    ]
+                  }
+                ]
+              }
+            },
+            "source_note": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "anyOf": [
+            {
+              "required": [
+                "patch"
+              ]
+            },
+            {
+              "required": [
+                "step_operations"
+              ]
+            }
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "patch": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "target_value"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "planned_value"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "actual_value"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "current_value"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "patch"
+                ]
+              },
+              "then": {
+                "required": [
+                  "source_note"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "progress"
+            },
+            "progress_mode": {
+              "enum": [
+                "auto",
+                "manual"
+              ]
+            },
+            "progress": {
+              "$ref": "#/$defs/progressValue"
+            },
+            "status": {
+              "enum": [
+                "not_started",
+                "in_progress",
+                "completed",
+                "blocked"
+              ]
+            },
+            "adjustment_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "blocked_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "progress_mode",
+            "progress",
+            "status",
+            "adjustment_reason",
+            "blocked_reason"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "progress_mode": {
+                    "const": "manual"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "progress": {
+                    "type": "string"
+                  },
+                  "adjustment_reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "progress_mode": {
+                    "const": "auto"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "progress": {
+                    "type": "null"
+                  },
+                  "adjustment_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "status": {
+                    "const": "blocked"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "blocked_reason": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "blocked_reason": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "period_link"
+            },
+            "action": {
+              "enum": [
+                "attach",
+                "update",
+                "detach"
+              ]
+            },
+            "run_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "analysis_revision_no": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cycle_role": {
+              "enum": [
+                "review",
+                "plan"
+              ]
+            },
+            "source_period": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from",
+                "to"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "to": {
+                  "type": "string",
+                  "format": "date"
+                }
+              }
+            },
+            "target_period": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "from",
+                "to"
+              ],
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "to": {
+                  "type": "string",
+                  "format": "date"
+                }
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "action",
+            "run_id",
+            "analysis_revision_no",
+            "cycle_role",
+            "source_period",
+            "target_period"
+          ]
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "workspace_id",
+    "task_id",
+    "expected_task_revision",
+    "mutation_id",
+    "operation"
+  ],
+  "description": "Pure local edit contract: amounts/quantities/hours and progress use canonical decimal strings; model-wire schemas retain number literals via decimal-aware conversion. Service enforces precision, category/metric relationship, date ordering, workspace/revision, evidence and state-machine checks from docs/specs/task-lifecycle.md.",
+  "$defs": {
+    "decimalInput": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]{0,5}[1-9])?$",
+      "not": {
+        "const": "-0"
+      },
+      "description": "Canonical decimal string or null; no exponent/grouping/leading zero/trailing fractional zero/negative zero; at most six fraction digits. Core additionally checks 28 significant digits and declared unit."
+    },
+    "progressValue": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^(?:(?:0|[1-9][0-9]?)(?:\\.[0-9]?[1-9])?|100)$",
+      "description": "Canonical decimal percentage from 0 through 100 inclusive, at most two fraction digits; null only in auto mode."
+    }
+  }
+}

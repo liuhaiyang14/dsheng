@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "diagnosis-turn-5why-v2",
-  "title": "5WHY diagnosis turn v2",
+  "$id": "diagnosis-turn-5why-v3",
+  "title": "5WHY diagnosis turn v3",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -16,7 +16,7 @@
   ],
   "properties": {
     "schema_version": {
-      "const": "2"
+      "const": "3"
     },
     "framework": {
       "const": "5why"
@@ -437,6 +437,7 @@
         "warning_id",
         "message",
         "status",
+        "resolution_requirement",
         "evidence_ids",
         "fact_ids",
         "resolution_note"
@@ -476,6 +477,12 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "resolution_requirement": {
+          "enum": [
+            "source_record",
+            "user_confirmation"
           ]
         }
       },

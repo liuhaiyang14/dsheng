@@ -1,0 +1,853 @@
+{
+  "contract_version": "1.0",
+  "status": "expected_results_specification_not_product_test",
+  "fixture_origin": "fully_synthetic",
+  "provider_response": false,
+  "numeric_type": "decimal_string",
+  "cases": [
+    {
+      "case_id": "D01",
+      "operation": "flow_sum",
+      "input": {
+        "values": [
+          "0.1",
+          "0.2"
+        ],
+        "coverage": "disjoint_complete"
+      },
+      "expected": {
+        "value": "0.3"
+      }
+    },
+    {
+      "case_id": "D02",
+      "operation": "duplicate_summary",
+      "input": {
+        "metric": "sales_net",
+        "period": [
+          "2026-09-01",
+          "2026-09-30"
+        ],
+        "values": [
+          "100",
+          "100"
+        ],
+        "evidence_ids": [
+          "S1",
+          "S2"
+        ]
+      },
+      "expected": {
+        "value": "100",
+        "evidence_ids": [
+          "S1",
+          "S2"
+        ],
+        "summed": false
+      }
+    },
+    {
+      "case_id": "D03",
+      "operation": "conflicting_summary",
+      "input": {
+        "values": [
+          "100",
+          "105"
+        ],
+        "same_semantic_scope_period": true
+      },
+      "expected": {
+        "value": null,
+        "reason": "source_conflict"
+      }
+    },
+    {
+      "case_id": "D04",
+      "operation": "detail_and_total",
+      "input": {
+        "detail_values": [
+          "40",
+          "60"
+        ],
+        "total": "100",
+        "authoritative_representation": null
+      },
+      "expected": {
+        "value": null,
+        "reason": "source_selection_required"
+      }
+    },
+    {
+      "case_id": "D05",
+      "operation": "detail_and_total",
+      "input": {
+        "detail_values": [
+          "40",
+          "60"
+        ],
+        "total": "100",
+        "authoritative_representation": "detail"
+      },
+      "expected": {
+        "value": "100",
+        "reconciliation_difference": "0"
+      }
+    },
+    {
+      "case_id": "D06",
+      "operation": "inventory_rollforward",
+      "input": {
+        "opening": null,
+        "inbound": "20",
+        "outbound": "5",
+        "closing_observation": null
+      },
+      "expected": {
+        "value": null,
+        "reason": "missing_opening_balance"
+      }
+    },
+    {
+      "case_id": "D07",
+      "operation": "inventory_rollforward",
+      "input": {
+        "opening": "10",
+        "inbound": "20",
+        "outbound": "5"
+      },
+      "expected": {
+        "value": "25"
+      }
+    },
+    {
+      "case_id": "D08",
+      "operation": "inventory_rollforward",
+      "input": {
+        "opening": "2",
+        "inbound": "1",
+        "outbound": "5"
+      },
+      "expected": {
+        "value": "-2",
+        "warning": "negative_inventory"
+      }
+    },
+    {
+      "case_id": "D09",
+      "operation": "ratio_aggregate",
+      "input": {
+        "numerators": [
+          "10",
+          "60"
+        ],
+        "denominators": [
+          "100",
+          "300"
+        ]
+      },
+      "expected": {
+        "value": "0.175",
+        "not_simple_average": "0.15"
+      }
+    },
+    {
+      "case_id": "D10",
+      "operation": "positive_divide",
+      "input": {
+        "numerator": "12",
+        "denominator": "10"
+      },
+      "expected": {
+        "value": "1.2",
+        "capped": false
+      }
+    },
+    {
+      "case_id": "D11",
+      "operation": "positive_divide",
+      "input": {
+        "numerator": "12",
+        "denominator": "0"
+      },
+      "expected": {
+        "value": null,
+        "reason": "zero_denominator"
+      }
+    },
+    {
+      "case_id": "D12",
+      "operation": "positive_divide",
+      "input": {
+        "numerator": "12",
+        "denominator": "-10"
+      },
+      "expected": {
+        "value": null,
+        "reason": "negative_denominator"
+      }
+    },
+    {
+      "case_id": "D13",
+      "operation": "comparison",
+      "input": {
+        "current": "120",
+        "base": "100"
+      },
+      "expected": {
+        "absolute_change": "20",
+        "change_rate": "0.2",
+        "reason": null
+      }
+    },
+    {
+      "case_id": "D14",
+      "operation": "comparison",
+      "input": {
+        "current": "20",
+        "base": "0"
+      },
+      "expected": {
+        "absolute_change": "20",
+        "change_rate": null,
+        "reason": "zero_base"
+      }
+    },
+    {
+      "case_id": "D15",
+      "operation": "comparison",
+      "input": {
+        "current": "-20",
+        "base": "-40"
+      },
+      "expected": {
+        "absolute_change": "20",
+        "change_rate": null,
+        "reason": "negative_base"
+      }
+    },
+    {
+      "case_id": "D16",
+      "operation": "stock_aggregation",
+      "input": {
+        "month_end_values": [
+          "10",
+          "20",
+          "15"
+        ],
+        "last_date": "2026-03-31",
+        "target_end": "2026-03-31"
+      },
+      "expected": {
+        "value": "15",
+        "not_sum": "45"
+      }
+    },
+    {
+      "case_id": "D17",
+      "operation": "overlapping_details_without_key",
+      "input": {
+        "source_count": 2,
+        "ranges_overlap": true,
+        "confirmed_row_key": null
+      },
+      "expected": {
+        "value": null,
+        "reason": "overlap_unresolved"
+      }
+    },
+    {
+      "case_id": "D18",
+      "operation": "cumulative_and_months",
+      "input": {
+        "months": [
+          "10",
+          "20",
+          "30"
+        ],
+        "cumulative": "60",
+        "authoritative_representation": "monthly"
+      },
+      "expected": {
+        "value": "60",
+        "not_sum": "120"
+      }
+    },
+    {
+      "case_id": "D19",
+      "operation": "configured_formula",
+      "input": {
+        "metric": "settlement_income",
+        "formula": null,
+        "labor_treatment": null
+      },
+      "expected": {
+        "value": null,
+        "reason": "configuration_required"
+      }
+    },
+    {
+      "case_id": "D20",
+      "operation": "formula_ast",
+      "input": {
+        "formula": {
+          "op": "call",
+          "name": "fetch",
+          "args": []
+        }
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "unsupported_formula_op"
+      }
+    },
+    {
+      "case_id": "D21",
+      "operation": "input_decimal",
+      "input": {
+        "value": "1.1234567"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "decimal_precision_exceeded"
+      }
+    },
+    {
+      "case_id": "D22",
+      "operation": "display_money",
+      "input": {
+        "value": "2.345"
+      },
+      "expected": {
+        "display": "2.34",
+        "stored": "2.345"
+      }
+    },
+    {
+      "case_id": "D23",
+      "operation": "monthly_target",
+      "input": {
+        "metric": "sales_net",
+        "direction": "up",
+        "scope": "monthly_revenue_floor",
+        "grain": "month",
+        "annual_month_plan": "1100",
+        "prior_year_actual": "1200",
+        "incomparable_value": "1800",
+        "explicit_target": null
+      },
+      "expected": {
+        "target": "1200",
+        "excluded": [
+          "1800"
+        ]
+      }
+    },
+    {
+      "case_id": "D24",
+      "operation": "explicit_target_only",
+      "input": {
+        "metric": "operating_expense",
+        "direction": "down",
+        "grain": "month",
+        "historical_actual": "500",
+        "annual_month_plan": null,
+        "explicit_target": null
+      },
+      "expected": {
+        "target": null,
+        "reason": "confirmed_target_missing"
+      }
+    },
+    {
+      "case_id": "D25",
+      "operation": "explicit_target_only",
+      "input": {
+        "metric": "cycle_time",
+        "direction": "down",
+        "grain": "month",
+        "historical_actual": "40",
+        "explicit_target": "35"
+      },
+      "expected": {
+        "target": "35"
+      }
+    },
+    {
+      "case_id": "D26",
+      "operation": "non_month_target",
+      "input": {
+        "metric": "sales_net",
+        "grain": "day",
+        "annual_month_plan": "1100",
+        "prior_year_actual": "1200",
+        "explicit_target": null
+      },
+      "expected": {
+        "target": null,
+        "reason": "confirmed_target_missing"
+      }
+    },
+    {
+      "case_id": "D27",
+      "operation": "monthly_target_conflict",
+      "input": {
+        "metric": "sales_net",
+        "floor": "1200",
+        "explicit_target": "1150"
+      },
+      "expected": {
+        "candidate_target": "1200",
+        "original_explicit_target": "1150",
+        "approved_target_unchanged": true,
+        "needs_review": "候选上调待采纳"
+      }
+    },
+    {
+      "case_id": "D28",
+      "operation": "invoice_receipt_gap",
+      "input": {
+        "invoice": "100",
+        "receipts": "120"
+      },
+      "expected": {
+        "value": "-20",
+        "label": "开票收款差额（期间）",
+        "is_receivable_balance": false
+      }
+    },
+    {
+      "case_id": "P01",
+      "operation": "day_comparison",
+      "input": {
+        "from": "2024-02-29",
+        "to": "2024-02-29"
+      },
+      "expected": {
+        "mom": [
+          "2024-02-28",
+          "2024-02-28"
+        ],
+        "yoy": null,
+        "reason": "date_not_in_prior_year"
+      }
+    },
+    {
+      "case_id": "P02",
+      "operation": "week_comparison",
+      "input": {
+        "from": "2026-10-26",
+        "to": "2026-11-01",
+        "week_start_day": 1
+      },
+      "expected": {
+        "mom": [
+          "2026-10-19",
+          "2026-10-25"
+        ],
+        "yoy": [
+          "2025-10-27",
+          "2025-11-02"
+        ],
+        "yoy_label": "52周同期"
+      }
+    },
+    {
+      "case_id": "P03",
+      "operation": "month_comparison",
+      "input": {
+        "from": "2026-03-01",
+        "to": "2026-03-31"
+      },
+      "expected": {
+        "mom": [
+          "2026-02-01",
+          "2026-02-28"
+        ],
+        "yoy": [
+          "2025-03-01",
+          "2025-03-31"
+        ]
+      }
+    },
+    {
+      "case_id": "P04",
+      "operation": "fiscal_quarter_comparison",
+      "input": {
+        "from": "2027-01-01",
+        "to": "2027-03-31",
+        "fiscal_start_month": 4
+      },
+      "expected": {
+        "label": "FY2026 Q4",
+        "mom": [
+          "2026-10-01",
+          "2026-12-31"
+        ],
+        "yoy": [
+          "2026-01-01",
+          "2026-03-31"
+        ]
+      }
+    },
+    {
+      "case_id": "P05",
+      "operation": "custom_comparison",
+      "input": {
+        "from": "2026-10-10",
+        "to": "2026-10-16"
+      },
+      "expected": {
+        "mom": [
+          "2026-10-03",
+          "2026-10-09"
+        ],
+        "yoy": [
+          "2025-10-10",
+          "2025-10-16"
+        ]
+      }
+    },
+    {
+      "case_id": "P06",
+      "operation": "custom_comparison",
+      "input": {
+        "from": "2024-02-28",
+        "to": "2024-03-01"
+      },
+      "expected": {
+        "mom": [
+          "2024-02-25",
+          "2024-02-27"
+        ],
+        "yoy": null,
+        "reason": "prior_year_range_not_comparable"
+      }
+    },
+    {
+      "case_id": "P07",
+      "operation": "standard_month_comparison",
+      "input": {
+        "from": "2026-10-01",
+        "to": "2026-10-15"
+      },
+      "expected": {
+        "mom": null,
+        "yoy": null,
+        "reason": "partial_period"
+      }
+    },
+    {
+      "case_id": "P08",
+      "operation": "policy_selection",
+      "input": {
+        "from": "2026-10-01",
+        "to": "2026-10-31",
+        "change_at": "2026-10-16",
+        "explicit_policy": null
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "policy_selection_required"
+      }
+    },
+    {
+      "case_id": "P09",
+      "operation": "policy_selection",
+      "input": {
+        "from": "2026-10-01",
+        "to": "2026-10-31",
+        "change_at": "2026-10-16",
+        "explicit_policy": "V1"
+      },
+      "expected": {
+        "accepted": true,
+        "applied_policy": "V1",
+        "override": true,
+        "mixed_policy": false
+      }
+    },
+    {
+      "case_id": "P10",
+      "operation": "granularity_conversion",
+      "input": {
+        "source_grain": "month",
+        "target_grain": "day"
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "cannot_disaggregate"
+      }
+    },
+    {
+      "case_id": "P11",
+      "operation": "granularity_conversion",
+      "input": {
+        "source_grain": "day",
+        "target_grain": "month",
+        "coverage": "complete",
+        "empty_days_are_zero": true,
+        "semantic_signature_equal": true
+      },
+      "expected": {
+        "accepted": true,
+        "comparison_to_monthly_history": true
+      }
+    },
+    {
+      "case_id": "P12",
+      "operation": "granularity_conversion",
+      "input": {
+        "source_grain": "day",
+        "target_grain": "month",
+        "coverage": "partial",
+        "empty_days_are_zero": false
+      },
+      "expected": {
+        "accepted": false,
+        "reason": "coverage_incomplete"
+      }
+    },
+    {
+      "case_id": "P13",
+      "operation": "local_date",
+      "input": {
+        "timestamp": "2026-10-29T16:30:00Z",
+        "timezone": "Asia/Shanghai"
+      },
+      "expected": {
+        "date": "2026-10-30"
+      }
+    },
+    {
+      "case_id": "P14",
+      "operation": "excel_date",
+      "input": {
+        "system": "1900",
+        "serial": 60
+      },
+      "expected": {
+        "date": null,
+        "reason": "invalid_excel_date"
+      }
+    },
+    {
+      "case_id": "P15",
+      "operation": "ambiguous_date",
+      "input": {
+        "text": "01/02/26"
+      },
+      "expected": {
+        "date": null,
+        "reason": "ambiguous_date"
+      }
+    },
+    {
+      "case_id": "P16",
+      "operation": "next_custom_window",
+      "input": {
+        "from": "2026-10-10",
+        "to": "2026-10-16"
+      },
+      "expected": {
+        "from": "2026-10-17",
+        "to": "2026-10-23",
+        "label": "等长自定义行动窗口"
+      }
+    },
+    {
+      "case_id": "P17",
+      "operation": "month_compare_policy_versions",
+      "input": {
+        "policy_versions": [
+          "V1",
+          "V2"
+        ],
+        "calendar_signatures_equal": true,
+        "metric_signatures_equal": true,
+        "scope_equal": true,
+        "coverage": "complete"
+      },
+      "expected": {
+        "comparable": true
+      }
+    },
+    {
+      "case_id": "P18",
+      "operation": "week_compare_start",
+      "input": {
+        "week_start_days": [
+          1,
+          7
+        ]
+      },
+      "expected": {
+        "comparable": false,
+        "reason": "calendar_mismatch"
+      }
+    },
+    {
+      "case_id": "I01",
+      "operation": "merged_numeric_cell",
+      "input": {
+        "range": "B7:B9",
+        "anchor_value": "100",
+        "role": "numeric"
+      },
+      "expected": {
+        "observations": 1,
+        "filled_down": false
+      }
+    },
+    {
+      "case_id": "I02",
+      "operation": "duplicate_headers",
+      "input": {
+        "headers": [
+          "金额",
+          "金额"
+        ],
+        "columns": [
+          "C",
+          "D"
+        ]
+      },
+      "expected": {
+        "mapping_required": [
+          "C",
+          "D"
+        ],
+        "overwritten": false
+      }
+    },
+    {
+      "case_id": "I03",
+      "operation": "unknown_formula",
+      "input": {
+        "formula": "=EXTERNAL(A1)",
+        "cached_value": "100"
+      },
+      "expected": {
+        "value": null,
+        "reason": "unsupported_formula",
+        "executed": false
+      }
+    },
+    {
+      "case_id": "I04",
+      "operation": "missing_tokens",
+      "input": {
+        "values": [
+          "",
+          null,
+          "待补",
+          "NA",
+          "N/A",
+          "-",
+          "0"
+        ]
+      },
+      "expected": {
+        "states": [
+          "missing",
+          "missing",
+          "pending_input",
+          "missing",
+          "missing",
+          "missing",
+          "valid"
+        ],
+        "raw_text_preserved": true,
+        "last_value": "0"
+      }
+    },
+    {
+      "case_id": "I05",
+      "operation": "text_export",
+      "input": {
+        "value": "=SUM(A1:A3)",
+        "type": "string"
+      },
+      "expected": {
+        "xlsx_type": "text",
+        "csv_value": "'=SUM(A1:A3)"
+      }
+    },
+    {
+      "case_id": "I06",
+      "operation": "numeric_export",
+      "input": {
+        "value": "-12",
+        "type": "decimal"
+      },
+      "expected": {
+        "xlsx_type": "number",
+        "numeric_value": "-12"
+      }
+    },
+    {
+      "case_id": "I07",
+      "operation": "large_number_export",
+      "input": {
+        "value": "1234567890123456",
+        "type": "decimal"
+      },
+      "expected": {
+        "xlsx_type": "text",
+        "number_storage": "decimal_text",
+        "value": "1234567890123456"
+      }
+    },
+    {
+      "case_id": "I08",
+      "operation": "chart_without_cells",
+      "input": {
+        "sheet": "图表",
+        "cell_numeric_values": [],
+        "embedded_chart": true,
+        "references_resolvable": false
+      },
+      "expected": {
+        "series": [],
+        "reason": "chart_source_unavailable"
+      }
+    },
+    {
+      "case_id": "I09",
+      "operation": "multi_block_evidence",
+      "input": {
+        "header_rows": [
+          5,
+          11,
+          47
+        ],
+        "merged_title_rows": [
+          1,
+          2
+        ],
+        "block_scopes": [
+          "A",
+          "B",
+          "C"
+        ]
+      },
+      "expected": {
+        "blocks": 3,
+        "title_rows_as_data": false,
+        "cross_scope_sum": false
+      }
+    },
+    {
+      "case_id": "I10",
+      "operation": "source_period_from_filename",
+      "input": {
+        "filename": "sample_2026-10.xlsx",
+        "explicit_period": null
+      },
+      "expected": {
+        "period": null,
+        "reason": "period_confirmation_required",
+        "trend_generated": false
+      }
+    }
+  ]
+}

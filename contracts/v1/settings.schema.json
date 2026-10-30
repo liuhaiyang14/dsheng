@@ -1,0 +1,802 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dsheng-settings-operations-v1",
+  "title": "dsheng settings operations v1",
+  "description": "Public configuration mutation contract; API keys never appear here. Cross-field checks are normative in provider-config-delivery.md.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/workspace_create"
+    },
+    {
+      "$ref": "#/$defs/workspace_update"
+    },
+    {
+      "$ref": "#/$defs/workspace_use"
+    },
+    {
+      "$ref": "#/$defs/period_policy_set"
+    },
+    {
+      "$ref": "#/$defs/provider_upsert"
+    },
+    {
+      "$ref": "#/$defs/provider_use"
+    },
+    {
+      "$ref": "#/$defs/provider_clear_key"
+    },
+    {
+      "$ref": "#/$defs/provider_delete"
+    }
+  ],
+  "$defs": {
+    "timeouts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "connect_seconds",
+        "response_seconds",
+        "total_seconds"
+      ],
+      "properties": {
+        "connect_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60,
+          "default": 15
+        },
+        "response_seconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 600,
+          "default": 180
+        },
+        "total_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 900,
+          "default": 240
+        }
+      }
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context_window_tokens",
+        "output_reserve_tokens"
+      ],
+      "properties": {
+        "context_window_tokens": {
+          "type": "integer",
+          "minimum": 8192,
+          "maximum": 1048576,
+          "default": 32768
+        },
+        "output_reserve_tokens": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65536,
+          "default": 8192
+        }
+      }
+    },
+    "periodPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cadence",
+        "week_start_day",
+        "fiscal_year_start_month",
+        "timezone_id",
+        "effective_from"
+      ],
+      "properties": {
+        "cadence": {
+          "enum": [
+            "day",
+            "week",
+            "month",
+            "quarter"
+          ]
+        },
+        "week_start_day": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 7,
+          "default": 1
+        },
+        "fiscal_year_start_month": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12,
+          "default": 1
+        },
+        "timezone_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "default": "Asia/Shanghai"
+        },
+        "effective_from": {
+          "type": "string",
+          "format": "date"
+        }
+      }
+    },
+    "providerPublic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "protocol",
+        "base_url",
+        "model",
+        "stream",
+        "timeouts",
+        "budget"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "protocol": {
+          "const": "chat_completions"
+        },
+        "base_url": {
+          "type": "string",
+          "format": "uri",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "stream": {
+          "const": false
+        },
+        "timeouts": {
+          "$ref": "#/$defs/timeouts"
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
+        }
+      }
+    },
+    "workspace_create": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "name",
+        "initial_period_policy"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "workspace_create"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "initial_period_policy": {
+          "$ref": "#/$defs/periodPolicy"
+        }
+      }
+    },
+    "workspace_update": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "workspace_id",
+        "expected_revision",
+        "patch"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "workspace_update"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "patch": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          }
+        }
+      }
+    },
+    "workspace_use": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "workspace_id"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "workspace_use"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "period_policy_set": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "workspace_id",
+        "expected_revision",
+        "policy"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "period_policy_set"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "policy": {
+          "$ref": "#/$defs/periodPolicy"
+        }
+      }
+    },
+    "provider_upsert": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "workspace_id",
+        "provider_id",
+        "expected_revision",
+        "config",
+        "key_action"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "provider_upsert"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "provider_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "expected_revision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "config": {
+          "$ref": "#/$defs/providerPublic"
+        },
+        "key_action": {
+          "enum": [
+            "keep",
+            "replace"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "provider_id": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "expected_revision": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "expected_revision": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "provider_use": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "workspace_id",
+        "provider_id",
+        "expected_revision"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "provider_use"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "provider_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "provider_clear_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "workspace_id",
+        "provider_id",
+        "expected_revision",
+        "confirm_local"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "provider_clear_key"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "provider_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "confirm_local": {
+          "const": true
+        }
+      }
+    },
+    "provider_delete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "operation",
+        "workspace_id",
+        "provider_id",
+        "expected_revision",
+        "confirm_local"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "operation": {
+          "const": "provider_delete"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "provider_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expected_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "confirm_local": {
+          "const": true
+        }
+      }
+    },
+    "providerView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_id",
+        "workspace_id",
+        "revision",
+        "config",
+        "key_present",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "provider_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "config": {
+          "$ref": "#/$defs/providerPublic"
+        },
+        "key_present": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "workspaceView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "workspace_id",
+        "name",
+        "config_revision",
+        "active_provider_id",
+        "current_period_policy_id",
+        "created_at",
+        "updated_at"
+      ],
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "config_revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "active_provider_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "current_period_policy_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "periodPolicyView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "period_policy_id",
+        "workspace_id",
+        "version",
+        "policy",
+        "effective_to",
+        "created_at"
+      ],
+      "properties": {
+        "period_policy_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "policy": {
+          "$ref": "#/$defs/periodPolicy"
+        },
+        "effective_to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "confirmationPreview": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "confirmation_id",
+        "expires_at",
+        "workspace_id",
+        "workflow",
+        "operation",
+        "provider",
+        "run_id",
+        "analysis_revision_no",
+        "analysis_input_fingerprint",
+        "report_id",
+        "report_revision_no",
+        "input_manifest_hash",
+        "prompt_version",
+        "schema_version",
+        "context_policy_version",
+        "source_scope_summary",
+        "request_bytes",
+        "conservative_input_tokens",
+        "budget",
+        "timeouts",
+        "request_count_maximum",
+        "key_present"
+      ],
+      "properties": {
+        "confirmation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "workflow": {
+          "enum": [
+            "task",
+            "diagnosis"
+          ]
+        },
+        "operation": {
+          "enum": [
+            "task_generate",
+            "diagnosis_generate",
+            "diagnosis_continue",
+            "generation_retry"
+          ]
+        },
+        "provider": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider_id",
+            "revision",
+            "name",
+            "base_url",
+            "model"
+          ],
+          "properties": {
+            "provider_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "name": {
+              "type": "string"
+            },
+            "base_url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "model": {
+              "type": "string"
+            }
+          }
+        },
+        "run_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "analysis_revision_no": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "analysis_input_fingerprint": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "report_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "report_revision_no": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "input_manifest_hash": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "prompt_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "context_policy_version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_scope_summary": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "source_id",
+              "file_label",
+              "sheet",
+              "selected_range",
+              "row_count",
+              "content_hash"
+            ],
+            "properties": {
+              "source_id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "file_label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sheet": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "selected_range": {
+                "type": "string",
+                "minLength": 1
+              },
+              "row_count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "content_hash": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          }
+        },
+        "request_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1048576
+        },
+        "conservative_input_tokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
+        },
+        "timeouts": {
+          "$ref": "#/$defs/timeouts"
+        },
+        "request_count_maximum": {
+          "const": 1
+        },
+        "key_present": {
+          "const": true
+        }
+      }
+    }
+  },
+  "x-domain-validation": [
+    "provider_upsert: existing ID requires matching revision; new ID requires null revision",
+    "provider_use expected_revision is workspace config revision",
+    "total_seconds >= connect_seconds + response_seconds",
+    "output_reserve_tokens <= context_window_tokens/2",
+    "timezone_id must resolve in bundled IANA timezone database",
+    "effective_from must be real date and obey period-policy interval rules",
+    "provider URL restrictions in provider-config-delivery.md",
+    "key_action replace requires nonempty separately supplied secret; api_key forbidden in JSON",
+    "all referenced IDs must exist in resolved workspace",
+    "provider name is trimmed and unique per workspace"
+  ]
+}

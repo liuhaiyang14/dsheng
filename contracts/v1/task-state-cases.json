@@ -1,0 +1,1627 @@
+{
+  "contract_version": "1",
+  "fixture_kind": "synthetic_domain_inputs_not_provider_responses",
+  "execution_status": "specification_only_schema_cases_validated_domain_product_tests_not_implemented",
+  "schema_validation_cases": [
+    {
+      "id": "SC-01",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "title": "复核供应计划"
+          }
+        }
+      },
+      "schema_valid": true,
+      "reason": "普通内容patch，不触发Provider"
+    },
+    {
+      "id": "SC-02",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": "1200"
+          },
+          "source_note": "已确认预算"
+        }
+      },
+      "schema_valid": true,
+      "reason": "数值改变有人工来源说明"
+    },
+    {
+      "id": "SC-03",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": "1200"
+          }
+        }
+      },
+      "schema_valid": false,
+      "reason": "缺少source_note"
+    },
+    {
+      "id": "SC-04",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {}
+        }
+      },
+      "schema_valid": false,
+      "reason": "禁止空patch"
+    },
+    {
+      "id": "SC-05",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "manual",
+          "progress": "70",
+          "status": "in_progress",
+          "adjustment_reason": "部分验收尚未完成",
+          "blocked_reason": null
+        }
+      },
+      "schema_valid": true,
+      "reason": "manual显式原因"
+    },
+    {
+      "id": "SC-06",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "manual",
+          "progress": "70",
+          "status": "in_progress",
+          "adjustment_reason": null,
+          "blocked_reason": null
+        }
+      },
+      "schema_valid": false,
+      "reason": "manual缺少原因"
+    },
+    {
+      "id": "SC-07",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "auto",
+          "progress": null,
+          "status": "completed",
+          "adjustment_reason": null,
+          "blocked_reason": null
+        }
+      },
+      "schema_valid": true,
+      "reason": "结构通过，服务另核实际计数全完成"
+    },
+    {
+      "id": "SC-08",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "auto",
+          "progress": "100",
+          "status": "completed",
+          "adjustment_reason": null,
+          "blocked_reason": null
+        }
+      },
+      "schema_valid": false,
+      "reason": "auto不能提交人工progress"
+    },
+    {
+      "id": "SC-09",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "manual",
+          "progress": "30",
+          "status": "blocked",
+          "adjustment_reason": "已完成约三成",
+          "blocked_reason": "等待签收确认"
+        }
+      },
+      "schema_valid": true,
+      "reason": "阻塞必须说明"
+    },
+    {
+      "id": "SC-10",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "manual",
+          "progress": "30",
+          "status": "blocked",
+          "adjustment_reason": "已完成约三成",
+          "blocked_reason": null
+        }
+      },
+      "schema_valid": false,
+      "reason": "缺少blocked_reason"
+    },
+    {
+      "id": "SC-11",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "status": "completed"
+          }
+        }
+      },
+      "schema_valid": false,
+      "reason": "内容和进度分开"
+    },
+    {
+      "id": "SC-12",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "due_date": "2026-02-30"
+          }
+        }
+      },
+      "schema_valid": false,
+      "reason": "必须启用date format校验"
+    },
+    {
+      "id": "SC-13",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "step_operations": [
+            {
+              "op": "update",
+              "step_id": "00000000-0000-4000-8000-000000000010",
+              "patch": {
+                "start_date": "2026-10-01",
+                "due_date": "2026-10-03",
+                "done_criteria": "复核清单归档"
+              }
+            }
+          ]
+        }
+      },
+      "schema_valid": true,
+      "reason": "步骤完整字段可保存"
+    },
+    {
+      "id": "SC-14",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "step_operations": [
+            {
+              "op": "add",
+              "client_step_key": "new-a",
+              "content": {
+                "action": "核对来源",
+                "owner": null,
+                "start_date": null,
+                "due_date": null,
+                "done_criteria": null
+              },
+              "before_step_id": null
+            }
+          ]
+        }
+      },
+      "schema_valid": true,
+      "reason": "新增步骤由应用分配ID、状态未开始"
+    },
+    {
+      "id": "SC-15",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_period": {
+              "from": "2026-11-01",
+              "to": "2026-11-30"
+            }
+          }
+        }
+      },
+      "schema_valid": true,
+      "reason": "目标期间可显式修改，服务校验步骤边界"
+    },
+    {
+      "id": "SC-16",
+      "schema": "task-reconcile.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "run_id": "00000000-0000-4000-8000-000000000020",
+        "analysis_revision_no": 2,
+        "input_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+        "candidate_generation_id": "00000000-0000-4000-8000-000000000021",
+        "candidate_revision_no": 1,
+        "expected_tasks": [],
+        "mutation_id": "00000000-0000-4000-8000-000000000022",
+        "mappings": [
+          {
+            "candidate_task_key": "c-1",
+            "action": "new"
+          }
+        ]
+      },
+      "schema_valid": true,
+      "reason": "new任务无需模型永久ID"
+    },
+    {
+      "id": "SC-17",
+      "schema": "task-reconcile.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "run_id": "00000000-0000-4000-8000-000000000020",
+        "analysis_revision_no": 2,
+        "input_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+        "candidate_generation_id": "00000000-0000-4000-8000-000000000021",
+        "candidate_revision_no": 1,
+        "expected_tasks": [
+          {
+            "task_id": "00000000-0000-4000-8000-000000000002",
+            "task_revision_no": 3
+          }
+        ],
+        "mutation_id": "00000000-0000-4000-8000-000000000022",
+        "mappings": [
+          {
+            "candidate_task_key": "c-1",
+            "action": "update",
+            "existing_task_id": "00000000-0000-4000-8000-000000000002",
+            "take_fields": [
+              "title"
+            ],
+            "step_mappings": [
+              {
+                "candidate_step_id": "s-1",
+                "action": "update",
+                "existing_step_id": "00000000-0000-4000-8000-000000000010",
+                "take_fields": [
+                  "action"
+                ]
+              }
+            ],
+            "remove_existing_step_ids": [],
+            "final_step_order": [
+              {
+                "kind": "existing",
+                "step_id": "00000000-0000-4000-8000-000000000010"
+              }
+            ]
+          }
+        ]
+      },
+      "schema_valid": true,
+      "reason": "字段覆盖与步骤映射均显式"
+    },
+    {
+      "id": "SC-18",
+      "schema": "task-reconcile.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "run_id": "00000000-0000-4000-8000-000000000020",
+        "analysis_revision_no": 2,
+        "input_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+        "candidate_generation_id": "00000000-0000-4000-8000-000000000021",
+        "candidate_revision_no": 1,
+        "expected_tasks": [],
+        "mutation_id": "00000000-0000-4000-8000-000000000022",
+        "mappings": [
+          {
+            "candidate_task_key": "c-1",
+            "action": "replace",
+            "existing_task_id": "00000000-0000-4000-8000-000000000002"
+          }
+        ]
+      },
+      "schema_valid": false,
+      "reason": "替代必须有原因"
+    },
+    {
+      "id": "SC-19",
+      "schema": "task-reconcile.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "run_id": "00000000-0000-4000-8000-000000000020",
+        "analysis_revision_no": 2,
+        "input_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+        "candidate_generation_id": "00000000-0000-4000-8000-000000000021",
+        "candidate_revision_no": 1,
+        "expected_tasks": [],
+        "mutation_id": "00000000-0000-4000-8000-000000000022",
+        "mappings": []
+      },
+      "schema_valid": true,
+      "reason": "仅candidate tasks=[]时领域层允许，不能删除旧任务"
+    },
+    {
+      "id": "SC-20",
+      "schema": "task-reconcile.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "run_id": "00000000-0000-4000-8000-000000000020",
+        "analysis_revision_no": 2,
+        "input_fingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+        "candidate_generation_id": "00000000-0000-4000-8000-000000000021",
+        "candidate_revision_no": 1,
+        "expected_tasks": [],
+        "mutation_id": "00000000-0000-4000-8000-000000000022",
+        "mappings": [
+          {
+            "candidate_task_key": "c-1",
+            "action": "update",
+            "existing_task_id": "00000000-0000-4000-8000-000000000002",
+            "take_fields": [
+              "progress"
+            ],
+            "step_mappings": [],
+            "remove_existing_step_ids": [],
+            "final_step_order": []
+          }
+        ]
+      },
+      "schema_valid": false,
+      "reason": "候选不得覆盖进度且最终至少一条步骤"
+    },
+    {
+      "id": "SC-21",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": "1200.125"
+          },
+          "source_note": "本地确认目标"
+        }
+      },
+      "schema_valid": true,
+      "reason": "canonical decimal accepted without float conversion"
+    },
+    {
+      "id": "SC-22",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": 1200
+          },
+          "source_note": "本地确认目标"
+        }
+      },
+      "schema_valid": false,
+      "reason": "local numeric JSON number is forbidden"
+    },
+    {
+      "id": "SC-23",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "actual_value": "-0.125"
+          },
+          "source_note": "已确认冲销"
+        }
+      },
+      "schema_valid": true,
+      "reason": "negative business amount is retained"
+    },
+    {
+      "id": "SC-24",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "actual_value": "-0"
+          },
+          "source_note": "测试"
+        }
+      },
+      "schema_valid": false,
+      "reason": "negative zero is not canonical"
+    },
+    {
+      "id": "SC-25",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": "1.2300"
+          },
+          "source_note": "测试"
+        }
+      },
+      "schema_valid": false,
+      "reason": "trailing fractional zeros are not canonical"
+    },
+    {
+      "id": "SC-26",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": "1e3"
+          },
+          "source_note": "测试"
+        }
+      },
+      "schema_valid": false,
+      "reason": "exponent notation is not canonical"
+    },
+    {
+      "id": "SC-27",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": "1.1234567"
+          },
+          "source_note": "测试"
+        }
+      },
+      "schema_valid": false,
+      "reason": "input precision exceeds six fractional digits"
+    },
+    {
+      "id": "SC-28",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": null
+          },
+          "source_note": "撤销未确认目标"
+        }
+      },
+      "schema_valid": true,
+      "reason": "explicit null differs from numeric zero"
+    },
+    {
+      "id": "SC-29",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "category": "other",
+            "metric_id": null
+          }
+        }
+      },
+      "schema_valid": true,
+      "reason": "canonical category code, service applies category/metric relationship"
+    },
+    {
+      "id": "SC-30",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "category": "其他事项",
+            "metric_id": null
+          }
+        }
+      },
+      "schema_valid": false,
+      "reason": "display label is not local storage category code"
+    },
+    {
+      "id": "SC-31",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "manual",
+          "progress": "33.33",
+          "status": "in_progress",
+          "adjustment_reason": "人工评估",
+          "blocked_reason": null
+        }
+      },
+      "schema_valid": true,
+      "reason": "canonical progress accepts two decimals"
+    },
+    {
+      "id": "SC-32",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "manual",
+          "progress": 33.33,
+          "status": "in_progress",
+          "adjustment_reason": "人工评估",
+          "blocked_reason": null
+        }
+      },
+      "schema_valid": false,
+      "reason": "local progress JSON number is forbidden"
+    },
+    {
+      "id": "SC-33",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "progress",
+          "progress_mode": "manual",
+          "progress": "100.01",
+          "status": "in_progress",
+          "adjustment_reason": "人工评估",
+          "blocked_reason": null
+        }
+      },
+      "schema_valid": false,
+      "reason": "progress above 100 is forbidden"
+    },
+    {
+      "id": "SC-34",
+      "schema": "task-edit.schema.json",
+      "input": {
+        "schema_version": "1",
+        "workspace_id": "00000000-0000-4000-8000-000000000001",
+        "task_id": "00000000-0000-4000-8000-000000000002",
+        "expected_task_revision": 3,
+        "mutation_id": "00000000-0000-4000-8000-000000000003",
+        "operation": {
+          "kind": "content",
+          "patch": {
+            "target_value": "01"
+          },
+          "source_note": "测试"
+        }
+      },
+      "schema_valid": false,
+      "reason": "leading integer zero is not canonical"
+    }
+  ],
+  "domain_acceptance_cases": [
+    {
+      "id": "TS-01",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed",
+          "not_started",
+          "not_started"
+        ],
+        "mode": "auto",
+        "task_blocked_reason": null
+      },
+      "when": "recompute",
+      "expected": {
+        "progress": "33.33",
+        "status": "in_progress"
+      }
+    },
+    {
+      "id": "TS-02",
+      "test_layer": "domain",
+      "given": {
+        "completed_steps": 99999,
+        "total_steps": 100000,
+        "mode": "auto"
+      },
+      "when": "recompute",
+      "expected": {
+        "progress": "99.99",
+        "status": "in_progress",
+        "completed_at": null
+      }
+    },
+    {
+      "id": "TS-03",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed",
+          "not_started"
+        ],
+        "mode": "manual",
+        "progress": "70",
+        "status": "in_progress"
+      },
+      "when": "second_step_completed",
+      "expected": {
+        "mode": "auto",
+        "progress": "100",
+        "status": "completed",
+        "events_include": [
+          "progress_override_reset",
+          "completed"
+        ]
+      }
+    },
+    {
+      "id": "TS-04",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed",
+          "not_started"
+        ],
+        "mode": "manual",
+        "progress": "70",
+        "status": "in_progress"
+      },
+      "when": "change_second_step_action",
+      "expected": {
+        "mode": "manual",
+        "progress": "70",
+        "status": "in_progress",
+        "smart_status": "stale"
+      }
+    },
+    {
+      "id": "TS-05",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed",
+          "not_started"
+        ],
+        "mode": "manual",
+        "progress": "70",
+        "task_blocked_reason": "等待复核"
+      },
+      "when": "second_step_completed",
+      "expected": {
+        "mode": "auto",
+        "progress": "100",
+        "status": "blocked",
+        "blocked_reason": "等待复核",
+        "completed_at": null
+      }
+    },
+    {
+      "id": "TS-06",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed",
+          "blocked"
+        ],
+        "task_blocked_reason": null
+      },
+      "when": "request_task_completed",
+      "expected": {
+        "error": "STEP_STILL_BLOCKED",
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-07",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed",
+          "completed"
+        ],
+        "task_blocked_reason": "等待验收",
+        "status": "blocked"
+      },
+      "when": "explicit_clear_task_block_auto",
+      "expected": {
+        "status": "completed",
+        "progress": "100",
+        "completed_at": "service_now_utc"
+      }
+    },
+    {
+      "id": "TS-08",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed",
+          "completed"
+        ],
+        "status": "completed",
+        "completed_at": "2026-10-20T08:00:00Z"
+      },
+      "when": "reopen_second_step",
+      "expected": {
+        "status": "in_progress",
+        "progress": "50",
+        "completed_at": null,
+        "events_include": [
+          "reopened"
+        ],
+        "prior_completed_event_retained": true
+      }
+    },
+    {
+      "id": "TS-09",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed"
+        ],
+        "status": "completed"
+      },
+      "when": "delete_only_step",
+      "expected": {
+        "error": "AT_LEAST_ONE_STEP",
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-10",
+      "test_layer": "domain",
+      "given": {
+        "steps": [
+          "completed",
+          "not_started"
+        ],
+        "status": "in_progress"
+      },
+      "when": "delete_unfinished_step",
+      "expected": {
+        "status": "completed",
+        "progress": "100",
+        "deleted_step_tombstone": true,
+        "event_before_after_retained": true
+      }
+    },
+    {
+      "id": "TS-11",
+      "test_layer": "domain",
+      "given": {
+        "status": "blocked",
+        "due_date": "2026-10-29",
+        "workspace_date": "2026-10-30",
+        "lifecycle": "active"
+      },
+      "when": "derive_overdue",
+      "expected": {
+        "overdue": true,
+        "status": "blocked"
+      }
+    },
+    {
+      "id": "TS-12",
+      "test_layer": "domain",
+      "given": {
+        "status": "in_progress",
+        "due_date": null,
+        "workspace_date": "2026-10-30"
+      },
+      "when": "derive_overdue",
+      "expected": {
+        "overdue": false,
+        "display": "未设截止"
+      }
+    },
+    {
+      "id": "TS-13",
+      "test_layer": "domain",
+      "given": {
+        "manual_progress": "50",
+        "requested_status": "completed"
+      },
+      "when": "save_progress",
+      "expected": {
+        "error": "STATE_PROGRESS_MISMATCH",
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-14",
+      "test_layer": "domain",
+      "given": {
+        "existing_task_id": "T1",
+        "existing_owner": "用户修改岗位",
+        "steps": [
+          {
+            "id": "S1",
+            "status": "completed"
+          }
+        ],
+        "candidate_key": "new-name",
+        "take_fields": [
+          "title"
+        ],
+        "step_mapping": {
+          "candidate_step": "different-name",
+          "existing_step": "S1",
+          "take_fields": [
+            "action"
+          ]
+        }
+      },
+      "when": "apply_explicit_update",
+      "expected": {
+        "task_id": "T1",
+        "owner": "用户修改岗位",
+        "step_id": "S1",
+        "step_status": "completed",
+        "smart_status": "stale"
+      }
+    },
+    {
+      "id": "TS-15",
+      "test_layer": "domain",
+      "given": {
+        "old_tasks": [
+          "T1",
+          "T2"
+        ],
+        "candidate_tasks": [],
+        "mappings": []
+      },
+      "when": "apply_candidate",
+      "expected": {
+        "old_tasks": [
+          "T1",
+          "T2"
+        ],
+        "deleted": [],
+        "superseded": []
+      }
+    },
+    {
+      "id": "TS-16",
+      "test_layer": "domain",
+      "given": {
+        "candidate_keys": [
+          "same",
+          "same"
+        ]
+      },
+      "when": "validate_candidate",
+      "expected": {
+        "error": "DUPLICATE_CANDIDATE_KEY",
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-17",
+      "test_layer": "domain",
+      "given": {
+        "candidate_tasks": [
+          "C1",
+          "C2"
+        ],
+        "mappings": [
+          {
+            "candidate": "C1",
+            "existing_task": "T1"
+          },
+          {
+            "candidate": "C2",
+            "existing_task": "T1"
+          }
+        ]
+      },
+      "when": "prepare_reconcile",
+      "expected": {
+        "error": "DUPLICATE_RECONCILE_TARGET",
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-18",
+      "test_layer": "domain",
+      "given": {
+        "model_step_status": "completed",
+        "initial_application": true
+      },
+      "when": "create_local_task",
+      "expected": {
+        "local_step_status": "not_started",
+        "local_task_progress": "0",
+        "model_status_retained_in_snapshot": true
+      }
+    },
+    {
+      "id": "TS-19",
+      "test_layer": "repository",
+      "given": {
+        "candidate": "C1",
+        "mutation_id": "M1",
+        "digest": "D1",
+        "committed_result": {
+          "task_id": "T1"
+        }
+      },
+      "when": "apply_same_mutation_same_digest",
+      "expected": {
+        "returns": {
+          "task_id": "T1"
+        },
+        "additional_tasks": 0,
+        "additional_events": 0
+      }
+    },
+    {
+      "id": "TS-20",
+      "test_layer": "repository",
+      "given": {
+        "mutation_id": "M1",
+        "committed_digest": "D1"
+      },
+      "when": "apply_same_mutation_digest_D2",
+      "expected": {
+        "error": "IDEMPOTENCY_CONFLICT",
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-21",
+      "test_layer": "repository",
+      "given": {
+        "expected_task_revision": 3,
+        "current_task_revision": 4
+      },
+      "when": "apply_content_or_reconcile",
+      "expected": {
+        "error": "REVISION_CONFLICT",
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-22",
+      "test_layer": "repository",
+      "given": {
+        "current_analysis_revision": 2,
+        "attempt_analysis_revision": 1,
+        "source_hash_unchanged": true,
+        "manual_target_changed": true
+      },
+      "when": "commit_generation",
+      "expected": {
+        "error": "INPUT_REVISION_CHANGED",
+        "attempt_state": "failed",
+        "previous_valid_result_retained": true
+      }
+    },
+    {
+      "id": "TS-23",
+      "test_layer": "domain",
+      "given": {
+        "task_run_revision": 2,
+        "diagnosis_run_revision": 1,
+        "same_run_id": true
+      },
+      "when": "prepare_task_with_diagnosis",
+      "expected": {
+        "error": "STALE_DIAGNOSIS_REFERENCE",
+        "provider_requests": 0,
+        "silently_removed_reference": false
+      }
+    },
+    {
+      "id": "TS-24",
+      "test_layer": "repository",
+      "given": {
+        "run": "R1",
+        "snapshot": {
+          "analysis_revision": 1,
+          "task_snapshot": 2,
+          "progress": "20"
+        },
+        "live_progress": "20"
+      },
+      "when": "advance_live_progress_to_80_after_revision_sealed",
+      "expected": {
+        "history_snapshot_progress": "20",
+        "current_task_progress": "80",
+        "old_snapshot_changed": false
+      }
+    },
+    {
+      "id": "TS-25",
+      "test_layer": "repository",
+      "given": {
+        "task_id": "T1",
+        "links": [
+          {
+            "run": "R1",
+            "role": "plan"
+          },
+          {
+            "run": "R2",
+            "role": "review"
+          }
+        ]
+      },
+      "when": "advance_task_from_R2",
+      "expected": {
+        "task_records": 1,
+        "shared_event_history": true,
+        "R1_sealed_snapshot_unchanged": true
+      }
+    },
+    {
+      "id": "TS-26",
+      "test_layer": "repository",
+      "given": {
+        "comparison_base": {
+          "run": "B",
+          "revision": 1,
+          "value": "100"
+        },
+        "current_value": "120"
+      },
+      "when": "reanalyze_base_B_to_revision2_value200",
+      "expected": {
+        "old_absolute_change": "20",
+        "old_change_rate": "0.2",
+        "old_base_revision": 1
+      }
+    },
+    {
+      "id": "TS-27",
+      "test_layer": "repository",
+      "given": {
+        "target_run": "R1",
+        "active_attempt": true
+      },
+      "when": "delete_history",
+      "expected": {
+        "error": "DELETE_DEPENDENCY_BLOCKED",
+        "deleted": []
+      }
+    },
+    {
+      "id": "TS-28",
+      "test_layer": "repository",
+      "given": {
+        "target_run": "R1",
+        "tasks": [
+          {
+            "lifecycle": "active",
+            "status": "in_progress"
+          }
+        ]
+      },
+      "when": "delete_history",
+      "expected": {
+        "error": "DELETE_DEPENDENCY_BLOCKED",
+        "deleted": []
+      }
+    },
+    {
+      "id": "TS-29",
+      "test_layer": "repository",
+      "given": {
+        "target_run": "R1",
+        "tasks": [
+          {
+            "lifecycle": "active",
+            "status": "completed",
+            "other_run_links": []
+          }
+        ],
+        "external_dependencies": [],
+        "backups_exist": true
+      },
+      "when": "confirm_delete_history",
+      "expected": {
+        "delete_run_local_and_completed_task": true,
+        "original_files_retained": true,
+        "provider_config_retained": true,
+        "backups_retained": true,
+        "backup_warning_visible": true
+      }
+    },
+    {
+      "id": "TS-30",
+      "test_layer": "repository",
+      "given": {
+        "target_run": "R1",
+        "other_run_comparison_refs": [
+          "R1@1"
+        ]
+      },
+      "when": "delete_history",
+      "expected": {
+        "error": "DELETE_DEPENDENCY_BLOCKED",
+        "deleted": []
+      }
+    },
+    {
+      "id": "TS-31",
+      "test_layer": "repository",
+      "given": {
+        "delete_preview_dependency_digest": "D1",
+        "current_dependency_digest": "D2"
+      },
+      "when": "confirm_delete_history",
+      "expected": {
+        "error": "DELETE_PREVIEW_STALE",
+        "deleted": []
+      }
+    },
+    {
+      "id": "TS-32",
+      "test_layer": "repository",
+      "given": {
+        "db_schema": 3,
+        "client_supported_read_max": 2
+      },
+      "when": "open_database",
+      "expected": {
+        "error": "DB_SCHEMA_UNSUPPORTED",
+        "writes": 0,
+        "automatic_downgrade": false
+      }
+    },
+    {
+      "id": "TS-33",
+      "test_layer": "repository",
+      "given": {
+        "db_schema": 1,
+        "backup_integrity": "failed"
+      },
+      "when": "migrate_to_2",
+      "expected": {
+        "error": "DB_BACKUP_FAILED",
+        "db_schema": 1,
+        "migration_started": false
+      }
+    },
+    {
+      "id": "TS-34",
+      "test_layer": "repository",
+      "given": {
+        "db_schema": 1,
+        "consistent_backup": "verified",
+        "migration_failure_after_statement": 2
+      },
+      "when": "migrate_to_2",
+      "expected": {
+        "db_schema": 1,
+        "transaction_rolled_back": true,
+        "backup_retained": true
+      }
+    },
+    {
+      "id": "TS-35",
+      "test_layer": "repository",
+      "given": {
+        "live_other_instance": true,
+        "migration_requested": true
+      },
+      "when": "acquire_migration_lock",
+      "expected": {
+        "error": "DB_MIGRATION_BUSY",
+        "processes_killed": 0,
+        "provider_requests": 0
+      }
+    },
+    {
+      "id": "TS-36",
+      "test_layer": "installation",
+      "given": {
+        "user_db": "present",
+        "backups": "present"
+      },
+      "when": "uninstall_and_reinstall",
+      "expected": {
+        "user_db": "retained",
+        "backups": "retained",
+        "first_run_creates_empty_db": false
+      }
+    },
+    {
+      "id": "TS-37",
+      "test_layer": "repository",
+      "given": {
+        "restore_backup_integrity": "valid",
+        "current_db_integrity": "valid",
+        "all_clients_stopped": true
+      },
+      "when": "confirmed_restore",
+      "expected": {
+        "current_db_preservation_backup_created": true,
+        "restored_db_verified": true,
+        "source_files_untouched": true,
+        "provider_requests": 0
+      }
+    },
+    {
+      "id": "TS-38",
+      "test_layer": "domain",
+      "given": {
+        "task_workspace": "A",
+        "request_workspace": "B",
+        "known_valid_task_uuid": true
+      },
+      "when": "read_or_mutate_task",
+      "expected": {
+        "error": "WORKSPACE_MISMATCH",
+        "business_data_returned": false,
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-39",
+      "test_layer": "domain",
+      "given": {
+        "task_dates": [
+          "2026-11-01",
+          "2026-11-30"
+        ],
+        "step_date": "2026-12-01"
+      },
+      "when": "save_task",
+      "expected": {
+        "error": "STEP_OUTSIDE_TASK_PERIOD",
+        "mutations": 0
+      }
+    },
+    {
+      "id": "TS-40",
+      "test_layer": "domain",
+      "given": {
+        "selected_candidate_fields": [
+          "title"
+        ],
+        "old_owner": "已人工确认",
+        "candidate_owner": "其他岗位",
+        "existing_completed_step": true
+      },
+      "when": "apply_reconcile",
+      "expected": {
+        "owner": "已人工确认",
+        "completed_step_retained": true,
+        "unselected_fields_changed": false
+      }
+    },
+    {
+      "id": "TS-41",
+      "test_layer": "repository",
+      "given": {
+        "old_revision": 2,
+        "inherited_task_links": 1,
+        "task_revision_no": 7
+      },
+      "when": "analyze_creates_revision_3",
+      "expected": {
+        "snapshot_no": 0,
+        "snapshot_task_count": 1,
+        "snapshot_task_revision_no": 7,
+        "old_revision_sealed": true
+      }
+    },
+    {
+      "id": "TS-42",
+      "test_layer": "domain",
+      "given": {
+        "request_dispatched": true,
+        "dispatched_provider_revision": 2,
+        "current_provider_revision": 3,
+        "analysis_unchanged": true,
+        "report_unchanged": true,
+        "session_unchanged": true
+      },
+      "when": "commit_valid_generation_result",
+      "expected": {
+        "commit_allowed": true,
+        "recorded_provider_revision": 2,
+        "request_route_changed": false
+      }
+    },
+    {
+      "id": "TS-43",
+      "test_layer": "domain",
+      "given": {
+        "existing_target_period": {
+          "from": "2026-10-01",
+          "to": "2026-10-31"
+        },
+        "candidate_target_period": {
+          "from": "2026-11-01",
+          "to": "2026-11-30"
+        },
+        "take_fields": [
+          "title"
+        ]
+      },
+      "when": "apply_update_mapping",
+      "expected": {
+        "task_target_period": {
+          "from": "2026-10-01",
+          "to": "2026-10-31"
+        },
+        "current_run_plan_link_target_period": {
+          "from": "2026-11-01",
+          "to": "2026-11-30"
+        },
+        "other_run_links_changed": false
+      }
+    },
+    {
+      "id": "TS-44",
+      "test_layer": "repository",
+      "given": {
+        "candidate_mappings": [
+          "new",
+          "update",
+          "replace",
+          "ignore"
+        ],
+        "existing_same_role_link_for_update": true
+      },
+      "when": "apply_reconcile",
+      "expected": {
+        "new_plan_links": 2,
+        "updated_existing_plan_links": 1,
+        "ignored_plan_links": 0,
+        "duplicate_role_links": 0,
+        "link_diff_in_preview": true
+      }
+    },
+    {
+      "id": "TS-45",
+      "test_layer": "repository",
+      "given": {
+        "completed_run_without_external_dependencies": true,
+        "local_mutation_has_task_result": true,
+        "candidate_application_exists": true
+      },
+      "when": "delete_run_then_replay_same_mutation",
+      "expected": {
+        "candidate_application_removed": true,
+        "mutation_result_payload_removed": true,
+        "mutation_tombstone_retained": true,
+        "error": "MUTATION_RESULT_DELETED",
+        "deleted_task_recreated": false
+      }
+    },
+    {
+      "id": "TS-46",
+      "test_layer": "domain",
+      "given": {
+        "model_target_number_lexeme": "9007199254740993.125",
+        "model_category": "其他事项",
+        "model_metric_id": null
+      },
+      "when": "validate_and_normalize_provider_candidate",
+      "expected": {
+        "local_target_value": "9007199254740993.125",
+        "local_category": "other",
+        "float_conversion": false,
+        "raw_candidate_unchanged": true
+      }
+    },
+    {
+      "id": "TS-47",
+      "test_layer": "domain",
+      "given": {
+        "current_category": "revenue",
+        "current_metric_id": "00000000-0000-4000-8000-000000000020",
+        "content_patch": {
+          "category": "revenue",
+          "metric_id": null
+        }
+      },
+      "when": "apply_local_content_patch",
+      "expected": {
+        "accepted": false,
+        "error": "TASK_CATEGORY_METRIC_MISMATCH",
+        "partial_write": false
+      }
+    },
+    {
+      "id": "TS-48",
+      "test_layer": "domain",
+      "given": {
+        "current_category": "revenue",
+        "current_metric_id": "00000000-0000-4000-8000-000000000020",
+        "content_patch": {
+          "category": "other",
+          "metric_id": null
+        }
+      },
+      "when": "apply_local_content_patch",
+      "expected": {
+        "accepted": true,
+        "category": "other",
+        "metric_id": null,
+        "smart_status": "stale"
+      }
+    },
+    {
+      "id": "TS-49",
+      "test_layer": "domain",
+      "given": {
+        "model_category": "未定义方向"
+      },
+      "when": "validate_and_normalize_provider_candidate",
+      "expected": {
+        "accepted": false,
+        "error": "TASK_CATEGORY_UNRECOGNIZED",
+        "defaulted_to_other": false
+      }
+    },
+    {
+      "id": "TS-50",
+      "test_layer": "domain",
+      "given": {
+        "input_target_value": "12345678901234567890123456789",
+        "source_note": "超范围测试"
+      },
+      "when": "validate_local_content_patch",
+      "expected": {
+        "accepted": false,
+        "reason": "decimal_overflow",
+        "rounded": false
+      }
+    }
+  ]
+}

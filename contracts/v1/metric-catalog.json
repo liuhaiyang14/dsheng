@@ -1,0 +1,1010 @@
+{
+  "contract_version": "1.0",
+  "status": "specified_not_implemented",
+  "numeric_policy": {
+    "representation": "decimal",
+    "precision_digits": 28,
+    "input_max_fraction_digits": 6,
+    "division_fraction_digits": 12,
+    "division_rounding": "half_even",
+    "storage": "canonical_decimal_string",
+    "model_number_serialization": "decimal_aware_no_float",
+    "display_money_fraction_digits": 2,
+    "display_percent_fraction_digits": 1,
+    "overflow": "error",
+    "missing_is_zero": false
+  },
+  "formula_ast": {
+    "allowed_ops": {
+      "ref": {
+        "required": [
+          "op",
+          "metric_key"
+        ],
+        "additional_fields": false
+      },
+      "const": {
+        "required": [
+          "op",
+          "value"
+        ],
+        "value_type": "decimal_string_dimensionless",
+        "additional_fields": false
+      },
+      "add": {
+        "required": [
+          "op",
+          "args"
+        ],
+        "arity": 2,
+        "additional_fields": false
+      },
+      "sub": {
+        "required": [
+          "op",
+          "args"
+        ],
+        "arity": 2,
+        "additional_fields": false
+      },
+      "mul": {
+        "required": [
+          "op",
+          "args"
+        ],
+        "arity": 2,
+        "additional_fields": false
+      },
+      "div": {
+        "required": [
+          "op",
+          "args"
+        ],
+        "arity": 2,
+        "denominator": "positive_only",
+        "additional_fields": false
+      }
+    },
+    "max_nodes": 64,
+    "max_depth": 16,
+    "cycles": "reject",
+    "unknown_reference": "reject",
+    "unit_check": "required"
+  },
+  "target_policy": {
+    "monthly_revenue_floor": {
+      "eligible": [
+        "revenue_semantics_true",
+        "direction_up",
+        "month_target",
+        "comparable_baselines"
+      ],
+      "floor": "max(available_annual_month_plan,available_prior_year_same_month_actual)",
+      "explicit_target_below_floor": "preserve_original_input_propose_floor_candidate_with_needs_review",
+      "missing_floor": "use_explicit_confirmed_target_or_null",
+      "annual_total_divide_12": false,
+      "candidate_target": "max(valid_explicit_target,available_selected_annual_month_plan,available_selected_prior_year_same_month_actual)",
+      "source_conflicts": "unresolved_excluded; resolved_selected_value_only"
+    },
+    "explicit_target_only": {
+      "source": "explicit_confirmed_plan_or_improvement_target",
+      "missing": "null",
+      "historical_value_is_target": false
+    },
+    "none": {
+      "derive_target": false
+    }
+  },
+  "metrics": [
+    {
+      "metric_key": "sales_net",
+      "label": "不含税销售额",
+      "label_aliases": [
+        "不含税销售额",
+        "不含税订单金额",
+        "不含税收入"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "exclusive_confirmed"
+      },
+      "direction": "up",
+      "target_constraint_scope": "monthly_revenue_floor",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": true
+    },
+    {
+      "metric_key": "order_cost",
+      "label": "订单成本",
+      "label_aliases": [
+        "订单成本"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "exclusive_confirmed"
+      },
+      "direction": "down",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "invoice_amount",
+      "label": "开票金额",
+      "label_aliases": [
+        "开票金额"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "receipts_amount",
+      "label": "收款金额",
+      "label_aliases": [
+        "收款金额",
+        "回款金额"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "inbound_amount",
+      "label": "入库金额",
+      "label_aliases": [
+        "入库金额"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "payments_amount",
+      "label": "付款金额",
+      "label_aliases": [
+        "付款金额"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "operating_expense",
+      "label": "经营费用",
+      "label_aliases": [
+        "经营费用",
+        "经营费用合计"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "down",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "labor_cost",
+      "label": "人工费",
+      "label_aliases": [
+        "人工费",
+        "人工费用"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "work_hours",
+      "label": "工作工时",
+      "label_aliases": [
+        "工作工时",
+        "总工时"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "time",
+        "base_unit": "hour",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "effective_work_hours",
+      "label": "有效工时",
+      "label_aliases": [
+        "有效工时"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "time",
+        "base_unit": "hour",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "cycle_time",
+      "label": "处理耗时",
+      "label_aliases": [
+        "处理耗时"
+      ],
+      "semantic_type": "configured_derived",
+      "unit": {
+        "dimension": "time",
+        "base_unit": "hour",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "down",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "configured_recompute",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": true,
+      "notes": "企业明确平均/总耗时及底数；不能按标签猜聚合。",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "order_gross_profit",
+      "label": "订单毛利",
+      "label_aliases": [
+        "订单毛利"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "exclusive_confirmed"
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "recompute_after_aggregation",
+      "formula": {
+        "op": "sub",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "sales_net"
+          },
+          {
+            "op": "ref",
+            "metric_key": "order_cost"
+          }
+        ]
+      },
+      "required_inputs": [
+        "sales_net",
+        "order_cost"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "order_gross_margin",
+      "label": "订单毛利率",
+      "label_aliases": [
+        "订单毛利率"
+      ],
+      "semantic_type": "ratio",
+      "unit": {
+        "dimension": "ratio",
+        "base_unit": "1",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "ratio_of_aggregated_inputs",
+      "formula": {
+        "op": "div",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "order_gross_profit"
+          },
+          {
+            "op": "ref",
+            "metric_key": "sales_net"
+          }
+        ]
+      },
+      "required_inputs": [
+        "order_gross_profit",
+        "sales_net"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "collection_ratio",
+      "label": "回款率",
+      "label_aliases": [
+        "回款率"
+      ],
+      "semantic_type": "ratio",
+      "unit": {
+        "dimension": "ratio",
+        "base_unit": "1",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "ratio_of_aggregated_inputs",
+      "formula": {
+        "op": "div",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "receipts_amount"
+          },
+          {
+            "op": "ref",
+            "metric_key": "invoice_amount"
+          }
+        ]
+      },
+      "required_inputs": [
+        "receipts_amount",
+        "invoice_amount"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "payment_ratio",
+      "label": "付款率",
+      "label_aliases": [
+        "付款率"
+      ],
+      "semantic_type": "ratio",
+      "unit": {
+        "dimension": "ratio",
+        "base_unit": "1",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "ratio_of_aggregated_inputs",
+      "formula": {
+        "op": "div",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "payments_amount"
+          },
+          {
+            "op": "ref",
+            "metric_key": "inbound_amount"
+          }
+        ]
+      },
+      "required_inputs": [
+        "payments_amount",
+        "inbound_amount"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "允许超过100%。",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "invoice_receipt_gap",
+      "label": "开票收款差额（期间）",
+      "label_aliases": [
+        "开票收款差额（期间）"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "recompute_after_aggregation",
+      "formula": {
+        "op": "sub",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "invoice_amount"
+          },
+          {
+            "op": "ref",
+            "metric_key": "receipts_amount"
+          }
+        ]
+      },
+      "required_inputs": [
+        "invoice_amount",
+        "receipts_amount"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "不是应收/逾期余额；未回款标签须人工确认。",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "inbound_payment_gap",
+      "label": "入库付款差额（期间）",
+      "label_aliases": [
+        "入库付款差额（期间）"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "recompute_after_aggregation",
+      "formula": {
+        "op": "sub",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "inbound_amount"
+          },
+          {
+            "op": "ref",
+            "metric_key": "payments_amount"
+          }
+        ]
+      },
+      "required_inputs": [
+        "inbound_amount",
+        "payments_amount"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "不是应付余额；未付款标签须人工确认。",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "opening_inventory_qty",
+      "label": "期初库存数量",
+      "label_aliases": [
+        "期初库存数量",
+        "期初结存数量"
+      ],
+      "semantic_type": "stock",
+      "unit": {
+        "dimension": "quantity",
+        "base_unit": "workspace_confirmed_item_unit",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "opening_boundary",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "inbound_qty",
+      "label": "入库数量",
+      "label_aliases": [
+        "入库数量"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "quantity",
+        "base_unit": "workspace_confirmed_item_unit",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "outbound_qty",
+      "label": "出库数量",
+      "label_aliases": [
+        "出库数量"
+      ],
+      "semantic_type": "flow",
+      "unit": {
+        "dimension": "quantity",
+        "base_unit": "workspace_confirmed_item_unit",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_disjoint",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "inventory_qty",
+      "label": "期末库存数量",
+      "label_aliases": [
+        "期末库存数量",
+        "结存数量"
+      ],
+      "semantic_type": "stock",
+      "unit": {
+        "dimension": "quantity",
+        "base_unit": "workspace_confirmed_item_unit",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "closing_balance_or_rollforward",
+      "formula": {
+        "op": "sub",
+        "args": [
+          {
+            "op": "add",
+            "args": [
+              {
+                "op": "ref",
+                "metric_key": "opening_inventory_qty"
+              },
+              {
+                "op": "ref",
+                "metric_key": "inbound_qty"
+              }
+            ]
+          },
+          {
+            "op": "ref",
+            "metric_key": "outbound_qty"
+          }
+        ]
+      },
+      "required_inputs": [
+        "opening_inventory_qty",
+        "inbound_qty",
+        "outbound_qty"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "缺期初且无证实期末时null；负库存告警。",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "reference_purchase_unit_price",
+      "label": "参考采购单价",
+      "label_aliases": [
+        "参考采购单价"
+      ],
+      "semantic_type": "stock",
+      "unit": {
+        "dimension": "money_per_quantity",
+        "base_unit": "元/货品单位",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "closing_boundary",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "inventory_reference_value",
+      "label": "结存参考金额",
+      "label_aliases": [
+        "结存参考金额"
+      ],
+      "semantic_type": "stock",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "neutral",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "sum_item_closing_values",
+      "formula": {
+        "op": "mul",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "inventory_qty"
+          },
+          {
+            "op": "ref",
+            "metric_key": "reference_purchase_unit_price"
+          }
+        ]
+      },
+      "required_inputs": [
+        "inventory_qty",
+        "reference_purchase_unit_price"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "逐货品仓库计算；不是账面存货成本。",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "settlement_income",
+      "label": "结算收益",
+      "label_aliases": [
+        "结算收益"
+      ],
+      "semantic_type": "configured_derived",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "configured_recompute",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": true,
+      "notes": "须确认formula AST、全部输入及labor_treatment；无默认公式。",
+      "required_configuration": [
+        "formula",
+        "required_inputs",
+        "labor_treatment",
+        "semantic_unit"
+      ],
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "settlement_margin",
+      "label": "结算收益率",
+      "label_aliases": [
+        "结算收益率"
+      ],
+      "semantic_type": "ratio",
+      "unit": {
+        "dimension": "ratio",
+        "base_unit": "1",
+        "currency": null,
+        "tax_basis": null
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "configured_recompute",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": true,
+      "notes": "须确认formula AST、全部输入及labor_treatment；无默认公式。",
+      "required_configuration": [
+        "formula",
+        "required_inputs",
+        "labor_treatment",
+        "semantic_unit"
+      ],
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "value_added_per_hour",
+      "label": "单位时间附加值",
+      "label_aliases": [
+        "单位时间附加值"
+      ],
+      "semantic_type": "ratio",
+      "unit": {
+        "dimension": "money_per_time",
+        "base_unit": "元/hour",
+        "currency": "workspace_confirmed",
+        "tax_basis": "explicit_per_metric"
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "configured_recompute",
+      "formula": null,
+      "required_inputs": [],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": true,
+      "notes": "须确认formula AST、全部输入及labor_treatment；无默认公式。",
+      "required_configuration": [
+        "formula",
+        "required_inputs",
+        "labor_treatment",
+        "semantic_unit"
+      ],
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    }
+  ]
+}

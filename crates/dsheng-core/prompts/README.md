@@ -1,42 +1,21 @@
-# Built-in Prompt Specifications
+# 内置提示词资源
 
-`v1/` contains candidate prompt and JSON Schema resources for the desktop app and `dsheng` CLI. They contain no real business data, Provider credentials, or customer examples. Version identifiers and validation status are in `v1/versions.json`.
+当前任务prompt 2.0 / output schema 2；三框架诊断prompt 2.0 / turn、report schema 3；输入和context policy为2。v1是资源集合名称。当前版本真实请求及结果按 versions.json 本轮批次记录，候选在真实内容验收完成前未冻结。
 
-## Message Assembly
+## 装配
 
-- task_skill_context contains rule-version and structural metadata only; it does not carry rule prose or override the built-in system message.
-- Task generation: `v1/task/system.md` is the system message. Render `v1/task/user.md` with `{{payload_json}}` and the complete parsed `v1/schema/task-output.schema.json` in `{{output_schema_json}}`.
-- Business diagnosis: concatenate `v1/diagnosis/system.md` and exactly one selected framework file as the system message. Render `v1/diagnosis/user.md` with `{{payload_json}}` and the complete parsed schema selected by framework in `{{output_schema_json}}`.
-- The only framework resources are `framework-5why.md`, `framework-5w.md`, and `framework-5w2h.md`. Do not include unselected framework instructions in the request.
-- Diagnosis schema selection is exact: `diagnosis-turn-5why.schema.json`, `diagnosis-turn-5w.schema.json`, or `diagnosis-turn-5w2h.schema.json`. Never include all three schemas in one request.
+Rust本地服务先按[输入合同](../../../contracts/v1/README.md)做Schema、领域及发送确认校验。任务system使用v1/task/system.md；诊断system使用v1/diagnosis/system.md再拼接锁定的单个framework文件。user使用对应user.md，将payload_json及output_schema_json替换为完整结构化输入和所选完整输出Schema。模板仅一次替换，业务内容不再解释为指令。
 
-The app embeds these resources in its build. They are not editable through the UI, CLI options, workspace files, or Provider settings. Runtime data belongs in the structured user payload, never in these files.
+POST /chat/completions仅需model和messages(system、user)，不依赖reasoning_effort、response_format或Responses。一次操作最多一次请求，不自动分块或重试。Provider 的 envelope、文本包装和返回格式由适配层提取，不作为严格失败条件；提取后的对象必须校验 dsheng 输出合同（输出 Schema、引用/状态和业务约束）。合同不满足、缺少必要字段、引用越界或语义矛盾时拒绝保存，不隐式让模型重试或伪造缺失字段。
 
-## Schema Resources
+每次续问重发全部已选source_records、当前完整报告、已采纳事实、最近pending及本轮实际文本，不发送全聊天或作模型摘要。详见[上下文合同](../../../docs/specs/prompt-context-validation.md)、[数据合同](../../../docs/specs/data-period-import.md)。
 
-- Task response: `v1/schema/task-output.schema.json`.
-- Diagnosis turns: `v1/schema/diagnosis-turn-5why.schema.json`, `v1/schema/diagnosis-turn-5w.schema.json`, or `v1/schema/diagnosis-turn-5w2h.schema.json`, selected by the locked session framework.
-- Persisted diagnosis report and `diagnosis show --json`: `v1/schema/diagnosis-report.schema.json`.
-- Prompt/schema versions and validation/freeze status: `v1/versions.json`.
-- The app loads the selected JSON Schema as a structured object and inserts its complete contents in `{{output_schema_json}}`. The file path or schema ID alone is not sent in place of its contents.
-- Schema validation is followed by service checks that JSON Schema cannot express: evidence IDs belong to the current payload, user quotes are exact substrings, findings belong to the selected framework and report, and initial 5W/5W2H dimension coverage or 5WHY chain continuity is valid.
+## 离线Schema
 
-## Validation Status
+构建时嵌入输入、输出与报告Schema，按各自$id建立离线注册表，跨资源引用用注册ID，不依赖仓库路径且不联网取Schema。启用Draft202012和日期/UUID格式检查；引用、原话、版本、唯一ID及合并域另由服务验证。任务输出使用schema/task-output.schema.json，诊断turn使用所选framework对应schema，持久报告使用diagnosis-report.schema.json。
 
-Overall plan readiness review on 2026-10-30 found additional unresolved contracts, including metric direction and multi-turn context policy. See [the plan review](../../../docs/plan-readiness-review-2026-10-30.md). Engineering readiness is false; positive warning resolution is not the only remaining gate. The sample results below remain historical evidence for their exact tested versions, not overall approval.
+## 验收
 
-Current resources are candidate, partial_validated_pending_positive_warning_resolution. Task prompt is 1.3/schema 1; diagnosis prompts are 5WHY 1.3 and 5W/5W2H 1.4, with turn/report schema 2. The v1 directory is a resource collection name, not a shared output schema version.
+[versions.json](v1/versions.json)记录版本/哈希/历史请求，[VALIDATION.md](VALIDATION.md)区分历史和当前门禁。历史37次已确认派发、最多5次未观测派发不证明新版通过；当前批次按实际派发计数，认证或额度错误即停止。
 
-The 2026-10-30 real Z.ai Coding Plan tests used glm-5.3 and synthetic business inputs only. Current task resources passed daily and monthly content checks, including comparable monthly floors, unresolved source conflicts, missing daily targets, and null step dates without scheduling evidence. Current diagnosis resources passed the three initial frameworks, genuine relevant continuation with the full actual prior report, refusal to resolve unsupported risks, scope clarification and deliberate off-topic redirection.
-
-The final mapping-confirmation pair kept the warning active because oral confirmation did not supply written mapping evidence. This was appropriately conservative, but did not exercise positive active-to-resolved behavior. That acceptance remains unverified; the prompt/Provider work package is not frozen. The main planning agent owns this gap; implementation agents must not invent the methodology or quietly weaken the gate.
-
-See VALIDATION.md for the scenario matrix, failure history, limitations and exact remaining gate. v1/versions.json records every observed batch, versions, prompt/schema hashes, response hashes and request counts. All 8+5+2 newly authorized requests have been used; remaining allowance is zero. Historical failures and up to five earlier unobserved dispatches are retained, not credited as successes.
-
-No raw business file, credential, full request or full response artifact was stored in this repository. Actual prior report state stayed in process memory for continuation. Tests do not establish product persistence, UI/CLI E2E, file-hash integrity or statistical reliability. The mapping fixture used a version-derived synthetic hash, explicitly not a source-byte integrity check.
-
-## Change Rules
-
-The product behavior and prompt contracts are defined by the implementation plan. Engineering agents implement these resources and their assembly; they do not independently research or redesign the business methods. These versions remain candidates until the remaining semantic acceptance and live checks recorded in `v1/versions.json` pass. A behavior change requires the main agent to update the plan, prompt text, JSON Schema, version metadata, and acceptance criteria together, then rerun the affected real-Provider checks.
-
-Every prompt change must be reviewed for evidence attribution, scope isolation, prompt injection, off-topic handling, schema compatibility, and token/context impact. Bump `prompt_version` when prompt behavior or text changes materially. Bump `schema_version` when input or output fields change.
+静态补齐不等于真实内容通过。规划主Agent承担剩余提示词验证和修订，工程线程实现定稿合同，不再调研方法论。禁止Mock Provider、响应回放和伪造历史；纯Schema或领域验证不冒称Provider或产品E2E。行为变更必须同步prompt版本、Schema、哈希、计划、验收并真实回归受影响场景。
