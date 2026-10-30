@@ -23,6 +23,8 @@ The app embeds these resources in its build. They are not editable through the U
 
 ## Validation Status
 
+Overall plan readiness review on 2026-10-30 found additional unresolved contracts, including metric direction and multi-turn context policy. See [the plan review](../../../docs/plan-readiness-review-2026-10-30.md). Engineering readiness is false; positive warning resolution is not the only remaining gate. The sample results below remain historical evidence for their exact tested versions, not overall approval.
+
 Current resources are candidate, partial_validated_pending_positive_warning_resolution. Task prompt is 1.3/schema 1; diagnosis prompts are 5WHY 1.3 and 5W/5W2H 1.4, with turn/report schema 2. The v1 directory is a resource collection name, not a shared output schema version.
 
 The 2026-10-30 real Z.ai Coding Plan tests used glm-5.3 and synthetic business inputs only. Current task resources passed daily and monthly content checks, including comparable monthly floors, unresolved source conflicts, missing daily targets, and null step dates without scheduling evidence. Current diagnosis resources passed the three initial frameworks, genuine relevant continuation with the full actual prior report, refusal to resolve unsupported risks, scope clarification and deliberate off-topic redirection.

@@ -756,10 +756,10 @@
     "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1"
   },
   "current_acceptance": {
-    "state": "partial_validated_pending_positive_warning_resolution",
+    "state": "candidate_pending_plan_contracts_and_content_validation",
     "date": "2026-10-30",
     "static_review_unresolved_p0": 0,
-    "static_review_unresolved_p1": 0,
+    "static_review_unresolved_p1": 10,
     "prompt_and_provider_work_package_frozen": false,
     "task_prompt13": {
       "daily_unknown_target_and_schedule": "passed",
@@ -781,6 +781,28 @@
       "5W/5W2H continuation, optional diagnosis reference in task generation, and product E2E remain unverified.",
       "Pure schema checks and prototype state assertions are not Provider or application E2E tests."
     ],
-    "remaining_planning_gate": "Main planning agent must obtain a genuine active-to-resolved response with adequate evidence under the locked-source contract, validate and independently review it before declaring full prompt freeze. Do not delegate this methodological acceptance gap to implementation agents."
+    "remaining_planning_gate": "Close PR-01 through PR-10, complete the PR-11 through PR-13 handoff specifications, synchronize affected prompt/schema versions and run affected LV-01 through LV-08 live-content checks before engineering handoff. See docs/plan-readiness-review-2026-10-30.md. No new Provider allowance is granted.",
+    "previous_focused_review": {
+      "date": "2026-10-30",
+      "baseline_commit": "02fc2ff",
+      "unresolved_p0": 0,
+      "unresolved_p1": 0,
+      "scope": "Focused prompt/schema and observed sample fixes before the later overall plan-readiness audit; not overall engineering readiness."
+    },
+    "static_review_scope": "Overall plan-readiness review, grouped PR-01 through PR-10; includes business/data/lifecycle/context contracts. Counts are specification gaps, not implemented software defects."
+  },
+  "plan_readiness_review": {
+    "date": "2026-10-30",
+    "baseline_commit": "02fc2ff",
+    "report": "docs/plan-readiness-review-2026-10-30.md",
+    "engineering_ready": false,
+    "unresolved_p0": 0,
+    "unresolved_p1_groups": 10,
+    "p2_handoff_items": 3,
+    "recommendations_status": "proposed_not_frozen",
+    "provider_calls_in_this_review": 0,
+    "remaining_authorized_attempts": 0,
+    "owner": "planning_main_agent",
+    "note": "Provider sample results and resource hashes are unchanged. No prompt or product implementation was changed by this review."
   }
 }

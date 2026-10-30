@@ -5,6 +5,7 @@
 `liuhaiyang14/dsheng` 已是公开仓库，当前处于计划与提示词验收阶段，尚未包含可运行的桌面应用或 CLI 实现。已授权同步的内容包括：
 
 - [实施计划](两表一单-本地经营分析工具实施计划.md)：产品边界、SQLite、Provider、`dsheng` CLI、Agent Skill、跨平台交付和验收标准。
+- [整体计划复审与交接门禁](docs/plan-readiness-review-2026-10-30.md)：当前还存在指标/周期、任务合并、版本、Provider 路由及上下文等规格缺口，不满足仅剩工程实现的条件。
 - [交互原型](prototype.html)：使用全量虚构数据展示数据源、经营分析、图表、独立经营问题诊断、任务详情、任务编辑、进度时间线、Provider 和系统设置。
 - [内置提示词与输出契约](crates/dsheng-core/prompts/README.md)：任务单及 5WHY / 5W / 5W2H 的 system/user 模板、JSON Schema、装配方式和逐版本真实测试记录。当前版本仍在验收，不能视为已冻结。
 
