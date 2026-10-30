@@ -121,6 +121,25 @@
     .root-card { margin: 16px; padding: 14px; background: #fcfcfa; border: 1px solid var(--line); }
     .root-card h4 { margin: 0 0 9px; font-size: 12px; } .root-card p { margin: 4px 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
     .task-layout { display: grid; grid-template-columns: 1.5fr .9fr; gap: 16px; }
+    .diagnosis-layout { display: grid; grid-template-columns: 270px minmax(0, 1fr); gap: 16px; align-items: start; }
+    .diagnosis-list { padding: 8px 16px 14px; }
+    .diagnosis-item { display: block; width: 100%; border: 0; border-bottom: 1px solid #eceeeb; background: transparent; padding: 12px 0; text-align: left; color: var(--ink); }
+    .diagnosis-item strong { display: block; font-size: 11px; }
+    .diagnosis-item small { display: block; margin-top: 5px; color: var(--muted); font-size: 10px; }
+    .diagnosis-item.active { color: var(--red-dark); }
+    .diagnosis-report-head { padding: 15px 17px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .diagnosis-report-meta { color: var(--muted); font-size: 10px; margin-top: 5px; }
+    .diagnosis-report-body { padding: 2px 0; }
+    .diagnosis-summary { margin: 14px 16px; padding: 13px 14px; border-left: 3px solid var(--gold); background: #fbfaf6; font-size: 11px; line-height: 1.65; }
+    .diagnosis-followup { border-top: 1px solid var(--line); padding: 15px 16px; }
+    .diagnosis-followup label { display: block; font-size: 11px; font-weight: 650; margin-bottom: 7px; }
+    .diagnosis-followup textarea { width: 100%; min-height: 68px; resize: vertical; border: 1px solid var(--line); padding: 9px; font: inherit; font-size: 11px; }
+    .diagnosis-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 9px; }
+    .diagnosis-status { color: var(--muted); font-size: 10px; }
+    .task-generation-note { margin: 14px 16px; padding: 13px 14px; background: var(--green-wash); border: 1px solid #cbded2; font-size: 11px; line-height: 1.6; }
+    .task-generation-note p { margin: 5px 0 0; color: #53675d; }
+    .task-generation-note label { display: flex; gap: 8px; align-items: flex-start; margin-top: 10px; }
+    .task-generation-note input { accent-color: var(--green); margin-top: 2px; }
     .task-table td { white-space: normal; vertical-align: top; line-height: 1.45; }
     .task-table th { white-space: normal; }
     .task-name { font-weight: 650; color: var(--ink); }
@@ -205,7 +224,7 @@
       .content { padding: 22px 18px 32px; }
       .topbar { padding: 0 18px; }
       .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .analysis-grid, .task-layout, .source-grid { grid-template-columns: 1fr; }
+      .analysis-grid, .task-layout, .source-grid, .diagnosis-layout { grid-template-columns: 1fr; }
       .timeline-lane { grid-template-columns: 110px 1fr 150px; }
     }
     @media (max-width: 680px) {
@@ -240,6 +259,7 @@
       <nav class="nav">
         <button class="active" data-screen="source"><span class="icon">↳</span>数据源</button>
         <button data-screen="analysis"><span class="icon">⌁</span>经营分析</button>
+        <button data-screen="diagnosis"><span class="icon">⌕</span>经营问题诊断</button>
         <button data-screen="task"><span class="icon">□</span>任务单</button>
         <button data-screen="history"><span class="icon">◷</span>历史查询</button>
         <div class="nav-section"><div class="nav-section-label">设置</div><button class="nav-subitem" data-screen="provider"><span class="icon">⚙</span>Provider 设置</button><button class="nav-subitem" data-screen="system-settings"><span class="icon">⌘</span>系统设置</button></div>
@@ -247,7 +267,7 @@
       <div class="side-foot">当前企业档案<br><span id="workspaceFoot" style="color:#d7b46e">示例制造企业</span><br><br>全量虚构演示数据。真实版本仅在本机运行；模型发送前逐次确认范围。</div>
     </aside>
     <main class="main">
-      <header class="topbar"><div class="crumb">企业档案 <select class="select" id="workspaceSelect" aria-label="切换企业档案"><option value="sample">示例制造企业</option><option value="sample-2">新建空白档案</option></select> / <strong id="crumb">数据源</strong></div><div class="top-actions"><span class="demo-stamp">虚构演示数据</span><span class="period">本地 SQLite</span><button class="outline" id="exportButton">导出</button><button class="primary" id="generateButton">生成任务单</button></div></header>
+      <header class="topbar"><div class="crumb">企业档案 <select class="select" id="workspaceSelect" aria-label="切换企业档案"><option value="sample">示例制造企业</option><option value="sample-2">新建空白档案</option></select> / <strong id="crumb">数据源</strong></div><div class="top-actions"><span class="demo-stamp">虚构演示数据</span><span class="period">本地 SQLite</span><button class="outline" id="exportButton">导出</button></div></header>
       <section class="content">
         <div class="notice workspace-empty" id="workspaceEmptyNotice" hidden><b>当前企业档案还没有数据</b><span>“新建空白档案”是一个独立的空档案示例。请先选择本地目录并完成字段映射；它不会显示或读取其他企业的分析、任务、历史和 Provider。</span></div>
         <div class="screen active" id="source">
@@ -277,9 +297,26 @@
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">经营图表</span><span class="panel-note">已展示真实可用的虚构期间序列</span></div><div class="chart-toolbar"><select class="select" id="chartMetric"><option value="settlement">结算收益</option><option value="margin">订单毛利率</option><option value="cash">回款率</option></select><select class="select" id="chartType"><option>趋势折线</option><option>计划 / 实绩柱状</option><option>差异瀑布</option><option>分类构成</option><option>指标排行</option><option>目标对照组合图</option></select><select class="select" id="chartCompare"><option>环比</option><option>同比</option><option>不比较</option></select><button class="outline" id="chartDataButton">查看数据表</button><button class="outline" id="exportChartButton">导出 PNG</button></div><div class="chart" id="chartCanvas"><svg viewBox="0 0 780 220" role="img" aria-label="结算收益日度趋势图"><line class="gridline" x1="54" y1="34" x2="750" y2="34"/><line class="gridline" x1="54" y1="88" x2="750" y2="88"/><line class="gridline" x1="54" y1="142" x2="750" y2="142"/><line class="gridline" x1="54" y1="196" x2="750" y2="196"/><text class="axis-label" x="8" y="38">12k</text><text class="axis-label" x="8" y="92">8k</text><text class="axis-label" x="8" y="146">4k</text><text class="axis-label" x="20" y="200">0</text><polyline class="series-compare" points="54,112 120,100 186,118 252,92 318,80 384,97 450,72 516,88 582,62 648,77 714,54 750,61"/><polyline class="series" points="54,128 120,122 186,136 252,106 318,116 384,101 450,91 516,108 582,78 648,95 714,70 750,76"/><circle class="point" cx="750" cy="76" r="4"/><text class="axis-label" x="42" y="214">10-01</text><text class="axis-label" x="250" y="214">10-08</text><text class="axis-label" x="465" y="214">10-16</text><text class="axis-label" x="690" y="214">10-28</text></svg></div><div class="legend"><span>本期：2026-10</span><span class="actual">环比：2026-09</span><span>点选数据表可查看来源证据</span></div></div>
         </div>
 
+        <div class="screen" id="diagnosis">
+          <div class="screen-head"><div><div class="eyebrow">03 · issue diagnosis</div><h2>经营问题诊断</h2><div class="sub">针对经营分析中的重点差异形成独立报告；报告不会自动生成或修改任务。</div></div><div class="head-controls"><select class="select" id="diagnosisFramework" aria-label="诊断模式"><option value="5why">5WHY · 因果追查</option><option value="5w">5W · 问题界定</option><option value="5w2h">5W2H · 问题与行动要素</option></select><button class="primary" id="generateDiagnosisButton">生成诊断报告</button></div></div>
+          <div class="notice"><b>模式说明</b><span>5WHY 用于逐层追查原因；5W 用于界定问题背景；5W2H 用于结构化问题及行动要素。切换框架会选择或新建独立演示报告，保留原报告的范围和补充记录。只有你补充新事实并点击“继续分析”才会进入下一轮；不会自动追问。</span></div>
+          <div class="diagnosis-layout">
+            <div class="panel"><div class="panel-head"><span class="panel-title">本期诊断记录</span><span class="panel-note" id="diagnosisRecordCount">2026-10 · 2 份</span></div><div class="diagnosis-list" id="diagnosisList">
+              <button class="diagnosis-item active" type="button" data-diagnosis-record="current"><strong>结算收益差异 · 5WHY</strong><small>2026-10-29 · 第 1 轮 · 1 项待核实</small></button>
+              <button class="diagnosis-item" type="button" data-diagnosis-record="previous"><strong>有效工时缺失 · 5W2H</strong><small>2026-10-22 · 已保存 · 3 项行动要素待确认</small></button>
+            </div><div class="root-card" style="margin-top:0"><h4>与任务单的关系</h4><p>同一分析期间存在已保存报告时，可选择将其作为任务制定的补充参考。没有报告也能按经营差异和 Skill 原则明确改善目标、拆解行动步骤，并用 SMART 校验目标及拆解后的子目标。</p></div></div>
+            <div class="panel">
+              <div class="diagnosis-report-head"><div><strong id="diagnosisReportTitle">结算收益差异 · 5WHY</strong><div class="diagnosis-report-meta" id="diagnosisReportMeta">示例制造企业 · 2026-10-01 至 2026-10-28 · 生成于 2026-10-29 09:31</div></div><span class="tag gold" id="diagnosisStatus">候选结论 · 待核实</span></div>
+              <div class="diagnosis-report-body" id="rootCauseContent"></div>
+              <div class="diagnosis-followup"><label for="diagnosisFollowup">补充现场事实后继续</label><textarea id="diagnosisFollowup" placeholder="写入核实到的新事实、记录来源或现场反馈"></textarea><div class="diagnosis-actions"><button class="primary" id="continueDiagnosis">继续分析</button><button class="outline" id="stopDiagnosis">停止并保留报告</button><button class="outline" id="saveDiagnosisReport">保存报告</button><button class="outline" id="downloadDiagnosisReport">下载报告</button><span class="diagnosis-status" id="diagnosisActionStatus">当前展示的是已保存的演示报告</span></div></div>
+            </div>
+          </div>
+          <div class="footer-note">报告与任务单分别保存、分别导出；本原型不会实际调用 Provider。</div>
+        </div>
+
         <div class="screen" id="task">
-          <div class="screen-head"><div><div class="eyebrow">03 · action sheet</div><h2>任务单</h2><div class="sub">分别查看本期任务检视、下期计划、指标依据及根因过程。</div></div><div class="head-controls"><select class="select" id="frameworkSelect"><option value="5why">5WHY · 根因追问</option><option value="5w">5W · 问题描述</option><option value="5w2h">5W2H · 行动方案</option></select><button class="primary">重新生成</button></div></div>
-          <div class="task-layout"><div class="panel"><div class="panel-head"><span class="panel-title">任务单检视 / 计划</span><span class="panel-note">2026-10 · 2 项任务 · 点击查看详情</span></div><table class="task-table"><thead><tr><th>任务 / 指标</th><th>周期角色</th><th>目标 / 节点</th><th>责任岗位</th><th>进度</th></tr></thead><tbody><tr data-task="task-a"><td><div class="task-name" data-task-title>核对高折扣订单成本口径</div><div class="file-meta" data-task-summary>结算收益 · 10 月目标 ¥210,000</div></td><td><span class="tag blue" data-task-role>本期检视</span><div class="task-source">来源：核算表!F12</div></td><td data-task-target>¥ 25,400 差异<br><span class="file-meta" data-task-due>截止 2026-10-31</span></td><td data-task-owner>经营管理岗</td><td><span class="tag gold" data-progress-label>25% · 进行中</span></td></tr><tr data-task="task-b"><td><div class="task-name" data-task-title>补录有效工时并调整排产</div><div class="file-meta" data-task-summary>单位时间附加值 · 1 天待补</div></td><td><span class="tag red" data-task-role>下期计划</span><div class="task-source">来源：推移表!A17:H17</div></td><td data-task-target>¥ 450 / 时<br><span class="file-meta" data-task-due>计划 2026-11-01 至 11-07</span></td><td data-task-owner>生产计划岗</td><td><span class="tag red" data-progress-label>50% · 进行中</span></td></tr></tbody></table><div class="root-card"><h4>任务推进方式</h4><p>勾选行动步骤会自动更新进度；手工调整必须填写本次进展或阻塞原因，所有变化都会进入任务时间线。</p></div></div><div class="panel"><div class="panel-head"><span class="panel-title" id="frameworkTitle">5WHY · 根因追问</span><span class="panel-note">问题、答复、证据和待确认项</span></div><div id="rootCauseContent"></div></div></div>
+          <div class="screen-head"><div><div class="eyebrow">04 · action sheet</div><h2>任务单</h2><div class="sub">依据经营差异明确改善目标、拆解行动步骤，并用 SMART 原则校验目标及子目标。</div></div><div class="head-controls"><button class="primary" id="generateTaskButton">生成任务单</button></div></div>
+          <div class="task-layout"><div class="panel"><div class="panel-head"><span class="panel-title">任务单检视 / 计划</span><span class="panel-note">2026-10 · 2 项任务 · 点击查看详情</span></div><table class="task-table"><thead><tr><th>任务 / 指标</th><th>周期角色</th><th>目标 / 节点</th><th>责任岗位</th><th>进度</th></tr></thead><tbody><tr data-task="task-a"><td><div class="task-name" data-task-title>核对高折扣订单成本口径</div><div class="file-meta" data-task-summary>结算收益 · 10 月目标 ¥210,000</div></td><td><span class="tag blue" data-task-role>本期检视</span><div class="task-source">来源：核算表!F12</div></td><td data-task-target>¥ 25,400 差异<br><span class="file-meta" data-task-due>截止 2026-10-31</span></td><td data-task-owner>经营管理岗</td><td><span class="tag gold" data-progress-label>25% · 进行中</span></td></tr><tr data-task="task-b"><td><div class="task-name" data-task-title>补录有效工时并调整排产</div><div class="file-meta" data-task-summary>单位时间附加值 · 1 天待补</div></td><td><span class="tag red" data-task-role>下期计划</span><div class="task-source">来源：推移表!A17:H17</div></td><td data-task-target>¥ 450 / 时<br><span class="file-meta" data-task-due>计划 2026-11-01 至 11-07</span></td><td data-task-owner>生产计划岗</td><td><span class="tag red" data-progress-label>50% · 进行中</span></td></tr></tbody></table><div class="task-generation-note"><strong>任务单制定原则</strong><p>根据经营差异和 Skill 明确改善目标，再按业务依据拆解行动步骤。用 SMART 校验总体目标和拆解后的子目标是否具体、可衡量、可实现、与经营重点相关且有期限；责任人、节点和验收依据作为执行字段单独确认，信息不足时标记为待确认。</p><label><input type="checkbox" id="useDiagnosisContext" checked /><span>可选参考本期已保存的“结算收益差异 · 5WHY”报告；报告中的假设仍需核实。取消勾选或没有报告都不影响按经营数据制定任务。</span></label></div><div class="root-card"><h4>任务推进方式</h4><p>勾选行动步骤会自动更新进度；手工调整必须填写本次进展或阻塞原因，所有变化都会进入任务时间线。</p></div></div><div class="panel"><div class="panel-head"><span class="panel-title">本期任务制定依据</span><span class="panel-note">经营差异 · Skill · SMART 检查</span></div><div class="mapping"><div class="mapping-row"><label>关联指标</label><span>结算收益 · 实绩 ¥184,600 · 目标 ¥210,000</span></div><div class="mapping-row"><label>来源期间与位置</label><span><span class="evidence-ref">核算表!F12</span> · 2026-10-01 至 10-28 · 环比 -4.2%</span></div><div class="mapping-row"><label>目标与行动检查</label><span>先明确具体改善目标及衡量方式；按已有依据评估可实现性和相关性，并为行动补充责任人、节点与验收依据。</span></div></div></div></div>
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">任务依据</span><span class="panel-note">指标 → 来源证据 → 行动方案</span></div><div class="mapping"><div class="mapping-row"><label>关联指标</label><span>结算收益 · 实绩 ¥184,600 · 目标 ¥210,000</span></div><div class="mapping-row"><label>来源期间与位置</label><span><span class="evidence-ref">核算表!F12</span> · 2026-10-01 至 10-28 · 环比 -4.2%</span></div><div class="mapping-row"><label>MP 名称 / 单位</label><span>销售最大化 · 元 / 月</span></div><div class="mapping-row"><label>可核验证据</label><span>高折扣订单 7 笔待复核；模型建议仅作为待确认线索</span></div></div></div><div class="footer-note">当前页面展示的是虚构演示数据；桌面版会将分析和任务进度保存到当前企业的 SQLite。</div>
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">任务时间线</span><span class="panel-note">按计划日期和进度事件查看</span></div><div class="chart-toolbar"><select class="select" id="taskTimelineGrain"><option value="day">日</option><option value="week">周</option><option value="month">月</option><option value="quarter">季度</option></select><input class="select" type="date" id="timelineFrom" aria-label="时间线开始日期" /><input class="select" type="date" id="timelineTo" aria-label="时间线结束日期" /><select class="select" id="timelineStatus"><option value="all">全部状态</option><option>待开始</option><option>进行中</option><option>有阻塞</option><option>已完成</option><option>已延期</option></select></div><div class="timeline-board" id="taskTimeline"></div></div><div class="footer-note">演示状态仅存在于当前页面；桌面版会将分析和任务进度保存到本地 SQLite。</div>
         </div>
@@ -289,7 +326,7 @@
           <div class="panel"><div class="panel-head"><span class="panel-title">已保存期间</span><span class="panel-note">同一企业 + 周期 + 期间重做会更新当前版本并保留快照</span></div><table class="data-table"><thead><tr><th>期间</th><th>核算周期</th><th>版本</th><th>更新于</th><th>结果</th><th>操作</th></tr></thead><tbody><tr><td>2026-10-01 至 10-28</td><td>日度 · 策略版本 2</td><td>1</td><td>2026-10-29 09:18</td><td>4 指标 · 2 任务 · 6 图表</td><td><button class="outline history-view">查看</button><button class="outline history-rerun">重新分析</button></td></tr><tr><td>2026-09-01 至 09-30</td><td>月度 · 策略版本 1</td><td>2</td><td>2026-10-01 16:42</td><td>4 指标 · 3 任务 · 5 图表</td><td><button class="outline history-view">查看</button><button class="outline history-rerun">重新分析</button></td></tr></tbody></table></div>
           <div class="root-card"><h4>周期变更记录</h4><p>企业从月度切换为日度后，新分析采用新策略；已有月度结果仍保留，历史期间可按旧策略查看或显式回算。</p></div>
         </div>
-        <div class="screen" id="provider"><div class="screen-head"><div><div class="eyebrow">05 · provider</div><h2>Provider 设置</h2><div class="sub" id="providerSubtitle">示例制造企业 · 配置模型服务连接并保存到当前企业的本地 SQLite。</div></div></div><div class="setting-intro"><strong>Provider 设置是做什么的？</strong>Base URL 决定请求发往哪里，模型名决定使用哪个模型，API Key 是访问凭证。演示值均为假数据；真实版本界面掩码显示，Key 不进入日志、提示词、导出或错误信息。</div><div class="panel" style="max-width:820px"><div class="panel-head"><span class="panel-title">OpenAI 兼容 Provider</span><span class="tag green" id="providerStatus">已保存 · 本地</span></div><div class="mapping"><div class="mapping-row"><div><label>Base URL</label><small class="setting-help">模型服务的接口地址；通常以 /v1 结尾。仅允许 HTTPS，回环地址可用 HTTP。</small></div><input class="select" id="providerBaseUrl" value="https://api.demo-provider.local/v1" /></div><div class="mapping-row"><div><label>模型</label><small class="setting-help">用于生成根因分析、任务步骤和行动建议的模型名称。</small></div><input class="select" id="providerModel" value="demo-reasoner-32b" /></div><div class="mapping-row"><div><label>API Key</label><small class="setting-help">访问 Provider 的凭证；演示值不是真实密钥，界面始终掩码显示。</small></div><input class="select mock-key" id="providerKey" type="password" value="demo-local-key-2026" /></div><div style="display:flex;gap:8px;align-items:center"><button class="primary" id="saveProvider">保存 Provider</button><button class="outline" id="testProvider">测试连接</button><span class="panel-note" id="providerNotice">最近保存：2026-10-29 09:12</span></div></div></div></div>
+        <div class="screen" id="provider"><div class="screen-head"><div><div class="eyebrow">05 · provider</div><h2>Provider 设置</h2><div class="sub" id="providerSubtitle">示例制造企业 · 配置模型服务连接并保存到当前企业的本地 SQLite。</div></div></div><div class="setting-intro"><strong>Provider 设置是做什么的？</strong>Base URL 决定请求发往哪里，模型名决定使用哪个模型，API Key 是访问凭证。演示值均为假数据；真实版本界面掩码显示，Key 不进入日志、提示词、导出或错误信息。</div><div class="panel" style="max-width:820px"><div class="panel-head"><span class="panel-title">OpenAI 兼容 Provider</span><span class="tag green" id="providerStatus">已保存 · 本地</span></div><div class="mapping"><div class="mapping-row"><div><label>Base URL</label><small class="setting-help">模型服务的实际兼容 Base URL；不要求以 /v1 结尾。仅允许 HTTPS，回环地址可用 HTTP。</small></div><input class="select" id="providerBaseUrl" value="https://api.demo-provider.local/v1" /></div><div class="mapping-row"><div><label>模型</label><small class="setting-help">用于生成根因分析、任务步骤和行动建议的模型名称。</small></div><input class="select" id="providerModel" value="demo-reasoner-32b" /></div><div class="mapping-row"><div><label>API Key</label><small class="setting-help">访问 Provider 的凭证；演示值不是真实密钥，界面始终掩码显示。</small></div><input class="select mock-key" id="providerKey" type="password" value="demo-local-key-2026" /></div><div style="display:flex;gap:8px;align-items:center"><button class="primary" id="saveProvider">保存 Provider</button><button class="outline" id="testProvider">测试连接</button><span class="panel-note" id="providerNotice">最近保存：2026-10-29 09:12</span></div></div></div></div>
         <div class="screen" id="system-settings">
           <div class="screen-head"><div><div class="eyebrow">06 · system settings</div><h2>系统设置</h2><div class="sub" id="systemSettingsSubtitle">示例制造企业 · 管理当前企业档案的周期、日期边界与本机数据。</div></div></div>
           <div class="setting-intro"><strong>“企业档案”是什么？</strong>它就是本机里给一家企业单独建的一份资料夹，不是云端账号。每份档案有自己的数据目录、字段对应关系、核算周期、指标算法、Provider、历史分析和任务记录。切换顶部的企业档案后，只能看到该企业自己的内容；不同企业的数据不会混在一起。</div>
@@ -332,13 +369,14 @@
     <div class="drawer-actions"><div><span class="save-note">演示状态保留在当前页面；桌面版写入本地 SQLite。</span><div class="task-save-status" id="taskSaveNotice">已有演示任务，可直接修改</div></div><div style="display:flex;gap:8px"><button class="outline" id="saveTask">保存任务</button><button class="primary" id="saveUpdate">保存进度</button></div></div>
   </aside>
   <script>
-    const labels = { source: '数据源', analysis: '经营分析', task: '任务单', history: '历史查询', provider: 'Provider 设置', 'system-settings': '系统设置' };
+    const labels = { source: '数据源', analysis: '经营分析', diagnosis: '经营问题诊断', task: '任务单', history: '历史查询', provider: 'Provider 设置', 'system-settings': '系统设置' };
     document.querySelectorAll('[data-screen]').forEach(btn => btn.addEventListener('click', () => {
       document.querySelectorAll('[data-screen]').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById(btn.dataset.screen).classList.add('active');
       document.getElementById('crumb').textContent = labels[btn.dataset.screen];
+      if (btn.dataset.screen === 'diagnosis') renderRootCause();
     }));
     const drawer = document.getElementById('taskDrawer');
     const scrim = document.getElementById('drawerScrim');
@@ -390,7 +428,6 @@
       updateText.value = '';
       document.getElementById('taskSaveNotice').textContent = tasks[taskId].dirty ? '有未保存更改' : '当前任务无待保存更改';
       renderTaskDetail();
-      renderRootCause();
       document.querySelectorAll('[data-task]').forEach(row => row.classList.toggle('selected', row.dataset.task === taskId));
       drawer.classList.add('open');
       scrim.classList.add('open');
@@ -402,7 +439,7 @@
     const range = document.getElementById('updateProgress');
     const updateStatus = document.getElementById('updateStatus');
     const updateText = document.getElementById('updateText');
-    const frameworkSelect = document.getElementById('frameworkSelect');
+    const diagnosisFrameworkSelect = document.getElementById('diagnosisFramework');
     const cycleCadence = document.getElementById('cycleCadence');
     let policyVersion = 2;
     const workspaceState = {
@@ -413,7 +450,7 @@
     const applyWorkspace = () => {
       const workspace = workspaceState[workspaceSelect.value];
       document.getElementById('workspaceFoot').textContent = workspace.foot;
-      const dataScreens = ['source', 'analysis', 'task', 'history'];
+      const dataScreens = ['source', 'analysis', 'diagnosis', 'task', 'history'];
       dataScreens.forEach(id => {
         const screen = document.getElementById(id);
         [...screen.children].forEach(child => {
@@ -463,15 +500,10 @@
     document.getElementById('testProvider').addEventListener('click', () => {
       const baseUrl = document.getElementById('providerBaseUrl').value.trim();
       if (!baseUrl) return alert('请先填写 Base URL。');
-      document.getElementById('providerNotice').textContent = '连接测试通过 · 未发送业务数据 · 2026-10-29 09:27';
-      alert('连接测试通过。演示只验证地址格式，不发送经营数据。');
+      document.getElementById('providerNotice').textContent = '原型未发起连接 · 当前仅演示配置入口';
+      alert('这是交互原型，仅检查地址已填写；没有发起网络请求，不能据此判断 Provider 可用。');
     });
-    document.getElementById('exportButton').addEventListener('click', () => alert('演示导出：将生成核算表、推移表、任务单和结构化 JSON；不包含 API Key 或原始数据库。'));
-    document.getElementById('generateButton').addEventListener('click', () => {
-      if (!workspaceState[workspaceSelect.value].hasData) return alert('请先为当前企业档案导入数据并完成字段映射。');
-      document.querySelector('[data-screen="task"]').click();
-      alert('已打开任务单预览。正式运行时会先展示 Provider、文件范围和 payload 估算，再等待确认。');
-    });
+    document.getElementById('exportButton').addEventListener('click', () => alert('演示导出：经营数据包包含核算表、推移表、任务单和结构化 JSON；诊断报告通过诊断页单独下载。不包含 API Key 或原始数据库。'));
     document.getElementById('downloadTemplate').addEventListener('click', () => alert('演示下载：空白模板包包含核算表、推移表、任务单和字段说明，不含业务样例数据。'));
     document.getElementById('chooseDirectory').addEventListener('click', () => alert('正式版本会打开系统目录选择器；当前原型使用虚构目录。'));
     document.getElementById('scanFiles').addEventListener('click', () => alert('已重新扫描示例目录：3 个文件、2,486 行，1 项工时待补。'));
@@ -509,7 +541,7 @@
         ]
       },
       '5why': {
-        title: '5WHY · 根因追问',
+        title: '5WHY · 因果追查',
         fields: [
           ['Why 1', '为什么出现当前差异？', '高折扣订单的实际成本高于当前核算口径，导致 10 月结算收益比目标少 ¥25,400。', '核算表!F12；订单毛利率 18.6%，低于目标 20.0%。'],
           ['Why 2', '为什么会出现上述原因？', '折扣审批记录与成本版本没有在结算前逐单关联，部分订单仍沿用上一个成本版本。', '任务依据列出 7 笔待复核订单；这是待确认假设，不是已证实事实。'],
@@ -519,57 +551,200 @@
         ]
       },
       '5w2h': {
-        title: '5W2H · 行动方案',
+        title: '5W2H · 问题与行动要素',
         fields: [
-          ['What', '要完成什么行动？', '复核 7 笔高折扣订单，统一订单成本版本，并更新结算收益差异清单。', '核算表!F12 + 任务依据 / 高折扣订单清单。'],
-          ['Why', '行动要解决什么原因？', '消除折扣审批与成本版本脱节造成的毛利漏算，恢复目标达成的可解释性。', '目标 ¥210,000；当前实绩 ¥184,600。'],
-          ['Who', '由谁负责、谁协同？', '经营管理岗负责；销售支持岗提供折扣审批记录，成本核算岗确认成本版本。', '岗位级演示数据；正式版支持从任务单或本地目录映射责任人。'],
-          ['When', '何时开始和完成？', '2026-10-29 开始，2026-10-31 前完成首轮复核；2026-11-03 复盘结果。', '任务详情中的计划开始、截止和进度事件。'],
-          ['Where', '在哪个流程或范围执行？', '在报价审批、订单成本维护、月底结算复核三个节点执行。', '适用范围为本期 7 笔高折扣订单。'],
-          ['How', '按什么步骤执行？', '导出待复核清单，按订单号关联折扣和成本版本，重新计算毛利，复核后再更新任务依据。', '步骤勾选会同步任务进度；模型建议需人工确认。'],
-          ['How much', '需要多少资源，预期贡献如何衡量？', '预计 1 个经营管理岗半天、2 个协同岗位各 1 小时；以差异解释率和毛利率回到 20% 目标附近衡量。', '资源和目标为待确认项，不直接写入实绩。']
+          ['What', '涉及的问题或改善方向是什么？', '需要复核高折扣订单的成本版本及结算收益差异。', '核算表!F12 + 高折扣订单差异记录。'],
+          ['Why', '为什么需要关注？', '订单毛利率未达目标，成本版本差异可能影响结算收益判断。', '目标 ¥210,000；当前实绩 ¥184,600。'],
+          ['Who', '涉及哪些责任或协作角色？', '经营管理岗、销售支持岗和成本核算岗需要共同核实。', '岗位关系为分析线索，不是任务分派。'],
+          ['When', '问题出现或需要复核的时间范围？', '分析期间为 2026-10-01 至 2026-10-28，结算前需确认差异。', '来源期间字段及核算周期策略。'],
+          ['Where', '问题涉及哪些环节？', '报价审批、订单成本维护与结算复核之间的衔接。', '范围需要依据订单明细再次确认。'],
+          ['How', '可采用什么核实/改善方向？', '按订单号核对折扣审批记录、成本版本与结算计算。', '属于报告建议，不会自动写入任务步骤。'],
+          ['How much', '涉及的金额或资源规模？', '当前结算收益差异为 ¥25,400；实际复核工时尚未提供。', '资源投入待确认，不推算为事实。']
         ]
       }
     };
+    const hoursDiagnosisFields = {
+      '5w': [
+        ['What', '需要界定什么问题？', '10 月 17 日有效工时记录缺失，相关效率指标尚不能完整复核。', '推移表!A17:H17；缺失值保留为待补。'],
+        ['Why', '为什么需要关注？', '工时缺口影响单位时间附加值及期间对比的完整性。', '有效工时是效率计算的必需输入，不能按零补齐。'],
+        ['Where', '涉及哪个范围？', '当前企业日度推移表的有效工时字段。', '推移表!A17:H17。'],
+        ['When', '缺口对应什么日期？', '缺失日期为 2026-10-17；本报告检视至 2026-10-21。', '日度日期字段与本报告期间。'],
+        ['Who', '哪些岗位可以核实？', '尚未提供实际记录人或复核人的确认信息。', '待补充岗位与原始记录的对应关系，不分派任务。']
+      ],
+      '5why': [
+        ['Why 1', '为什么相关效率指标不能完整复核？', '10 月 17 日有效工时缺失。', '推移表!A17:H17；缺失值没有作为零参与计算。'],
+        ['Why 2', '为什么这一天的工时缺失？', '现有来源无法确定，请补充原始记录及录入情况。', '原因未知；在此停止，不推断人员或流程原因。']
+      ],
+      '5w2h': [
+        ['What', '当前问题是什么？', '10 月 17 日有效工时缺失，需要核实相关记录。', '推移表!A17:H17。'],
+        ['Why', '为什么需要关注？', '缺失工时影响相关效率指标的复核与期间可比性。', '必需输入缺失，不能用零替代。'],
+        ['Who', '有哪些已知相关岗位？', '实际记录人和复核岗位尚未确认。', '待补充，不能根据岗位常识分派责任。'],
+        ['When', '对应什么时间？', '缺失日期为 2026-10-17；本报告检视至 2026-10-21。', '原日度日期字段及报告范围。'],
+        ['Where', '涉及什么位置或环节？', '日度推移表的有效工时字段。', '推移表!A17:H17。'],
+        ['How', '可以如何核实？', '对照该日原始工时记录检查缺口，具体步骤待确认。', '分析建议，不创建任务或写入行动步骤。'],
+        ['How much', '缺口规模是多少？', '缺少 1 天记录；有效工时数值及复核投入未知。', '来源只支持缺口天数，不推算工时或金额。']
+      ]
+    };
+    const diagnosisReports = {
+      current: {
+        id: 'current', topicKey: 'settlement', topic: '结算收益差异', framework: '5why',
+        period: '2026-10-01 至 2026-10-28', createdLabel: '生成于 2026-10-29 09:31',
+        fields: frameworkDefinitions['5why'].fields.map(field => [...field]), rounds: [], draft: '', stopped: false,
+        status: '候选结论 · 待核实', statusClass: 'tag gold', actionStatus: '当前展示的是已保存的演示报告'
+      },
+      previous: {
+        id: 'previous', topicKey: 'hours', topic: '有效工时缺失', framework: '5w2h',
+        period: '2026-10-01 至 2026-10-21', createdLabel: '生成于 2026-10-22 14:06',
+        fields: hoursDiagnosisFields['5w2h'].map(field => [...field]), rounds: [], draft: '', stopped: false,
+        status: '已保存 · 待复核', statusClass: 'tag green', actionStatus: '历史演示报告 · 可查看或下载'
+      }
+    };
+    let selectedDiagnosisReportId = 'current';
+
+    function ensureDiagnosisFramework(reportId, framework) {
+      const original = diagnosisReports[reportId];
+      const existing = Object.values(diagnosisReports).find(report => report.topicKey === original.topicKey && report.framework === framework);
+      if (existing) return existing.id;
+      const id = `${original.topicKey}-${framework}`;
+      const fields = original.topicKey === 'hours' ? hoursDiagnosisFields[framework] : frameworkDefinitions[framework].fields;
+      diagnosisReports[id] = {
+        id, topicKey: original.topicKey, topic: original.topic, framework, period: original.period,
+        createdLabel: '独立演示报告 · 未发送', fields: fields.map(field => [...field]), rounds: [], draft: '', stopped: false,
+        status: '独立演示 · 待确认', statusClass: 'tag gold', actionStatus: '已打开独立框架示例；原报告及补充记录保留，原型未发送'
+      };
+      return id;
+    }
+
+    function appendDiagnosisRound(report, answer) {
+      report.rounds.push({ number: report.rounds.length + 2, answer });
+      report.draft = '';
+      report.status = '已记录用户补充 · 待核实';
+      report.statusClass = 'tag gold';
+      report.actionStatus = '补充仅保留于本报告，仍为未核实用户陈述；原型未真实发送';
+    }
+
+    function buildDiagnosisMarkdown(report) {
+      const title = frameworkDefinitions[report.framework].title;
+      return [`# ${report.topic} · ${title}`, '', `示例制造企业 · ${report.period}`, '虚构原型报告；用户补充为未核实陈述，不代表模型已采纳。', '',
+        ...report.fields.flatMap(([label, question, answer, evidence], index) => [`## ${index + 1}. ${label} · ${question}`, answer, `依据：${evidence}`, '']),
+        ...report.rounds.flatMap(round => [`## 用户补充（未核实）· 第 ${round.number} 轮`, round.answer, ''])].join('\n');
+    }
 
     function renderRootCause() {
-      const definition = frameworkDefinitions[frameworkSelect.value];
-      document.getElementById('frameworkTitle').textContent = `${definition.title} · ${tasks[selectedTaskId].title}`;
+      const report = diagnosisReports[selectedDiagnosisReportId];
+      const definition = frameworkDefinitions[report.framework];
+      diagnosisFrameworkSelect.value = report.framework;
+      document.getElementById('diagnosisReportTitle').textContent = `${report.topic} · ${definition.title}`;
+      document.getElementById('diagnosisReportMeta').textContent = `示例制造企业 · ${report.period} · ${report.createdLabel}`;
+      document.getElementById('diagnosisStatus').textContent = report.status;
+      document.getElementById('diagnosisStatus').className = report.statusClass;
+      document.getElementById('diagnosisActionStatus').textContent = report.actionStatus;
+      document.getElementById('diagnosisFollowup').value = report.draft;
+      document.getElementById('continueDiagnosis').disabled = report.stopped;
+      const list = document.getElementById('diagnosisList');
+      list.replaceChildren();
+      Object.values(diagnosisReports).forEach(item => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = `diagnosis-item${item.id === report.id ? ' active' : ''}`;
+        button.dataset.diagnosisRecord = item.id;
+        const title = document.createElement('strong');
+        title.textContent = `${item.topic} · ${item.framework.toUpperCase()}`;
+        const detail = document.createElement('small');
+        detail.textContent = `第 ${item.rounds.length + 1} 轮 · ${item.status}`;
+        button.append(title, detail);
+        list.append(button);
+      });
+      document.getElementById('diagnosisRecordCount').textContent = `2026-10 · ${Object.keys(diagnosisReports).length} 份`;
       const container = document.getElementById('rootCauseContent');
       container.replaceChildren();
-      const taskBFields = {
-        '5w': [
-          ['What', '需要解决什么问题？', '10 月 17 日有效工时缺失，单位时间附加值为 ¥428/时，低于目标 ¥450/时。', '推移表!A17:H17；缺失值被标为待补。'],
-          ['Why', '为什么需要优先处理？', '缺失工时会影响生产效率对比和下周排产判断。', '单位时间附加值同比 +6.4%，环比 -2.8%。'],
-          ['Where', '问题发生在哪个范围？', '发生在日度工时录入与排产汇总之间。', '推移表的业务日期与有效工时字段。'],
-          ['When', '何时发生和完成？', '缺失日期为 2026-10-17；补录节点为 2026-11-02。', '本期策略 v2；下期计划窗口 11-01 至 11-07。'],
-          ['Who', '由哪些岗位负责？', '生产计划岗负责；班组统计岗提供当日工时记录。', '演示使用岗位名称，不包含真实人员信息。']
-        ],
-        '5why': [
-          ['Why 1', '为什么单位时间附加值低于目标？', '当前有效工时口径缺少 10 月 17 日记录，导致日度指标无法完整复核。', '推移表!A17:H17；系统显示 1 天待补。'],
-          ['Why 2', '为什么该日工时没有进入汇总？', '排班变更后，班组记录没有同步到日度推移表。', '作为待确认假设，需与原始考勤或工时表核对。'],
-          ['Why 3', '为什么变更没有被发现？', '当前导入校验能提示空值，但没有责任岗位和补录截止日期。', '字段映射把有效工时设为必需输入；补录责任待确认。'],
-          ['Why 4', '为什么缺少补录责任？', '日度复盘启用后，原月度填报分工没有同步改成每日闭环。', '企业周期从月度切换为日度，历史月度结果仍保留原口径。'],
-          ['Why 5', '需要建立什么机制？', '为工时空值设置责任岗位、次日提醒和复核节点，缺失期间暂不计算该指标。', '行动建议；需生产计划岗确认后再作为正式制度。']
-        ],
-        '5w2h': [
-          ['What', '要完成什么行动？', '补录 10 月 17 日有效工时，并校验单位时间附加值。', '推移表!A17:H17。'],
-          ['Why', '行动要解决什么原因？', '恢复日度效率指标的完整性，避免缺失值被当作零或误用于排产。', '目标 ¥450/时；当前显示 ¥428/时。'],
-          ['Who', '由谁负责？', '生产计划岗牵头，班组统计岗提供工时记录。', '责任岗位可在任务详情中修改。'],
-          ['When', '何时完成？', '2026-11-01 开始，2026-11-02 补录并复核。', '任务计划开始和截止日期。'],
-          ['Where', '在哪执行？', '日度推移表的有效工时字段与排产核对环节。', '企业档案内映射字段。'],
-          ['How', '如何执行？', '核对排班记录、补录工时、重算指标、由另一岗位复核。', '步骤可编辑、排序和勾选。'],
-          ['How much', '需要多少资源？', '预计生产计划岗和班组统计岗各投入 30 分钟；时间为示例估算。', '资源预估需责任岗位确认。']
-        ]
-      };
-      const fields = selectedTaskId === 'task-b' ? taskBFields[frameworkSelect.value] : definition.fields;
-      fields.forEach(([label, question, answer, evidence], index) => {
+      report.fields.forEach(([label, question, answer, evidence], index) => {
         const section = document.createElement('div');
         section.className = 'root-step';
-        section.innerHTML = `<span class="step-num">${index + 1}</span><strong>${label} · ${question}</strong><p>答复 / 思考：${answer}</p><div class="evidence">依据：${evidence} <span class="tag gold" style="margin-left:6px">需人工确认</span></div>`;
+        section.innerHTML = `<span class="step-num">${index + 1}</span><strong>${label} · ${question}</strong><p>分析记录：${answer}</p><div class="evidence">依据：${evidence} <span class="tag gold" style="margin-left:6px">需人工确认</span></div>`;
+        container.append(section);
+      });
+      report.rounds.forEach(round => {
+        const section = document.createElement('div');
+        section.className = 'root-step';
+        const title = document.createElement('strong');
+        title.textContent = `用户补充（未核实）· 第 ${round.number} 轮`;
+        const answer = document.createElement('p');
+        answer.textContent = round.answer;
+        const evidence = document.createElement('div');
+        evidence.className = 'evidence';
+        evidence.textContent = '仅记录于本报告；仍为用户陈述，原型没有执行模型采纳或来源核验。';
+        section.append(title, answer, evidence);
         container.append(section);
       });
     }
+
+    diagnosisFrameworkSelect.addEventListener('change', () => {
+      selectedDiagnosisReportId = ensureDiagnosisFramework(selectedDiagnosisReportId, diagnosisFrameworkSelect.value);
+      renderRootCause();
+    });
+    document.getElementById('diagnosisList').addEventListener('click', event => {
+      const button = event.target.closest('[data-diagnosis-record]');
+      if (!button) return;
+      selectedDiagnosisReportId = button.dataset.diagnosisRecord;
+      renderRootCause();
+    });
+    document.getElementById('diagnosisFollowup').addEventListener('input', event => {
+      diagnosisReports[selectedDiagnosisReportId].draft = event.target.value;
+    });
+    document.getElementById('generateDiagnosisButton').addEventListener('click', () => {
+      if (!workspaceState[workspaceSelect.value].hasData) return alert('请先为当前企业档案导入数据并完成字段映射。');
+      const report = diagnosisReports[selectedDiagnosisReportId];
+      const framework = frameworkDefinitions[report.framework].title;
+      const confirmed = confirm(`生成独立诊断报告：${report.topic} · ${framework}\n期间：${report.period}\n\n正式版本会发送所选期间解析的数据、差异指标和证据坐标；生成诊断报告不会创建或修改任务。\n\n原型当前不会实际调用 Provider。`);
+      if (confirmed) {
+        report.actionStatus = '已确认诊断请求预览 · 原型未真实发送';
+        renderRootCause();
+      }
+    });
+    document.getElementById('continueDiagnosis').addEventListener('click', () => {
+      const report = diagnosisReports[selectedDiagnosisReportId];
+      if (report.stopped) return alert('本演示报告已停止，现有内容仍可查看与下载。');
+      const answer = document.getElementById('diagnosisFollowup').value.trim();
+      if (!answer) return alert('请先补充一条现场事实或核实结果。');
+      const confirmed = confirm('本次续问将包含已选诊断证据与这条新补充；正式版本会先显示发送预览。原型不会实际调用 Provider。是否继续？');
+      if (!confirmed) return;
+      appendDiagnosisRound(report, answer);
+      renderRootCause();
+    });
+    document.getElementById('stopDiagnosis').addEventListener('click', () => {
+      const report = diagnosisReports[selectedDiagnosisReportId];
+      report.stopped = true;
+      report.status = '已停止 · 保留当前报告';
+      report.statusClass = 'tag blue';
+      report.actionStatus = '本报告已停止；当前报告与补充记录仍可保存或下载';
+      renderRootCause();
+    });
+    document.getElementById('saveDiagnosisReport').addEventListener('click', () => {
+      const report = diagnosisReports[selectedDiagnosisReportId];
+      report.status = report.stopped ? '已停止 · 已保存' : '已保存 · 可追溯';
+      report.statusClass = report.stopped ? 'tag blue' : 'tag green';
+      report.actionStatus = '本演示报告保留在当前页面状态；刷新后清空，桌面版将单独保存历史';
+      renderRootCause();
+    });
+    document.getElementById('downloadDiagnosisReport').addEventListener('click', () => {
+      const report = diagnosisReports[selectedDiagnosisReportId];
+      const url = URL.createObjectURL(new Blob([buildDiagnosisMarkdown(report)], { type: 'text/markdown;charset=utf-8' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `${report.topic}-${report.framework}-${report.id}-诊断报告.md`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      report.actionStatus = '已下载当前报告的 Markdown；未包含其他报告的补充记录';
+      renderRootCause();
+    });
+    document.getElementById('generateTaskButton').addEventListener('click', () => {
+      if (!workspaceState[workspaceSelect.value].hasData) return alert('请先为当前企业档案导入数据并完成字段映射。');
+      const useDiagnosis = document.getElementById('useDiagnosisContext').checked;
+      const reference = useDiagnosis ? '会将本期已保存诊断报告作为可选补充上下文，并明确其待核实状态。' : '不引用诊断报告，仅根据经营差异和 Skill 原则明确改善目标并拆解行动步骤。';
+      const confirmed = confirm(`生成任务单\n\n任务依据：本期经营差异和 Skill 中的任务单要求；SMART 用于校验总体目标及拆解后的子目标是否具体、可衡量、可实现、与经营重点相关且有期限。责任人、行动节点和验收依据会作为执行字段单独确认。\n${reference}\n\n正式版本会先展示 Provider、文件范围和 payload 估算，并等待确认。原型当前不会实际调用 Provider。`);
+      if (confirmed) alert('任务单生成请求已在原型中确认；不会自动开启诊断，也不会真实调用 Provider。');
+    });
 
     function renderTaskDetail() {
       const task = tasks[selectedTaskId];
@@ -797,7 +972,6 @@
     }
 
     range.addEventListener('input', () => document.getElementById('rangeValue').textContent = `${range.value}%`);
-    frameworkSelect.addEventListener('change', renderRootCause);
     document.getElementById('addTaskStep').addEventListener('click', () => {
       const task = tasks[selectedTaskId];
       document.querySelectorAll('.step-title-input').forEach((input, index) => { task.steps[index].title = input.value.trim() || task.steps[index].title; });

@@ -1,0 +1,3 @@
+使用 5W2H 结构化问题情境和已有行动要素，分别覆盖 What（要解决的问题/现象）、Why（经营影响或用户提供的理由，不等同于根因结论）、Who（已知相关岗位/对象）、When（期间/节点）、Where（业务范围/环节）、How（现有做法或有证据支持的候选办法）、How much（金额、数量、工时或影响范围）。
+
+首次生成报告时必须恰好返回七项：What、Why、Who、When、Where、How、How much 各一项；资料不足的维度仍须返回，answer 写 unknown，并填 missing_information 和 clarification_questions。不得遗漏、重复或改写维度名称。续问时只返回确实变化的项，finding_id 必须沿用原项 ID；不得删除其他 finding。每项返回稳定的 finding_id、dimension、question、answer、kind（observed/proposal）、fact_status、evidence_ids、confidence、missing_information、clarification_questions 和 status（candidate/needs_confirmation/resolved）。把已发生事实和未来建议分开；proposal 只表示分析建议，不得伪装成已批准行动。5W2H 报告只描述和分析，不返回或创建任务、行动步骤实体、责任分派或进度记录。

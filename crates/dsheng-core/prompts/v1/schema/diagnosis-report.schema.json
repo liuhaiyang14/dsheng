@@ -1,0 +1,920 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "diagnosis-report-v2",
+  "title": "Business diagnosis report v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "report_id",
+    "generation_session_id",
+    "workspace_id",
+    "run_id",
+    "framework",
+    "scope",
+    "period",
+    "revision_no",
+    "summary",
+    "source_manifest",
+    "findings",
+    "facts_and_hypotheses",
+    "evidence_refs",
+    "clarification_questions",
+    "warnings",
+    "stop_reason",
+    "can_continue",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2"
+    },
+    "report_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generation_session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "framework": {
+      "enum": [
+        "5why",
+        "5w",
+        "5w2h"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "problem_statement",
+        "focus_metric_ids"
+      ],
+      "properties": {
+        "problem_statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "focus_metric_ids": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "period": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "period_policy_version"
+      ],
+      "properties": {
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "to": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "period_policy_version": {
+          "type": "string"
+        }
+      }
+    },
+    "revision_no": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "summary": {
+      "type": "string"
+    },
+    "source_manifest": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/finding5why"
+          },
+          {
+            "$ref": "#/$defs/finding5w"
+          },
+          {
+            "$ref": "#/$defs/finding5w2h"
+          }
+        ]
+      }
+    },
+    "facts_and_hypotheses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/factHypothesis"
+      }
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidenceRef"
+      }
+    },
+    "clarification_questions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/openQuestion"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    },
+    "stop_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "can_continue": {
+      "type": "boolean"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "framework": {
+            "const": "5why"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "minItems": 1,
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/$defs/finding5why"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "framework": {
+            "const": "5w"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "minItems": 5,
+            "maxItems": 5,
+            "items": {
+              "$ref": "#/$defs/finding5w"
+            }
+          }
+        },
+        "allOf": [
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "What"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "Why"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "Where"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "When"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "Who"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "framework": {
+            "const": "5w2h"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "findings": {
+            "minItems": 7,
+            "maxItems": 7,
+            "items": {
+              "$ref": "#/$defs/finding5w2h"
+            }
+          }
+        },
+        "allOf": [
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "What"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "Why"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "Who"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "When"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "Where"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "How"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          },
+          {
+            "properties": {
+              "findings": {
+                "contains": {
+                  "properties": {
+                    "dimension": {
+                      "const": "How much"
+                    }
+                  },
+                  "required": [
+                    "dimension"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_id",
+        "file_label",
+        "sheet",
+        "selected_range",
+        "content_hash"
+      ],
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file_label": {
+          "type": "string"
+        },
+        "sheet": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selected_range": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_hash": {
+          "type": "string"
+        }
+      }
+    },
+    "finding5why": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "level",
+        "question",
+        "answer",
+        "fact_status",
+        "evidence_ids",
+        "reasoning_summary",
+        "confidence",
+        "validation_question",
+        "status"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "question": {
+          "type": "string"
+        },
+        "answer": {
+          "type": "string"
+        },
+        "fact_status": {
+          "enum": [
+            "fact",
+            "user_report",
+            "hypothesis",
+            "unknown"
+          ]
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/ids"
+        },
+        "reasoning_summary": {
+          "type": "string"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "validation_question": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "enum": [
+            "candidate",
+            "needs_confirmation",
+            "resolved"
+          ]
+        }
+      }
+    },
+    "finding5w": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "dimension",
+        "question",
+        "answer",
+        "fact_status",
+        "evidence_ids",
+        "confidence",
+        "missing_information",
+        "clarification_questions",
+        "status"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string"
+        },
+        "dimension": {
+          "enum": [
+            "What",
+            "Why",
+            "Where",
+            "When",
+            "Who"
+          ]
+        },
+        "question": {
+          "type": "string"
+        },
+        "answer": {
+          "type": "string"
+        },
+        "fact_status": {
+          "enum": [
+            "fact",
+            "user_report",
+            "hypothesis",
+            "unknown"
+          ]
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/ids"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "missing_information": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clarification_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "candidate",
+            "needs_confirmation",
+            "resolved"
+          ]
+        }
+      }
+    },
+    "finding5w2h": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "dimension",
+        "question",
+        "answer",
+        "kind",
+        "fact_status",
+        "evidence_ids",
+        "confidence",
+        "missing_information",
+        "clarification_questions",
+        "status"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string"
+        },
+        "dimension": {
+          "enum": [
+            "What",
+            "Why",
+            "Who",
+            "When",
+            "Where",
+            "How",
+            "How much"
+          ]
+        },
+        "question": {
+          "type": "string"
+        },
+        "answer": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "observed",
+            "proposal"
+          ]
+        },
+        "fact_status": {
+          "enum": [
+            "fact",
+            "user_report",
+            "hypothesis",
+            "unknown"
+          ]
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/ids"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "missing_information": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clarification_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "candidate",
+            "needs_confirmation",
+            "resolved"
+          ]
+        }
+      }
+    },
+    "factHypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "statement",
+        "fact_status",
+        "evidence_ids",
+        "user_quote",
+        "confidence",
+        "reasoning_summary"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string"
+        },
+        "statement": {
+          "type": "string"
+        },
+        "fact_status": {
+          "enum": [
+            "fact",
+            "user_report",
+            "hypothesis",
+            "unknown"
+          ]
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/ids"
+        },
+        "user_quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reasoning_summary": {
+          "type": "string"
+        }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "source_id",
+        "source_label",
+        "locator"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string"
+        },
+        "source_id": {
+          "type": "string"
+        },
+        "source_label": {
+          "type": "string"
+        },
+        "locator": {
+          "type": "string"
+        }
+      }
+    },
+    "openQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "question_id",
+        "question",
+        "status",
+        "answer_summary"
+      ],
+      "properties": {
+        "question_id": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "resolved"
+          ]
+        },
+        "answer_summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "warning_id",
+        "message",
+        "status",
+        "evidence_ids",
+        "fact_ids",
+        "resolution_note"
+      ],
+      "properties": {
+        "warning_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "active",
+            "resolved"
+          ]
+        },
+        "evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "fact_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "resolution_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "resolved"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "resolution_note": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "anyOf": [
+              {
+                "properties": {
+                  "evidence_ids": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "fact_ids": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "active"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "resolution_note": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

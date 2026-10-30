@@ -1,0 +1,550 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "diagnosis-turn-5w-v2",
+  "title": "5W diagnosis turn v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "framework",
+    "turn_disposition",
+    "accepted_facts",
+    "report_patch",
+    "redirect_message",
+    "clarification_questions",
+    "stop_reason"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2"
+    },
+    "framework": {
+      "const": "5w"
+    },
+    "turn_disposition": {
+      "enum": [
+        "on_topic",
+        "partially_relevant",
+        "off_topic_redirect",
+        "needs_clarification"
+      ]
+    },
+    "accepted_facts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/acceptedFact"
+      }
+    },
+    "report_patch": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/reportPatch"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "redirect_message": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "clarification_questions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/question"
+      }
+    },
+    "stop_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "turn_disposition": {
+            "enum": [
+              "off_topic_redirect",
+              "needs_clarification"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "accepted_facts": {
+            "maxItems": 0
+          },
+          "report_patch": {
+            "type": "null"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "turn_disposition": {
+            "const": "off_topic_redirect"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "redirect_message": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "turn_disposition": {
+            "enum": [
+              "on_topic",
+              "partially_relevant"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "report_patch": {
+            "$ref": "#/$defs/reportPatch"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "unknown"
+      ]
+    },
+    "acceptedFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_id",
+        "user_quote",
+        "normalized_statement",
+        "open_question_ids",
+        "evidence_ids",
+        "fact_status",
+        "confidence"
+      ],
+      "properties": {
+        "fact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "user_quote": {
+          "type": "string",
+          "minLength": 1
+        },
+        "normalized_statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "open_question_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/ids"
+        },
+        "fact_status": {
+          "const": "user_report"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "dimension",
+        "question",
+        "answer",
+        "fact_status",
+        "evidence_ids",
+        "confidence",
+        "missing_information",
+        "clarification_questions",
+        "status"
+      ],
+      "properties": {
+        "finding_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dimension": {
+          "enum": [
+            "What",
+            "Why",
+            "Where",
+            "When",
+            "Who"
+          ]
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "answer": {
+          "type": "string"
+        },
+        "fact_status": {
+          "enum": [
+            "fact",
+            "user_report",
+            "hypothesis",
+            "unknown"
+          ]
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/ids"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "missing_information": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "clarification_questions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "status": {
+          "enum": [
+            "candidate",
+            "needs_confirmation",
+            "resolved"
+          ]
+        }
+      }
+    },
+    "question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "question_id",
+        "question",
+        "why_needed",
+        "evidence_ids"
+      ],
+      "properties": {
+        "question_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "why_needed": {
+          "type": "string"
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/ids"
+        }
+      }
+    },
+    "factHypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "item_id",
+        "statement",
+        "fact_status",
+        "evidence_ids",
+        "user_quote",
+        "confidence",
+        "reasoning_summary"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "statement": {
+          "type": "string"
+        },
+        "fact_status": {
+          "enum": [
+            "fact",
+            "user_report",
+            "hypothesis",
+            "unknown"
+          ]
+        },
+        "evidence_ids": {
+          "$ref": "#/$defs/ids"
+        },
+        "user_quote": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "reasoning_summary": {
+          "type": "string"
+        }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_id",
+        "source_id",
+        "source_label",
+        "locator"
+      ],
+      "properties": {
+        "evidence_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_label": {
+          "type": "string"
+        },
+        "locator": {
+          "type": "string"
+        }
+      }
+    },
+    "openQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "question_id",
+        "question",
+        "status",
+        "answer_summary"
+      ],
+      "properties": {
+        "question_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "open",
+            "answered",
+            "resolved"
+          ]
+        },
+        "answer_summary": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "reportPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary_update",
+        "findings_upsert",
+        "facts_and_hypotheses_upsert",
+        "evidence_refs_append",
+        "clarification_questions_upsert",
+        "warnings_upsert",
+        "stop_reason",
+        "can_continue"
+      ],
+      "properties": {
+        "summary_update": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "findings_upsert": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/finding"
+          }
+        },
+        "facts_and_hypotheses_upsert": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/factHypothesis"
+          }
+        },
+        "evidence_refs_append": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceRef"
+          }
+        },
+        "clarification_questions_upsert": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/openQuestion"
+          }
+        },
+        "stop_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "can_continue": {
+          "type": "boolean"
+        },
+        "warnings_upsert": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/warning"
+          }
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "warning_id",
+        "message",
+        "status",
+        "evidence_ids",
+        "fact_ids",
+        "resolution_note"
+      ],
+      "properties": {
+        "warning_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "active",
+            "resolved"
+          ]
+        },
+        "evidence_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "fact_ids": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "resolution_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "resolved"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "resolution_note": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "anyOf": [
+              {
+                "properties": {
+                  "evidence_ids": {
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "fact_ids": {
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "active"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "resolution_note": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

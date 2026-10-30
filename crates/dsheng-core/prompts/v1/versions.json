@@ -1,0 +1,786 @@
+{
+  "schema_version": "1",
+  "status": "candidate",
+  "prompt_bundles": {
+    "task": {
+      "prompt_version": "1.3",
+      "files": [
+        "task/system.md",
+        "task/user.md"
+      ],
+      "response_schema": "schema/task-output.schema.json",
+      "schema_version": "1"
+    },
+    "diagnosis_5why": {
+      "prompt_version": "1.3",
+      "files": [
+        "diagnosis/system.md",
+        "diagnosis/user.md",
+        "diagnosis/framework-5why.md"
+      ],
+      "response_schema": "schema/diagnosis-turn-5why.schema.json",
+      "schema_version": "2"
+    },
+    "diagnosis_5w": {
+      "prompt_version": "1.4",
+      "files": [
+        "diagnosis/system.md",
+        "diagnosis/user.md",
+        "diagnosis/framework-5w.md"
+      ],
+      "response_schema": "schema/diagnosis-turn-5w.schema.json",
+      "schema_version": "2"
+    },
+    "diagnosis_5w2h": {
+      "prompt_version": "1.4",
+      "files": [
+        "diagnosis/system.md",
+        "diagnosis/user.md",
+        "diagnosis/framework-5w2h.md"
+      ],
+      "response_schema": "schema/diagnosis-turn-5w2h.schema.json",
+      "schema_version": "2"
+    }
+  },
+  "diagnosis_report_schema": "schema/diagnosis-report.schema.json",
+  "provider_validation": {
+    "state": "content_review_pending",
+    "date": "2026-10-30",
+    "provider": "MiniMax",
+    "model": "MiniMax-M3.1-Flash",
+    "protocol": "OpenAI Chat Completions compatible",
+    "request_fields": [
+      "model",
+      "messages"
+    ],
+    "response_path": "choices[0].message.content",
+    "reasoning_effort_used": false,
+    "response_format_used": false,
+    "request_attempts": 17,
+    "timeouts": 5,
+    "structural_scenarios": {
+      "task_generation_conflicting_sources": "passed",
+      "diagnosis_5why_initial": "passed",
+      "diagnosis_5w_initial": "passed",
+      "diagnosis_5w2h_initial_after_prompt_revision": "passed",
+      "diagnosis_5why_off_topic_continuation": "passed",
+      "diagnosis_5why_relevant_continuation": "schema_passed_semantic_failed",
+      "diagnosis_5why_initial_retest": "provider_timeout",
+      "diagnosis_5w_initial_retest": "provider_timeout",
+      "diagnosis_5w2h_initial_retest": "provider_timeout",
+      "diagnosis_5why_relevant_continuation_retest": "provider_timeout",
+      "diagnosis_5why_scope_clarification_retest": "selected_fields_and_scope_guard_passed_full_schema_not_run"
+    },
+    "semantic_review": "partial_retest_provider_timeout",
+    "semantic_findings": [
+      "Task generation preserved the unresolved expense-source conflict, applied the higher annual-plan/prior-year revenue floor, left unsupported owner/date/resource fields unset, and marked unproven achievability for review.",
+      "Initial 5WHY stopped where the evidence ended; 5W and 5W2H separated known facts from unknown causes and covered their required dimensions; 5WHY off-topic continuation redirected without a report patch.",
+      "Relevant 5WHY continuation merged a broad 'this month' user statement into a day-scoped report without confirming scope, cited a count-only source for unsupported cause claims, referenced newly invented question IDs, and appended a turn-local warning to persistent report state. Diagnosis system prompts were tightened; semantic retest remains required."
+    ],
+    "retest_2026_10_30": {
+      "base_url": "https://api.minimax.cn/v1",
+      "authorized_attempts": 5,
+      "hard_timeout_seconds": 60,
+      "successful_responses": 1,
+      "provider_timeouts": 4,
+      "passed_checks": [
+        "5WHY scope mismatch returned needs_clarification with empty accepted_facts and null report_patch"
+      ],
+      "unverified_checks": [
+        "5WHY initial",
+        "5W initial",
+        "5W2H initial",
+        "5WHY relevant continuation"
+      ],
+      "task_generation": "retained_previous_real_provider_semantic_pass",
+      "timeout_classification": "curl nonzero at 60-second max-time; curl exit code and stderr were not retained, so precise network cause is unknown",
+      "schema_validation": "selected top-level fields only; full Draft 2020-12 validation was not executed"
+    },
+    "data_handling": "Synthetic structured inputs only; original business XLSX/PPT and credentials were not written into repository records. No full request or response bodies were saved as local artifacts. Prior curl harness passed Authorization in child process arguments; later GLM harness uses in-memory HTTP headers. MiniMax historical attempt accounting includes failed and unobserved batches.",
+    "request_attempts_maximum": 22,
+    "request_count_semantics": "MiniMax only: 17 confirmed dispatched attempts; up to 5 additional attempts in a process whose output was not captured. Neither omitted nor counted as successful.",
+    "unobserved_attempts_maximum": 5,
+    "scope": "Historical MiniMax validation only; not the validation status of the current schema-2 diagnosis bundles.",
+    "received_json_response_count": 7,
+    "response_count_note": "Includes one response checked only at selected fields; does not mean full schema or semantic pass."
+  },
+  "validation_attempt_batches": [
+    {
+      "batch_id": "minimax-original",
+      "date": "2026-10-29",
+      "provider": "MiniMax",
+      "model": "MiniMax-M3.1-Flash",
+      "confirmed_dispatched": 7,
+      "additional_dispatches_maximum": 0,
+      "responses_observed": 6,
+      "request_timeouts_observed": 1,
+      "note": "Historical six-scenario review; retry exceeded original six-attempt cap by one, retained transparently."
+    },
+    {
+      "batch_id": "minimax-old-host",
+      "date": "2026-10-30",
+      "provider": "MiniMax",
+      "model": "MiniMax-M3.1-Flash",
+      "base_url": "https://api.minimaxi.com",
+      "confirmed_dispatched": 5,
+      "additional_dispatches_maximum": 0,
+      "http_errors_observed": 5,
+      "responses_observed": 0,
+      "note": "Old environment host used in error; exact HTTP status was not captured."
+    },
+    {
+      "batch_id": "minimax-unobserved",
+      "date": "2026-10-30",
+      "provider": "MiniMax",
+      "model": "MiniMax-M3.1-Flash",
+      "base_url": "https://api.minimax.cn/v1",
+      "confirmed_dispatched": 0,
+      "additional_dispatches_maximum": 5,
+      "responses_observed": 0,
+      "outcome": "unknown",
+      "note": "Five sequential calls were scheduled and process completion observed; session output was lost. Actual dispatched count and responses cannot be recovered; no passing credit."
+    },
+    {
+      "batch_id": "minimax-bounded-retest",
+      "date": "2026-10-30",
+      "provider": "MiniMax",
+      "model": "MiniMax-M3.1-Flash",
+      "base_url": "https://api.minimax.cn/v1",
+      "confirmed_dispatched": 5,
+      "additional_dispatches_maximum": 0,
+      "responses_observed": 1,
+      "transport_errors_at_deadline": 4,
+      "outcome": "partial_selected_fields_only",
+      "note": "Only scope clarification returned. No complete schema or independent semantic review of the response."
+    },
+    {
+      "batch_id": "zai-glm-51-default",
+      "date": "2026-10-30",
+      "provider": "Z.ai",
+      "model": "glm-5.1",
+      "base_url": "https://api.z.ai/api/paas/v4",
+      "authorized_maximum": 5,
+      "confirmed_dispatched": 1,
+      "additional_dispatches_maximum": 0,
+      "responses_observed": 0,
+      "http_errors_observed": 1,
+      "http_status": 429,
+      "provider_code": "1113",
+      "outcome": "insufficient_balance_or_resource_package",
+      "elapsed_seconds": 0.6,
+      "automatic_retries": 0,
+      "remaining_attempts_not_dispatched": 4
+    },
+    {
+      "batch_id": "zai-coding-glm-live",
+      "date": "2026-10-30",
+      "provider": "Z.ai Coding Plan",
+      "base_url": "https://api.z.ai/api/coding/paas/v4",
+      "authorization_group": "zai-switch-five-attempts",
+      "authorized_group_maximum": 5,
+      "group_attempts_including_default_endpoint": 5,
+      "confirmed_dispatched": 4,
+      "additional_dispatches_maximum": 0,
+      "responses_observed": 3,
+      "parse_failures": 1,
+      "automatic_retries": 0,
+      "tested_schema_version": "1",
+      "tested_prompt_versions": {
+        "diagnosis_5why": "1.2",
+        "diagnosis_5w2h": "1.3"
+      },
+      "attempts": [
+        {
+          "scenario": "5why_initial",
+          "requested_model": "glm-5.1",
+          "returned_model": null,
+          "elapsed_seconds": 58.6,
+          "result": "json_parse_failed",
+          "parse_stage": "not_captured_envelope_or_content_unknown"
+        },
+        {
+          "scenario": "5why_initial",
+          "requested_model": "glm-5.1",
+          "returned_model": "glm-5.3",
+          "elapsed_seconds": 69.6,
+          "result": "full_schema_passed_semantic_warning_lifecycle_failed",
+          "response_sha256": "579b983b19aee074f8c981965a0e18402e923f790ea897627dc659919c6f621b"
+        },
+        {
+          "scenario": "5why_relevant_continuation",
+          "requested_model": "glm-5.3",
+          "returned_model": "glm-5.3",
+          "elapsed_seconds": 151.1,
+          "result": "full_schema_passed_core_content_passed_aggregate_warning_conflict",
+          "response_sha256": "dcee613d3ad3c8f8464adfab85bcd201f09b0d7473a0767e990953b78d25239a"
+        },
+        {
+          "scenario": "5w2h_initial",
+          "requested_model": "glm-5.3",
+          "returned_model": "glm-5.3",
+          "elapsed_seconds": 132.0,
+          "result": "full_schema_passed_seven_dimensions_present_warning_lifecycle_requires_revision",
+          "response_sha256": "8fbe2e4d307bc25c703d8a22303a50e5745dbafbf274e0277e425462af433e48"
+        }
+      ],
+      "content_findings": [
+        "Evidence attribution, precise user quotes, stable finding IDs and existing question references passed in the related continuation.",
+        "5WHY stopped at unknown evidence; 5W2H returned all seven dimensions without invented responsibility, cost or actions.",
+        "Append-only warnings retained a stale stop level from the first round; independent review classified the aggregate-report conflict as P1."
+      ],
+      "limits": [
+        "Selected excerpts of the actual first response were used for continuation; not full production snapshot or persistence E2E.",
+        "5W, off-topic, scope mismatch, warning resolution and task generation were not tested with this GLM batch.",
+        "No schema-2 response has been obtained."
+      ]
+    },
+    {
+      "batch_id": "zai-schema2-eight",
+      "date": "2026-10-30",
+      "provider": "Z.ai Coding Plan",
+      "base_url": "https://api.z.ai/api/coding/paas/v4",
+      "model": "glm-5.3",
+      "authorized_maximum": 8,
+      "confirmed_dispatched": 8,
+      "additional_dispatches_maximum": 0,
+      "automatic_retries": 0,
+      "manual_retests": 2,
+      "successful_schema_and_content_samples": 5,
+      "read_timeouts": 1,
+      "content_json_errors": 2,
+      "remaining_authorized_attempts": 0,
+      "attempts": [
+        {
+          "attempt": 1,
+          "scenario": "5why_initial_schema2",
+          "prompt_version": "1.3",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+            "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13"
+          },
+          "request_sha256": "064f9ed40a7ccba44d712cb74b2c1ae6efe4a855ec590cf056a2c70747934692",
+          "dispatched": true,
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 68.0,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "90332a57365736d56f7568bda46b95457c2a3210190805ac59b7ba114e4f6893",
+          "schema_errors": [],
+          "domain_errors": [],
+          "aggregate_report_schema": "passed",
+          "report_revision": 1,
+          "semantic_review": "initial_5why_content_pass",
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 180,
+            "total": 240
+          }
+        },
+        {
+          "attempt": 2,
+          "scenario": "5why_relevant_continuation_full_state",
+          "prompt_version": "1.3",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+            "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13"
+          },
+          "request_sha256": "cc7d81cdcc76108d750797e03fcf2ec144e64177a27ac48dd1ed5ae3ab17328e",
+          "dispatched": true,
+          "outcome": "transport_error",
+          "elapsed_seconds": 180.2,
+          "error_type": "ReadTimeout",
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 180,
+            "total": 240
+          }
+        },
+        {
+          "attempt": 3,
+          "scenario": "task_skill_monthly_floor_conflict",
+          "prompt_version": "1.1",
+          "schema_version": "1",
+          "file_hashes": {
+            "task/system.md": "8665e96d750b396d24b12e9360d9f377aba52c27d9c4f7384ef76f65302105c0",
+            "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1",
+            "schema/task-output.schema.json": "29ca980a63c219d6ec3e7b34804477e0ad9ccff88119380947d4578040a7c7e6"
+          },
+          "request_sha256": "976a10c366fb367f00405d5ee81fe88a9f196e67c378512d26a041c559544f9e",
+          "dispatched": true,
+          "outcome": "content_json_error",
+          "elapsed_seconds": 153.9,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "829f70e56f6a897e08146f1d4b3c1d8389d88a7b81f538b78bad59ed03db629c",
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 180,
+            "total": 240
+          }
+        },
+        {
+          "attempt": 4,
+          "scenario": "5w_initial_schema2",
+          "prompt_version": "1.4",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5w.md": "1c67af076f4a7d1155c906a9bcb4223a50458d8d1af0d34e9fe89f77b0efac10",
+            "schema/diagnosis-turn-5w.schema.json": "066b446444d43513b11f852c4c8f70c234b2aff0bf4453b323293545df89de76"
+          },
+          "request_sha256": "528a28ac2848e181cd4ca0619100a27c929198dd69cc9b87480d951b9d8fa278",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 108.2,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "0278ed51a2d25a7f419347f5a50d52cb80bb4e36a9c6e9f7b4ffd4e629389167",
+          "schema_errors": [],
+          "domain_errors": [],
+          "semantic_review": "initial_5w_content_pass"
+        },
+        {
+          "attempt": 5,
+          "scenario": "5why_related_warning_safety_300s",
+          "prompt_version": "1.3",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+            "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13"
+          },
+          "request_sha256": "dfa87c8685846f97f1c39d37f5562793bd584b429d7c49af50143f2c9548a28b",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 162.5,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "20cf5124a87f6722e1ec7033f8caca0237e43bf53be0c1b2060d27ab6a3864b0",
+          "schema_errors": [],
+          "domain_errors": [],
+          "aggregate_report_schema": "passed",
+          "report_revision": 2,
+          "semantic_review": "relevant_continuation_and_unsupported_resolution_refusal_pass"
+        },
+        {
+          "attempt": 6,
+          "scenario": "5w2h_initial_schema2",
+          "prompt_version": "1.4",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5w2h.md": "826863a3e4e5888b95a5c34464e9247cc1d39e31d454e2b7ec07af7fce417d85",
+            "schema/diagnosis-turn-5w2h.schema.json": "5718e2ca7d0d1fff355821e7676fa308b30aa08bbc601e539fdab5a0bebafd27"
+          },
+          "request_sha256": "e3d6d310d3f9ea0696a659f71db82e96dd36baab2ec6b62387147b88ff48edba",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 110.8,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "04dd8c9d7e1668344986e08825994a541271c2509dcccb4b00da811656a20d68",
+          "schema_errors": [],
+          "domain_errors": [],
+          "semantic_review": "initial_5w2h_content_pass"
+        },
+        {
+          "attempt": 7,
+          "scenario": "task_skill_monthly_floor_conflict_manual_retest_300s",
+          "prompt_version": "1.1",
+          "schema_version": "1",
+          "file_hashes": {
+            "task/system.md": "8665e96d750b396d24b12e9360d9f377aba52c27d9c4f7384ef76f65302105c0",
+            "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1",
+            "schema/task-output.schema.json": "29ca980a63c219d6ec3e7b34804477e0ad9ccff88119380947d4578040a7c7e6"
+          },
+          "request_sha256": "976a10c366fb367f00405d5ee81fe88a9f196e67c378512d26a041c559544f9e",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "content_json_error",
+          "elapsed_seconds": 119.4,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "6941251ba6e814ed7670c7b02db672a4703e432f63c8a880e6d4722b01cdd123",
+          "json_error": {
+            "line": 1,
+            "column": 4378,
+            "pos": 4377,
+            "msg": "Expecting ',' delimiter",
+            "content_chars": 7421,
+            "starts_with_fence": false
+          }
+        },
+        {
+          "attempt": 8,
+          "scenario": "task_prompt12_strict_json_retest",
+          "prompt_version": "1.2",
+          "schema_version": "1",
+          "file_hashes": {
+            "task/system.md": "fa38fb30cf20f05182136bd569042fbbe5b529d06287aa24cd1d90bf48253902",
+            "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1",
+            "schema/task-output.schema.json": "29ca980a63c219d6ec3e7b34804477e0ad9ccff88119380947d4578040a7c7e6"
+          },
+          "request_sha256": "c1b3a31a2f11711bc40a075c6519857b0568822a40f083fa4fc8ffb31199fe7c",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 131.2,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "dfb3f3a40e6ad89750cc6d42715f0df0c7d9da4e79ef0a73219436f7026467a5",
+          "schema_errors": [],
+          "domain_errors": [],
+          "semantic_review": "monthly_task_prompt12_content_pass"
+        }
+      ],
+      "limits": [
+        "No positive warning-resolution sample in this batch.",
+        "Current task prompt subsequently changed after the daily-case review; prompt1.2 monthly pass is version-specific.",
+        "No product UI/SQLite/persistence E2E was executed."
+      ],
+      "data_policy": "Synthetic source data only. No raw business files, credentials, full payload or full model-response artifacts saved. Continuation used actual complete in-memory report state."
+    },
+    {
+      "batch_id": "zai-schema2-extra-five",
+      "date": "2026-10-30",
+      "provider": "Z.ai Coding Plan",
+      "base_url": "https://api.z.ai/api/coding/paas/v4",
+      "model": "glm-5.3",
+      "authorized_maximum": 5,
+      "confirmed_dispatched": 5,
+      "additional_dispatches_maximum": 0,
+      "automatic_retries": 0,
+      "successful_schema_and_content_samples": 4,
+      "semantic_failed_samples": 1,
+      "remaining_authorized_attempts": 0,
+      "attempts": [
+        {
+          "attempt": 1,
+          "scenario": "scope_mismatch_month_vs_day",
+          "prompt_version": "1.3",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+            "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13"
+          },
+          "request_sha256": "0663eb19e260cfc2b538b053c6a21df66f47ae7d4e9aebf9717f7db0eda40ec6",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 67.5,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "9845edc53214ec94d12bcc709e2629f5e8c5f4c5d756baf54040fd68754523f1",
+          "schema_errors": [],
+          "domain_errors": [],
+          "semantic_review": "Scope mismatch asks for confirmation, accepts no facts and produces no patch."
+        },
+        {
+          "attempt": 2,
+          "scenario": "off_topic_prompt_override",
+          "prompt_version": "1.3",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+            "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13"
+          },
+          "request_sha256": "73df019f6d6943d69f38747c2537af48e93416c9b47bf6e8345ee8d392e02594",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 29.0,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "5200252d498b83ef77a34e04c0d2cd57403bd6a03ae1d11bcdac24bccf645040",
+          "schema_errors": [],
+          "domain_errors": [],
+          "semantic_review": "Off-topic and rule-override attempt redirected without modifying the report."
+        },
+        {
+          "attempt": 3,
+          "scenario": "daily_task_no_monthly_floor",
+          "prompt_version": "1.2",
+          "schema_version": "1",
+          "file_hashes": {
+            "task/system.md": "fa38fb30cf20f05182136bd569042fbbe5b529d06287aa24cd1d90bf48253902",
+            "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1",
+            "schema/task-output.schema.json": "29ca980a63c219d6ec3e7b34804477e0ad9ccff88119380947d4578040a7c7e6"
+          },
+          "request_sha256": "8bb32b7e66978d22f9aa2d8ffa45bcc95790ce623c29266895286a5a28eb8232",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_passed_semantic_failed",
+          "elapsed_seconds": 167.6,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "e946758bc7fd46d62a5d6b6d09f3406cedd7b4ad65f49ed51361bf6dddd8da68",
+          "schema_errors": [],
+          "domain_errors": [],
+          "semantic_review": "P1: unsupported execution-step dates inherited from a one-day target period; preserved as a failed prompt1.2 sample."
+        },
+        {
+          "attempt": 4,
+          "scenario": "daily_task_prompt13_schedule_retest",
+          "prompt_version": "1.3",
+          "schema_version": "1",
+          "file_hashes": {
+            "task/system.md": "50db8bd0fef85065b82c0a484e57f9cb15331106103c336b98fa1c4507aa5e8c",
+            "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1",
+            "schema/task-output.schema.json": "29ca980a63c219d6ec3e7b34804477e0ad9ccff88119380947d4578040a7c7e6"
+          },
+          "request_sha256": "5c4585b1143a2b8ac8232d764ebfecea5334c085e33f659f34efcc810d19b479",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 149.0,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "6ac89dab31fe3af338131c5fc58c9612dceea9dbd0fd1e6908ae2f312e7f95d1",
+          "schema_errors": [],
+          "domain_errors": [],
+          "semantic_review": "Prompt1.3 daily task keeps steps unscheduled and does not apply monthly floors."
+        },
+        {
+          "attempt": 5,
+          "scenario": "monthly_task_prompt13_regression",
+          "prompt_version": "1.3",
+          "schema_version": "1",
+          "file_hashes": {
+            "task/system.md": "50db8bd0fef85065b82c0a484e57f9cb15331106103c336b98fa1c4507aa5e8c",
+            "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1",
+            "schema/task-output.schema.json": "29ca980a63c219d6ec3e7b34804477e0ad9ccff88119380947d4578040a7c7e6"
+          },
+          "request_sha256": "5c57535bf8b44585cd775f762804b4f6d1a453bccd6424df7191274b4387daf6",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass",
+          "elapsed_seconds": 101.4,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "956c97edca2fa859b9a81196b46c0c97a0c1b1387fdf5499bec98f12471b4225",
+          "schema_errors": [],
+          "domain_errors": [],
+          "semantic_review": "Prompt1.3 monthly regression preserves comparable floors, unresolved expense conflict and null step dates."
+        }
+      ],
+      "limits": [
+        "Positive warning resolution was deferred while the discovered step-scheduling P1 was repaired and retested.",
+        "Task prompt1.3 tested in one daily and one monthly synthetic case; no statistical reliability claim.",
+        "Full product/persistence/GUI/CLI tests remain implementation work."
+      ]
+    },
+    {
+      "batch_id": "zai-schema2-final-two",
+      "date": "2026-10-30",
+      "provider": "Z.ai Coding Plan",
+      "base_url": "https://api.z.ai/api/coding/paas/v4",
+      "model": "glm-5.3",
+      "authorized_maximum": 2,
+      "confirmed_dispatched": 2,
+      "additional_dispatches_maximum": 0,
+      "automatic_retries": 0,
+      "responses_observed": 2,
+      "complete_schema_passes": 2,
+      "reviewed_core_content_passes": 2,
+      "positive_warning_resolution": "not_observed",
+      "remaining_authorized_attempts": 0,
+      "attempts": [
+        {
+          "attempt": 1,
+          "scenario": "mapping_confirmation_warning_initial",
+          "prompt_version": "1.3",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+            "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13"
+          },
+          "request_sha256": "b1d24548f2a05328aa0e1a1d66aeb906a1120078996b8dabe73c03543e9a1048",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass_positive_resolution_not_observed",
+          "elapsed_seconds": 105.9,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "806235640b1f4e68e54f0c56775e7eefd1e49e94ad0f559319e9f7539bf911b1",
+          "schema_errors": [],
+          "domain_errors": [],
+          "aggregate_report_schema": "passed",
+          "report_revision": 1,
+          "semantic_review": "Initial mapping uncertainty preserved; subsequent oral confirmation stays user_report and active warning remains due to missing written mapping. No unsupported causal certainty."
+        },
+        {
+          "attempt": 2,
+          "scenario": "mapping_confirmation_warning_continuation",
+          "prompt_version": "1.3",
+          "schema_version": "2",
+          "file_hashes": {
+            "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+            "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+            "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+            "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13"
+          },
+          "request_sha256": "19923608b642be19d3318a79b9af96a17412774bcd939d1a5ab1f4d55d07cbf4",
+          "dispatched": true,
+          "timeout_budgets": {
+            "connect": 15,
+            "read": 300,
+            "total": 360
+          },
+          "outcome": "schema_and_reviewed_content_pass_positive_resolution_not_observed",
+          "elapsed_seconds": 196.7,
+          "http_status": 200,
+          "response_model": "glm-5.3",
+          "finish_reason": "stop",
+          "response_sha256": "7c97f7b550a8ae1db99c46869580d8311457129b5178f7c398ebd71e452ea5f0",
+          "schema_errors": [],
+          "domain_errors": [],
+          "aggregate_report_schema": "passed",
+          "report_revision": 2,
+          "semantic_review": "Initial mapping uncertainty preserved; subsequent oral confirmation stays user_report and active warning remains due to missing written mapping. No unsupported causal certainty."
+        }
+      ],
+      "limits": [
+        "The warning remained active; active-to-resolved semantic acceptance is NOT passed.",
+        "The fixture content_hash was derived from its synthetic version identifier, not source bytes. No file-integrity or source-change detection coverage is claimed.",
+        "Report state came from actual complete preceding response in memory; no product database, GUI or CLI E2E was executed."
+      ]
+    }
+  ],
+  "latest_provider_attempt": {
+    "batch_id": "zai-schema2-final-two",
+    "state": "partial_validated_pending_positive_warning_resolution",
+    "tested_model": "glm-5.3",
+    "current_requested_model": "glm-5.3",
+    "current_base_url": "https://api.z.ai/api/coding/paas/v4",
+    "current_diagnosis_schema_version": "2",
+    "remaining_authorized_attempts": 0,
+    "message": "All authorized 8+5+2 attempts completed. Current task1.3 daily/monthly and diagnosis initial/related/scope/off-topic samples passed reviewed checks. Positive warning resolution was not observed; acceptance remains incomplete and the prompt/Provider work package remains unfrozen. No automatic retries or product E2E claims.",
+    "current_task_prompt_version": "1.3"
+  },
+  "manifest_schema_version": "1",
+  "schema_version_semantics": "Manifest format only; runtime output schema version comes from the selected prompt bundle.",
+  "diagnosis_report_schema_version": "2",
+  "current_revision_reason": "Task1.3 step scheduling P1 repaired and tested in daily/monthly cases. Diagnosis schema2 warning upsert and conservative evidence handling reviewed. Positive active-to-resolved content acceptance remains unverified.",
+  "validation_totals": {
+    "confirmed_dispatched_all_providers": 37,
+    "additional_unobserved_dispatches_maximum": 5,
+    "provider_billing_not_inferred": true
+  },
+  "current_resource_hashes": {
+    "diagnosis/framework-5w.md": "1c67af076f4a7d1155c906a9bcb4223a50458d8d1af0d34e9fe89f77b0efac10",
+    "diagnosis/framework-5w2h.md": "826863a3e4e5888b95a5c34464e9247cc1d39e31d454e2b7ec07af7fce417d85",
+    "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+    "diagnosis/system.md": "f0a46832061b3696f34c3e3147bc7bb269f478829ad7eb72964a5f9f021d9952",
+    "diagnosis/user.md": "e70591dcf70dfcc76a7846e5bb49a50fd3428950dac55afff538ab87757f94ee",
+    "schema/diagnosis-report.schema.json": "d08b0f8b90f0cd0ba4d689d831aee08070ce68b09521d8938498adb3ca7f92ce",
+    "schema/diagnosis-turn-5w.schema.json": "066b446444d43513b11f852c4c8f70c234b2aff0bf4453b323293545df89de76",
+    "schema/diagnosis-turn-5w2h.schema.json": "5718e2ca7d0d1fff355821e7676fa308b30aa08bbc601e539fdab5a0bebafd27",
+    "schema/diagnosis-turn-5why.schema.json": "068330acee04bdf3e41064caf25d8e31910e862ed3ec80777e3afee7a3692e13",
+    "schema/task-output.schema.json": "29ca980a63c219d6ec3e7b34804477e0ad9ccff88119380947d4578040a7c7e6",
+    "task/system.md": "50db8bd0fef85065b82c0a484e57f9cb15331106103c336b98fa1c4507aa5e8c",
+    "task/user.md": "ec5e5410ef9c9ab87fac1ccbd906bca9f030a04ed055da6a60f2d835a4becbc1"
+  },
+  "current_acceptance": {
+    "state": "partial_validated_pending_positive_warning_resolution",
+    "date": "2026-10-30",
+    "static_review_unresolved_p0": 0,
+    "static_review_unresolved_p1": 0,
+    "prompt_and_provider_work_package_frozen": false,
+    "task_prompt13": {
+      "daily_unknown_target_and_schedule": "passed",
+      "monthly_comparable_floor_and_expense_conflict": "passed"
+    },
+    "diagnosis_schema2": {
+      "initial_5why": "passed",
+      "initial_5w": "passed",
+      "initial_5w2h": "passed",
+      "relevant_continuation_full_actual_report": "passed",
+      "unsupported_warning_resolution_refused": "passed",
+      "scope_mismatch": "passed",
+      "off_topic_override": "passed",
+      "mapping_confirmation_keeps_source_boundary": "passed",
+      "positive_warning_resolution": "not_observed"
+    },
+    "limits": [
+      "Sample-level checks do not establish statistical reliability.",
+      "5W/5W2H continuation, optional diagnosis reference in task generation, and product E2E remain unverified.",
+      "Pure schema checks and prototype state assertions are not Provider or application E2E tests."
+    ],
+    "remaining_planning_gate": "Main planning agent must obtain a genuine active-to-resolved response with adequate evidence under the locked-source contract, validate and independently review it before declaring full prompt freeze. Do not delegate this methodological acceptance gap to implementation agents."
+  }
+}
