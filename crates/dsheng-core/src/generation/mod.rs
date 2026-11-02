@@ -11,3 +11,4 @@ pub mod assemble;
 pub mod context;
 pub mod input;
 pub mod report;
+pub mod task_candidate;
