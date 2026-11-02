@@ -127,7 +127,7 @@ pub fn validate_base_url(base_url: &str) -> Result<(), &'static str> {
     match scheme {
         "https" => {}
         "http" => {
-            let host = rest.split(['/', ':']).next().unwrap_or("");
+            let host = host_of(rest).ok_or("url_host_required")?;
             let loopback = host == "localhost" || host == "127.0.0.1" || host == "[::1]";
             if !loopback {
                 return Err("http_only_loopback");
@@ -142,6 +142,17 @@ pub fn validate_base_url(base_url: &str) -> Result<(), &'static str> {
         return Err("url_host_required");
     }
     Ok(())
+}
+
+/// 取 authority 的 host 部分：先去路径；[IPv6] 括号形式整体返回（端口在括号后），
+/// 其余去 :port。
+fn host_of(authority_and_path: &str) -> Option<&str> {
+    let authority = authority_and_path.split('/').next()?;
+    if let Some(stripped) = authority.strip_prefix('[') {
+        let end = stripped.find(']')?;
+        return Some(&authority[..end + 2]);
+    }
+    authority.split(':').next()
 }
 
 /// 拼接 endpoint：去末尾斜杠后追加 /chat/completions；已含完整路径时提示填写 Base URL。

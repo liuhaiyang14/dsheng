@@ -29,12 +29,12 @@ fn client_construction_rules() {
     assert!(build_client("https://api.example.com/v1", &TIMEOUTS, &BUDGET).is_ok());
     assert!(build_client("http://localhost:9100", &TIMEOUTS, &BUDGET).is_ok());
     assert!(build_client("http://127.0.0.1:9100/base", &TIMEOUTS, &BUDGET).is_ok());
-    // 合同缺口（已记录，不改合同）：contracts::settings::validate_base_url 的
-    // host 拆分按 ':' 取首段，"[::1]" 被拆成 "["，IPv6 字面回环被误拒——
-    // 以冻结实现行为为准，见完成报告"合同缺口"。
+    // IPv6 字面回环按 spec §1.7 合法（主 Agent 已修复 validate_base_url 的
+    // host 拆分缺陷：[::1] 括号形式不再被 ':' 误拆）
+    assert!(build_client("http://[::1]:9100", &TIMEOUTS, &BUDGET).is_ok());
     let cases = [
         "http://insecure.example.com",
-        "http://[::1]:9100",
+        "http://[::abcd]:9100",
         "https://api.example.com/v1/chat/completions",
         "https://user:pass@api.example.com",
         "https://api.example.com/v1?q=1",
