@@ -24,3 +24,5 @@ jsonschema = { version = "0.60", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
+# Provider 工作包：S5 错误分类测试需要无网络构造 http::Response（reqwest 同源 1.x）
+http = "1"

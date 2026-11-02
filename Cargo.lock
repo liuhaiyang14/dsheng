@@ -390,6 +390,7 @@ dependencies = [
  "calamine",
  "chrono",
  "csv",
+ "http",
  "jsonschema",
  "regex",
  "reqwest",
