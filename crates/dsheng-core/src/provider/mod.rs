@@ -9,3 +9,4 @@
 //! 纯逻辑测试可用依赖注入并标明测试层次。
 
 pub mod extract;
+pub mod schema;
