@@ -8,6 +8,7 @@
 | task-input.schema.json、diagnosis-input.schema.json | 模型输入版本2 | 数据合同、prompt-context-validation.md |
 | task-edit.schema.json、task-reconcile.schema.json、task-state-cases.json | 编辑、候选采纳、任务状态 | task-lifecycle.md |
 | settings.schema.json、cli-surface.json | 配置、命令及错误码 | provider-config-delivery.md |
+| read-views.schema.json | 读侧命令输出视图（2026-11-02 用户批准的增量扩展；含 analysis show 命令） | task-lifecycle.md §7、data-period-import.md §1.4 |
 
 规则来源在[docs/specs](../../docs/specs/)。主计划组织范围/分工/验收，专项合同定义唯一行为；发现冲突由规划主Agent修复，不留给实现者自由选择。
 

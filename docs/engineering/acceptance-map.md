@@ -85,3 +85,27 @@ UI=UI 工作包；CLI=CLI/导出工作包；DOC=Skill 与手册工作包；REL=�
 | 71 独立只读交叉复审 | MAIN | PT | 每轮集成后执行 |
 
 > 基线 #8 冻结：本映射随合同演进由主 Agent 维护；新增用例必须先落归属再实现。
+
+## 证据台账（随集成轮更新；主 Agent 维护）
+
+状态枚举：`待工程` → `实现完成`（自动测试绿）→ `已归档`（证据链接落账）。
+证据层级三选一标注：PT 纯合同 / LV 真实模型 / E2E 产品端到端，互不可替代。
+
+| 用例 | 层级 | 状态 | 证据 |
+| --- | --- | --- | --- |
+| 42 | PT+LV | 已归档 | versions.json（2.3/2.0/schema2/3/input2 冻结）＋contracts::prompts 哈希守卫测试 |
+| 50 | LV | 已归档 | versions.json dispatch_accounting（44 次确认派发，无自动重试） |
+| 54 | PT | 已归档 | 主计划 §16、versions.json、VALIDATION.md 原样保留 |
+| 69 | LV | 已归档 | 2026-11-02 完整复测批受影响矩阵全部通过（LV01–LV08），用户批准冻结 |
+| 65 | PT | 实现完成 | 夹具接线（contract_fixtures.rs：DC 56 条解析）；算例执行待数据包合并 |
+| 66 | PT | 实现完成 | 夹具接线（TS 34+50 条解析）；用例执行待数据包合并 |
+| 71 | PT | 进行中 | 集成轮 1 将执行首轮独立只读复审 |
+| 34 | E2E(UI) | 实现完成 | src-ui 空档案切换测试（shell.test.tsx）；E2E 待 Tauri 壳 |
+| 8-10/23-26/32-34 UI 部分 | E2E(UI) | 实现完成 | src-ui 8 测试文件 54 用例（cf05892）；核心侧待数据包 |
+| 合同扩展 | PT | 已归档 | 2026-11-02 用户批准：read-views.schema.json＋analysis show（9e405e6） |
+
+集成待办（UI 字段对齐）：src-ui 的 `diff_value`→`delta`、mom/yoy 简化对象→完整 comparisonView、
+taskCandidateView 增 `envelope_locally_reconstructed`——UI 包合并后由主 Agent 安排适配轮。
+
+（未列出的用例均为 `待工程`；每轮合并后由主 Agent 把达成项从上表更新并链接到
+具体测试名/提交哈希/复审报告。）
