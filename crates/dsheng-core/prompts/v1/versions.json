@@ -765,23 +765,23 @@
     "task/user.md": "6827ea65c3530b5860ced0728abb5b98b411d9413cf672e0e56d69aba5b94aae"
   },
   "current_acceptance": {
-    "state": "candidate_2_3_affected_matrix_passed_freeze_pending_user_decision",
+    "state": "frozen_task_2_3_diagnosis_2_0",
     "date": "2026-11-02",
     "static_review_unresolved_p0": null,
     "static_review_unresolved_p1": null,
-    "prompt_and_provider_work_package_frozen": false,
-    "engineering_ready": false,
+    "prompt_and_provider_work_package_frozen": true,
+    "engineering_ready": true,
     "current_version_confirmed_dispatches": 44,
-    "remaining_authorized_attempts": 1,
+    "remaining_authorized_attempts": 0,
     "required_live_matrix": "docs/specs/prompt-context-validation.md#6",
     "proposed_maximum_attempts": 16,
     "proposed_is_authorized": false,
     "limits": [
-      "User decision 2026-11-02 (option C): strict-first prompt requirement plus audited local envelope wrap fallback; implemented in tools/extract_provider_json.py --policy adapt.",
-      "Full retest batch (19/20 authorized dispatches, 1 unused): every dispatched scenario passed the output contract; task 2.3 strict envelope 5/6 with one fallback-wrapped bare object; all task business semantics passed (daily null step dates + pending-schedule review, monthly floor 1200, explicit-only null target, minimal unknown, diagnosis-reference evidence bounds).",
-      "Diagnosis lifecycle gates closed on 2026-11-02: scope clarification returned needs_clarification with empty facts and null patch (twice), restate recovery accepted the fully specified supplement, contradiction-in-append refused overwrite (needs_clarification, null patch), continuation preserved stable finding IDs, and warning positive resolution succeeded (stable warning_id, resolved, non-empty note, evidence refs) after a locally resolved source conflict; user-text-only confirmation was correctly kept active.",
-      "Unverified residuals: user_confirmation-requirement warnings never occurred (the model chose source_record both times), 5W/5W2H and off-topic were not re-run in this batch (diagnosis prompt unchanged since their main-batch passes), single-sample coverage for several scenarios, and no statistical reliability is claimed.",
-      "All affected-matrix items for the 2.3 revision have live passes; work-package freeze and engineering_ready=true are recommended but remain pending explicit user confirmation given the one fallback-rescued envelope."
+      "Frozen by user decision 2026-11-02 after the full retest batch: all 19 dispatched scenarios passed the output contract; task 2.3 strict root-envelope 5/6 with one audited option-C fallback (envelope_locally_reconstructed=true).",
+      "Historical failures remain on record per version (2.0/2.1/2.2 bare objects, three scope-clarification timeouts) and are not rewritten by the freeze.",
+      "Documented residuals carried into engineering as non-blocking notes: user_confirmation-requirement warnings never occurred naturally; 5W/5W2H and off-topic coverage relies on main-batch evidence for the unchanged 2.0 diagnosis text; several scenarios have single samples; no statistical reliability is claimed.",
+      "The implementation MUST include the option-C adaptation layer (strict-first extraction with audited sole-bare-task envelope wrap, tools/extract_provider_json.py --policy adapt as the reference behavior) because bare-object responses still occur nondeterministically (1 of 6 in the freeze batch).",
+      "engineering_ready=true as of this freeze; remaining work is product implementation per the main plan acceptance cases."
     ],
     "remaining_planning_gate": "Repair task JSON reliability and complete only explicitly authorized affected regressions; keep failed and unverified scenarios open.",
     "task_output_schema_version": "2",
@@ -802,6 +802,13 @@
       "task_2_3_strict_envelope": "5 of 6 dispatches returned the root envelope directly (contract_matched)",
       "task_2_3_fallback_case": "monthly-floor dispatch returned a bare task object; option-C adapt fallback wrapped it with envelope_locally_reconstructed=true and all semantics passed",
       "conclusion": "envelope discipline is high but not deterministic; the audited fallback is required and sufficient under the option-C policy"
+    },
+    "freeze_decision": {
+      "decided_by": "user",
+      "decided_at": "2026-11-02",
+      "scope": "task prompt 2.3 + output schema 2 + diagnosis prompts 2.0 + turn/report schema 3 + input/context 2",
+      "basis": "Affected-matrix live passes on 2026-11-02 (19 dispatches, all contract-pass incl. one option-C fallback rescue) and independent reviews with P0/P1=0.",
+      "simultaneous_decision": "The 1 remaining authorized dispatch of the 2026-11-02 batch was voided by the user; remaining_authorized_attempts is now 0 by decision, not by exhaustion."
     }
   },
   "plan_readiness_review": {
@@ -1162,7 +1169,7 @@
         "authentication_or_quota_errors": 0,
         "authorized_maximum": 20,
         "confirmed_dispatched": 19,
-        "remaining_authorized_attempts": 1,
+        "remaining_authorized_attempts": 0,
         "authorization": "User-authorized 2026-11-02 for a complete retest; timeout constraint relaxed to 900s per user instruction.",
         "scope": "Task prompt 2.3 few-shot shape verification (5 scenarios incl. daily x2), diagnosis 2.0 chain: initial, continuation, contradiction-in-append, scope clarification, restate recovery, warning lifecycle (initial, user-text refusal, positive resolution via resolved source conflict), task with real diagnosis reference.",
         "timeout_policy": "900 seconds read timeout for this batch per user relaxation; product defaults unchanged.",
@@ -1465,7 +1472,8 @@
           "warning_positive_resolution_achieved": true,
           "warning_user_text_only_correctly_kept_active": true
         },
-        "interpretation": "The 2.3 few-shot example made the model emit the Schema 2 root envelope itself in 5 of 6 task responses; the monthly-floor response was once again a bare task object and was wrapped by the option-C adaptation fallback (envelope_locally_reconstructed=true), after which all business semantics passed. This confirms both halves of the option-C hybrid policy: the prompt fix largely works, and the audited fallback covers the residual nondeterminism. The diagnosis warning lifecycle closed its oldest open gate: active warning with immutable source_record requirement, refusal to resolve on user text alone, and full resolution (stable warning_id, non-empty note, evidence refs) once a locally resolved source conflict was supplied."
+        "interpretation": "The 2.3 few-shot example made the model emit the Schema 2 root envelope itself in 5 of 6 task responses; the monthly-floor response was once again a bare task object and was wrapped by the option-C adaptation fallback (envelope_locally_reconstructed=true), after which all business semantics passed. This confirms both halves of the option-C hybrid policy: the prompt fix largely works, and the audited fallback covers the residual nondeterminism. The diagnosis warning lifecycle closed its oldest open gate: active warning with immutable source_record requirement, refusal to resolve on user text alone, and full resolution (stable warning_id, non-empty note, evidence refs) once a locally resolved source conflict was supplied.",
+        "authorization_voidance": "User voided the 1 unused dispatch on 2026-11-02 at freeze time; nothing further may be dispatched under this authorization."
       }
     ],
     "followup_total_confirmed_dispatched": 28,
