@@ -765,29 +765,29 @@
     "task/user.md": "6827ea65c3530b5860ced0728abb5b98b411d9413cf672e0e56d69aba5b94aae"
   },
   "current_acceptance": {
-    "state": "candidate_task_prompt_2_3_pending_live_validation",
+    "state": "candidate_2_3_affected_matrix_passed_freeze_pending_user_decision",
     "date": "2026-11-02",
     "static_review_unresolved_p0": null,
     "static_review_unresolved_p1": null,
     "prompt_and_provider_work_package_frozen": false,
     "engineering_ready": false,
-    "current_version_confirmed_dispatches": 25,
-    "remaining_authorized_attempts": 0,
+    "current_version_confirmed_dispatches": 44,
+    "remaining_authorized_attempts": 1,
     "required_live_matrix": "docs/specs/prompt-context-validation.md#6",
     "proposed_maximum_attempts": 16,
     "proposed_is_authorized": false,
     "limits": [
-      "User decision 2026-11-02: option C hybrid envelope policy (strict-first prompt requirement plus audited local wrap fallback).",
-      "Task prompt 2.3 adds a complete schema-validated few-shot output example (root envelope + one nested task with null step dates and needs_review) to task/user.md, referenced from task/system.md; it has NO live validation yet.",
-      "Prompt 2.2 daily-schedule live failure remains on record: bare task object with no root envelope across 2.0/2.1/2.2.",
-      "Scope clarification timed out three times; warning resolution, correction/restate, pending recovery, diagnosis-reference task generation, unknown-target semantics and all 2.3 task scenarios remain unverified.",
-      "Prompt/provider work package remains unfrozen and engineering_ready remains false."
+      "User decision 2026-11-02 (option C): strict-first prompt requirement plus audited local envelope wrap fallback; implemented in tools/extract_provider_json.py --policy adapt.",
+      "Full retest batch (19/20 authorized dispatches, 1 unused): every dispatched scenario passed the output contract; task 2.3 strict envelope 5/6 with one fallback-wrapped bare object; all task business semantics passed (daily null step dates + pending-schedule review, monthly floor 1200, explicit-only null target, minimal unknown, diagnosis-reference evidence bounds).",
+      "Diagnosis lifecycle gates closed on 2026-11-02: scope clarification returned needs_clarification with empty facts and null patch (twice), restate recovery accepted the fully specified supplement, contradiction-in-append refused overwrite (needs_clarification, null patch), continuation preserved stable finding IDs, and warning positive resolution succeeded (stable warning_id, resolved, non-empty note, evidence refs) after a locally resolved source conflict; user-text-only confirmation was correctly kept active.",
+      "Unverified residuals: user_confirmation-requirement warnings never occurred (the model chose source_record both times), 5W/5W2H and off-topic were not re-run in this batch (diagnosis prompt unchanged since their main-batch passes), single-sample coverage for several scenarios, and no statistical reliability is claimed.",
+      "All affected-matrix items for the 2.3 revision have live passes; work-package freeze and engineering_ready=true are recommended but remain pending explicit user confirmation given the one fallback-rescued envelope."
     ],
     "remaining_planning_gate": "Repair task JSON reliability and complete only explicitly authorized affected regressions; keep failed and unverified scenarios open.",
     "task_output_schema_version": "2",
     "current_task_prompt_version": "2.3",
     "unconfirmed_dispatches_not_counted": 1,
-    "dispatch_accounting": "25 confirmed = main batch 16 (2026-10-30) + root-contract followup 6 (2026-10-30) + recovery 3 (2026-11-02); 1 additional launch on 2026-10-30 has unknown status and is excluded from all counts and evidence.",
+    "dispatch_accounting": "44 confirmed = main 16 (10-30) + root-contract followup 6 (10-30) + recovery 3 (11-02) + full retest 19 (11-02); 1 additional launch on 10-30 has unknown status and is excluded; 1 of the 20 authorized on 11-02 remains unused.",
     "envelope_policy": {
       "decision": "option_c_hybrid_adopted_2026_11_02",
       "strict_first": true,
@@ -797,7 +797,12 @@
       "implementation": "tools/extract_provider_json.py --policy adapt",
       "note": "The prompt still requires the model to output the root envelope itself; the fallback never invents business values"
     },
-    "current_version_confirmed_dispatches_note": "Counts the whole new-generation live series (task prompt 2.x texts: 16 main + 6 followup + 3 recovery). It is NOT the dispatch count of the current 2.3 text, which is 0 so far."
+    "current_version_confirmed_dispatches_note": "Counts the whole new-generation live series (task prompt 2.x texts). The current 2.3 text has 6 live dispatches (all task scenarios of the full retest batch); the other 13 full-retest dispatches exercised the unchanged diagnosis 2.0 text.",
+    "envelope_observation": {
+      "task_2_3_strict_envelope": "5 of 6 dispatches returned the root envelope directly (contract_matched)",
+      "task_2_3_fallback_case": "monthly-floor dispatch returned a bare task object; option-C adapt fallback wrapped it with envelope_locally_reconstructed=true and all semantics passed",
+      "conclusion": "envelope discipline is high but not deterministic; the audited fallback is required and sufficient under the option-C policy"
+    }
   },
   "plan_readiness_review": {
     "date": "2026-10-30",
@@ -1144,9 +1149,326 @@
         "final_candidate_validation": "failed",
         "current_candidate_after_followup": "2.2",
         "authentication_or_quota_errors_note": "Zero auth/quota errors on the Z.ai Coding Plan endpoint itself. The prior session died of quota errors on an unrelated third-party provider (its own agent backend), which is why one launch result was lost; that loss is not a Z.ai auth/quota failure."
+      },
+      {
+        "batch_id": "zai-glm53-full-retest-20",
+        "date": "2026-11-02",
+        "provider": "Z.ai Coding Plan",
+        "base_url": "https://api.z.ai/api/coding/paas/v4",
+        "endpoint": "/chat/completions",
+        "model": "glm-5.3",
+        "synthetic_inputs_only": true,
+        "automatic_retries": 0,
+        "authentication_or_quota_errors": 0,
+        "authorized_maximum": 20,
+        "confirmed_dispatched": 19,
+        "remaining_authorized_attempts": 1,
+        "authorization": "User-authorized 2026-11-02 for a complete retest; timeout constraint relaxed to 900s per user instruction.",
+        "scope": "Task prompt 2.3 few-shot shape verification (5 scenarios incl. daily x2), diagnosis 2.0 chain: initial, continuation, contradiction-in-append, scope clarification, restate recovery, warning lifecycle (initial, user-text refusal, positive resolution via resolved source conflict), task with real diagnosis reference.",
+        "timeout_policy": "900 seconds read timeout for this batch per user relaxation; product defaults unchanged.",
+        "fixture_note": "Three chained scenarios initially failed LOCAL input-schema fixture validation (accepted_facts/pending projection shape) and were NOT dispatched (counted:false, no request sent); fixtures were fixed and the chain re-dispatched. Fixture errors are not model failures. Ledger correction: the first run dispatched 10 requests; when the fixture-fixed chain rerun was prepared, 4 already-dispatched entries (5why initial, scope clarification, warning initial, warning resolve) were pruned from the working file and initially mis-counted as 15 total. Their sanitized records are restored verbatim from the preserved run log; the true batch total is 19 dispatches (10 + 7 + 2), leaving 1 of 20 unused. The scope-clarification, 5why-initial and warning-initial passes therefore each have two real samples, and the user-text-only warning refusal has two consistent samples.",
+        "results": [
+          {
+            "scenario": "task_daily_23_a",
+            "result": "contract_pass",
+            "elapsed_seconds": 83.6,
+            "response_sha256": "7f62f79d797d75d73d15c99e1546d8947d7ac6c78188308ebc8586f5ce917f28",
+            "content_sha256": "66608d466e8e074981b36ca8423c3a5eab1871723bf5df86aee44327eea66885",
+            "strict_extraction": "contract_matched",
+            "adapt_extraction": "contract_matched",
+            "envelope_locally_reconstructed": false,
+            "semantic": {
+              "steps_dates_all_null": true,
+              "needs_review_mentions_pending_schedule": true,
+              "target_value_none_without_basis": true
+            },
+            "input_sha256": "cb2d0cb2f42c49b67d433a22b4043db224e76fb0f1aa8f13bd0c0fffa170ac53"
+          },
+          {
+            "scenario": "task_minimal_unknown_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 93.6,
+            "response_sha256": "fa99ffe945f466d768198729a702ba1d06ed98708661cac56525fb8ed8b3cde0",
+            "content_sha256": "ed3146f883055ec770e7a376dc121554e3082d06f1fe11a4391ae66f4930d98e",
+            "strict_extraction": "contract_matched",
+            "adapt_extraction": "contract_matched",
+            "envelope_locally_reconstructed": false,
+            "semantic": {
+              "target_value_none": true,
+              "needs_review_nonempty": true
+            },
+            "input_sha256": "df744c7a8223080468a66db9efb326161288bd6e3d4398650c0b6dbff1d7d8c3"
+          },
+          {
+            "scenario": "task_daily_23_b",
+            "result": "contract_pass",
+            "elapsed_seconds": 87.9,
+            "response_sha256": "75bfe0546282fd9949ad18527680f6971bf47c3e3b58beb9accf84cef3f684fb",
+            "content_sha256": "72eed3bac6a9cf2d4644bb1b37e3bbd482b6440af10f22d188fbfdc977c67a24",
+            "strict_extraction": "contract_matched",
+            "adapt_extraction": "contract_matched",
+            "envelope_locally_reconstructed": false,
+            "semantic": {
+              "steps_dates_all_null": true,
+              "needs_review_mentions_pending_schedule": true,
+              "target_value_none_without_basis": true
+            },
+            "input_sha256": "cb2d0cb2f42c49b67d433a22b4043db224e76fb0f1aa8f13bd0c0fffa170ac53"
+          },
+          {
+            "scenario": "task_monthly_floor_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 129.2,
+            "response_sha256": "8c9a65d02440e75dc07da8dd82aaa7a339944c89671782d88beb24cb5348d6e5",
+            "content_sha256": "325080a485cb2efdd4d075cfe3bc49e8ebe3b488c983abc5ba522c72e40fdd82",
+            "strict_extraction": "no_contract_candidate",
+            "adapt_extraction": "wrapped_bare_task",
+            "envelope_locally_reconstructed": true,
+            "semantic": {
+              "floor_1200_present": true,
+              "lower_1100_absent": true
+            },
+            "input_sha256": "47d808713419de69be3e8a18d377bb612d90bb244ec9cd41ab1ee72e4d58ed4e"
+          },
+          {
+            "scenario": "task_explicit_only_down_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 115.4,
+            "response_sha256": "2f6589619fc1ea5efe6edf50dc327afec6d4ade1793fec900323af2932893135",
+            "content_sha256": "94074c3bc644a83cfd93ca7a652a7e569fd8510220399491a915788fc50080d7",
+            "strict_extraction": "contract_matched",
+            "adapt_extraction": "contract_matched",
+            "envelope_locally_reconstructed": false,
+            "semantic": {
+              "all_target_none": true
+            },
+            "input_sha256": "a0662fe440ff47f98d8a494bb354705ebb9c1e9de1ef8efd2af474cdec01eb3c"
+          },
+          {
+            "scenario": "task_with_diagnosis_reference_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 141.9,
+            "response_sha256": "b8b6c5c1d8e228fd59bc495d6cfcefade8860fcaee7ee00518a52eed662db2cc",
+            "content_sha256": "43fca125ba9e010561eac9ee03d74dea24a75e0665741811f0df0ef4a1b4e1ea",
+            "strict_extraction": "contract_matched",
+            "adapt_extraction": "contract_matched",
+            "envelope_locally_reconstructed": false,
+            "semantic": {
+              "evidence_known": true,
+              "used_evidence": [
+                "cell:00000000-0000-4000-8000-000000000010:数据:B2"
+              ]
+            },
+            "input_sha256": "764575aaf1a8b6a51ea5d4a53cc99b146f1556739a688709eeb6ea2b39d7b2fd"
+          },
+          {
+            "scenario": "diag_5why_initial_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 163.5,
+            "response_sha256": "c8340bb448195f85437d6c8f30bf84de8cac1ef219bb4b1bbf131eb55238b897",
+            "content_sha256": "1a33fad3d4d14cebc1376401e51f4690d82191b1fba5d60596ee32f439c9dc20",
+            "semantic": {
+              "disposition_on_topic": true,
+              "facts_evidence_known": true,
+              "patch_present": true
+            },
+            "input_sha256": "dab0133223ad3918dd41b721dd400a09fc7ea22ad213b18a1f4471fa486e4692"
+          },
+          {
+            "scenario": "diag_continuation_append_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 212.2,
+            "response_sha256": "f110952c69aecf440066ca601feb29435847607dd8f4602a12194b47b72f98ff",
+            "content_sha256": "3ca2ecfa0b2207d7aa2f911f720d79acc75b202b470df83c8c0503acdcb93881",
+            "semantic": {
+              "disposition_on_topic": true,
+              "finding_ids_stable": true,
+              "patch_present": true
+            },
+            "input_sha256": "1e881d7d718e2664f9006bc9851a106617874edac17d47a60ecac0a6f27915e5"
+          },
+          {
+            "scenario": "diag_contradiction_append_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 81.8,
+            "response_sha256": "7fe30d6295e4cc9389abb90923727d016c68b23564eb4bf3956abb24f512e74e",
+            "content_sha256": "e4c5108c515299e1931b67819d7f0b9650f5bec9f6cb35af6bc685abf952a6b2",
+            "semantic": {
+              "needs_clarification": true,
+              "no_patch": true
+            },
+            "input_sha256": "513f03a75f307e5594e5623d8726b286f988bf77b3bda53d6c997ed29296fc68"
+          },
+          {
+            "scenario": "diag_scope_clarification_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 151.9,
+            "response_sha256": "e8b3107903d51c4f4640f604bfe7348cf5f5860a71a29092b56b7bf8b1a4617f",
+            "content_sha256": "017004a6ca5ed67254c558843814597e58bce8c193dd4779fde84fd891584479",
+            "semantic": {
+              "needs_clarification": true,
+              "no_facts": true,
+              "no_patch": true,
+              "has_question": true
+            },
+            "input_sha256": "94388cd1c8d1f3e9f8e7a702851a727e19c835ad613ff8d7455769f6b04d44a3"
+          },
+          {
+            "scenario": "diag_restate_recovery_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 223.4,
+            "response_sha256": "415b3b72855ed31d89b7474154a4afb4d116d6b930b7bb9d1cfa0c01a4fa936f",
+            "content_sha256": "12f095eb34521e89bb3064e6279b7aedde8c0a60db6e3ef89d8eb605e8c8cd9f",
+            "semantic": {
+              "disposition_on_topic": true,
+              "facts_accepted": true,
+              "patch_present": true
+            },
+            "input_sha256": "9be6bd96abc608a140896d7a9401226aea016f4060e4336bb5f2f6d160dfbdf4"
+          },
+          {
+            "scenario": "diag_warning_initial_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 259.5,
+            "response_sha256": "3667a493475f508fc6b35e96eaaf8468ee11986b6b3efcfde50e7a529f789c6d",
+            "content_sha256": "62d88172a7a69c9a29ed93e64552a2e2fcdc885d027bdcd8b05229266239a9a7",
+            "semantic": {
+              "warning_active_present": true,
+              "requirement_valid": true,
+              "active_note_null": true,
+              "requirements": [
+                "source_record",
+                "source_record"
+              ],
+              "statuses": [
+                "active",
+                "active"
+              ]
+            },
+            "input_sha256": "c501288f7aba3341bbee6fbe344ffeb7716c1036560472fa9e25247e9699fef2"
+          },
+          {
+            "scenario": "diag_warning_resolve_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 268.2,
+            "response_sha256": "b103b40d545852adfee69790175eabb676038598ed31732bcd25bcec7b6521e9",
+            "content_sha256": "0facd3624766679e85cb6e35531693462c91ebf21e9df797ab90071e5decd89e",
+            "semantic": {
+              "warning_touched": true,
+              "resolved": false,
+              "resolution_note_nonempty": false,
+              "refs_nonempty": true,
+              "requirement": "source_record"
+            },
+            "input_sha256": "c503493b130d930189dfe046d1d66e8a38ff8696e94c0bf8781977924de6b02f"
+          },
+          {
+            "scenario": "diag_warning_pos_initial_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 182.4,
+            "response_sha256": "53783ea3d69b3968299c350c93ff0d297c3f5a3190018e568fdf4a4e8dc79246",
+            "content_sha256": "ea0b2ecd9d58772e62bafffd56a26ce5df3a0ae3b918d1678137e3eac90fdd23",
+            "semantic": {
+              "warning_active_present": true,
+              "requirements": [
+                "source_record"
+              ],
+              "warning_ids": [
+                "warn-0001-srcvalue-conflict"
+              ]
+            },
+            "input_sha256": "c501288f7aba3341bbee6fbe344ffeb7716c1036560472fa9e25247e9699fef2"
+          },
+          {
+            "scenario": "diag_warning_pos_resolve_23",
+            "result": "contract_pass",
+            "elapsed_seconds": 262.1,
+            "response_sha256": "27464000127b74294fa3fc5be188b5b0f9dc40f739ae84d1f27943ef4f73dbdb",
+            "content_sha256": "4300be60a3e043a9ea8b16793c1ca1242a4ced524db18fa413698784b0316946",
+            "semantic": {
+              "warning_touched": true,
+              "id_stable": true,
+              "resolved": true,
+              "resolution_note_nonempty": true,
+              "refs_nonempty": true,
+              "requirement": "source_record"
+            },
+            "input_sha256": "49298d371edbda7cf1056abf0f0fe8bfdeaae59d98028e10bfe7076216998c4f"
+          },
+          {
+            "scenario": "diag_5why_initial_23_run1",
+            "result": "contract_pass",
+            "elapsed_seconds": 141.4,
+            "response_sha256": "e9eff1f1a6f7512a7d716f5ab041eed218fb676fd4992c7e271f82cfa44e20d5",
+            "content_sha256": "47843836d28f64860b3ef2ff9c37b38541aee4f666c7cfd183c623ade4a158b3",
+            "input_sha256": "dab0133223ad3918dd41b721dd400a09fc7ea22ad213b18a1f4471fa486e4692",
+            "note": "first-run chain root, pruned from the working ledger before the fixture-fixed rerun; the dispatch was real and is restored to the count",
+            "semantic": {
+              "disposition_on_topic": true,
+              "facts_evidence_known": true,
+              "patch_present": true
+            }
+          },
+          {
+            "scenario": "diag_scope_clarification_23_run1",
+            "result": "contract_pass",
+            "elapsed_seconds": 96.4,
+            "response_sha256": "c27f9eed18064ff40feef7a9a41963821637e4bbdfdcf8303eba0cffc412e5fa",
+            "content_sha256": "a860a4a113ac339b2db3acc57e96c400af62d16120176658a2636e126190c401",
+            "input_sha256": "94388cd1c8d1f3e9f8e7a702851a727e19c835ad613ff8d7455769f6b04d44a3",
+            "note": "first-run scenario, pruned from the working ledger before the fixture-fixed rerun; the dispatch was real and is restored to the count",
+            "semantic": {
+              "needs_clarification": true,
+              "no_facts": true,
+              "no_patch": true,
+              "has_question": true
+            }
+          },
+          {
+            "scenario": "diag_warning_initial_23_run1",
+            "result": "contract_pass",
+            "elapsed_seconds": 166.7,
+            "response_sha256": "cc530503a06f5312d450cbfccef372420eaeee8813e4ab2df401394cbbf40b84",
+            "content_sha256": "5569dd0f5870ec0be5d2984f9749c81084384ec3db47cffd7e7f81b58525389e",
+            "input_sha256": "c501288f7aba3341bbee6fbe344ffeb7716c1036560472fa9e25247e9699fef2",
+            "note": "first-run scenario, pruned from the working ledger before the fixture-fixed rerun; the dispatch was real and is restored to the count",
+            "semantic": {
+              "warning_active_present": true,
+              "requirement_valid": true,
+              "active_note_null": true
+            }
+          },
+          {
+            "scenario": "diag_warning_resolve_23_run1",
+            "result": "contract_pass",
+            "elapsed_seconds": 296.2,
+            "response_sha256": "1729e54144fbcd234dba451310a340d76db180cf54a321115d2345441afc7f75",
+            "content_sha256": "e17636a28af1356f6f3a430620675a288d9a2c41f1baf3950b5f911d1943ff04",
+            "input_sha256": "c33878dfca36e959b8ed438fa572e6e6e07444384a85354d38c7df062d197356",
+            "note": "first-run scenario, pruned from the working ledger before the fixture-fixed rerun; the dispatch was real and is restored to the count",
+            "semantic": {
+              "warning_touched": true,
+              "resolved": false,
+              "resolution_note_nonempty": false,
+              "refs_nonempty": true
+            }
+          }
+        ],
+        "outcome_summary": {
+          "task_2_3_strict_envelope_passes": 5,
+          "task_2_3_bare_object_rescued_by_adapt_fallback": 1,
+          "task_semantics_all_pass": true,
+          "diagnosis_chain_all_pass": true,
+          "scope_clarification_returned": true,
+          "restate_recovery_pass": true,
+          "contradiction_refused_overwrite": true,
+          "warning_positive_resolution_achieved": true,
+          "warning_user_text_only_correctly_kept_active": true
+        },
+        "interpretation": "The 2.3 few-shot example made the model emit the Schema 2 root envelope itself in 5 of 6 task responses; the monthly-floor response was once again a bare task object and was wrapped by the option-C adaptation fallback (envelope_locally_reconstructed=true), after which all business semantics passed. This confirms both halves of the option-C hybrid policy: the prompt fix largely works, and the audited fallback covers the residual nondeterminism. The diagnosis warning lifecycle closed its oldest open gate: active warning with immutable source_record requirement, refusal to resolve on user text alone, and full resolution (stable warning_id, non-empty note, evidence refs) once a locally resolved source conflict was supplied."
       }
     ],
-    "followup_total_confirmed_dispatched": 9,
+    "followup_total_confirmed_dispatched": 28,
     "remaining_authorized_attempts_for_original_16": 0,
     "candidate_at_batch_time": {
       "task": "2.0",
@@ -1154,9 +1476,9 @@
       "task_output_schema": "2",
       "diagnosis_turn_schema": "3"
     },
-    "batch_scope_note": "This 16-dispatch batch tested task prompt 2.0 text as it existed then (diagnosis prompts 2.0, unchanged since). Follow-up batches recorded below tested 2.0-patch/2.1/2.2. The current task candidate is 2.3 (few-shot shape example added 2026-11-02 under the option-C decision) and has zero live dispatches so far; nothing in this batch is evidence for 2.3.",
+    "batch_scope_note": "This 16-dispatch batch tested task prompt 2.0 text as it existed then (diagnosis prompts 2.0, unchanged since). Follow-up batches recorded below tested 2.0-patch/2.1/2.2. The current task candidate is 2.3 (few-shot shape example added 2026-11-02 under the option-C decision) and its only live dispatches are in the 2026-11-02 full retest batch; nothing in this 2.0-era batch is evidence for 2.3.",
     "followup_total_unconfirmed_dispatched": 1,
-    "total_confirmed_dispatches_all_batches": 25,
+    "total_confirmed_dispatches_all_batches": 44,
     "total_unconfirmed_dispatches_all_batches": 1
   }
 }
