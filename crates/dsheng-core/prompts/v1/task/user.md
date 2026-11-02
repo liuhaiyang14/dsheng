@@ -12,6 +12,12 @@ PAYLOAD_JSON:
 OUTPUT_SCHEMA_JSON:
 {{output_schema_json}}
 
-END OF OUTPUT SCHEMA. Before sending, check the root shape one last time. Return exactly one root object with these three top-level keys:
+END OF OUTPUT SCHEMA. 下面是一个**完整输出的形状示例**。它只演示根对象、`tasks` 数组与任务对象的嵌套形状，以及无排期依据时步骤日期写 null 并在 needs_review 标注的写法。示例中的数值、日期、指标 ID 和证据 ID 都是合成占位值，必须完全忽略，只能使用本次 payload 中的真实值：
+
+{"schema_version":"2","summary":"基于来源记录生成一项合成销售额改善任务；步骤排期无依据，待确认。","tasks":[{"task_key":"candidate-task-1","title":"提升10月合成销售额","summary":"来源记录显示9月合成销售额为100.25；10月目标不低于100。","category":"revenue","metric_id":"00000000-0000-4000-8000-000000000020","source_period":{"from":"2026-09-01","to":"2026-09-30"},"target_period":{"from":"2026-10-01","to":"2026-10-31"},"baseline":{"value":100.25,"unit":"元"},"target_value":100,"unit":"元","owner":null,"planned_start":"2026-10-01","due_date":"2026-10-31","steps":[{"step_id":"candidate-step-1","order":1,"action":"与负责人确认10月销售改善措施","owner":null,"start_date":null,"due_date":null,"done_criteria":"措施清单获负责人确认","evidence_ids":["cell:00000000-0000-4000-8000-000000000010:数据:B2"],"status":"not_started"}],"resource_need":null,"success_criteria":"10月合成销售额不低于100元","evidence_ids":["cell:00000000-0000-4000-8000-000000000010:数据:B2"],"assumptions":[],"needs_review":["步骤执行日期待确认","目标数值依据待用户确认"],"smart_check":{"overall_goal":{"goal_text":"将2026年10月合成销售额改善至不低于100","criteria":{"S":{"status":"met","rationale":"目标指标与数值明确","evidence_ids":["cell:00000000-0000-4000-8000-000000000010:数据:B2"]},"M":{"status":"met","rationale":"以销售额数值衡量","evidence_ids":["cell:00000000-0000-4000-8000-000000000010:数据:B2"]},"A":{"status":"needs_confirmation","rationale":"改善幅度依据待确认","evidence_ids":[]},"R":{"status":"met","rationale":"与经营重点相关","evidence_ids":["cell:00000000-0000-4000-8000-000000000010:数据:B2"]},"T":{"status":"met","rationale":"目标期间为2026年10月","evidence_ids":["cell:00000000-0000-4000-8000-000000000010:数据:B2"]}}},"subgoals":[]}}]}
+
+注意示例的三个关键形状特征：根上只有 `schema_version`、`summary`、`tasks` 三个键；任务的 20 个字段全部位于 `tasks[0]` 内部，一个都没有出现在根上；无排期依据的步骤 `start_date`/`due_date` 为 null 且 needs_review 含"步骤执行日期待确认"。你的输出必须复刻这个嵌套形状，用本次 payload 的真实值替换所有占位值。
+
+Before sending, check the root shape one last time. Return exactly one root object with these three top-level keys:
 {"schema_version":"2","summary":"简短总结","tasks":[]}
 When a task exists, put the complete task object inside `tasks`; never move task fields to the root. `schema_version` is the output contract version `"2"`, which is separate from this prompt's version.

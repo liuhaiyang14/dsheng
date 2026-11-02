@@ -26,4 +26,4 @@
 
 来源冲突按conflict_id、measure_role、period、scope_key和unit识别，不能把同期间实绩与计划冲突混为一件。resolution_status=unresolved时保持未知、不选边；resolved是本地用户已作的明确来源选择，使用selected_evidence_id对应的获选值及resolution_id，保留其选择说明，不再把它当未解决冲突。已解决不等于来源事实经独立验证；不能外推其他期间或对象。指标单位字符串必须原样沿用输入中的规范unit，不改为同义简称。
 
-最终输出检查：根对象必须严格是 `{"schema_version":"2","summary":"...","tasks":[...]}`。任务字段只能出现在 `tasks` 数组元素内；即使只有一个任务也不能把 `task_key`、`title`、`steps` 等字段放在根上。没有合格任务时返回 `tasks: []`。这是输出合同要求，不是可选的 Provider 格式偏好。
+最终输出检查：根对象必须严格是 `{"schema_version":"2","summary":"...","tasks":[...]}`。任务字段只能出现在 `tasks` 数组元素内；即使只有一个任务也不能把 `task_key`、`title`、`steps` 等字段放在根上。没有合格任务时返回 `tasks: []`。user 消息末尾提供了一个完整输出的形状示例：它的嵌套结构与你的输出必须一致，但其中的数值、日期和 ID 是合成占位值，禁止照抄，必须换成本次输入的真实值。这是输出合同要求，不是可选的 Provider 格式偏好。

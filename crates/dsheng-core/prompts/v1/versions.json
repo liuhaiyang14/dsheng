@@ -3,7 +3,7 @@
   "status": "candidate",
   "prompt_bundles": {
     "task": {
-      "prompt_version": "2.2",
+      "prompt_version": "2.3",
       "files": [
         "task/system.md",
         "task/user.md"
@@ -744,7 +744,7 @@
   "manifest_schema_version": "1",
   "schema_version_semantics": "Manifest format only; runtime output schema version comes from the selected prompt bundle.",
   "diagnosis_report_schema_version": "3",
-  "current_revision_reason": "2.0 rebuilt typed metric/scope/target input contracts and new-goal direction rules; 2.1 added explicit Schema 2 root-object wording after bare task objects; 2.2 unified the root-envelope requirement across task/system.md, task/user.md and the embedded output-schema description after 2.1 still returned a bare object.",
+  "current_revision_reason": "2.0 rebuilt typed metric/scope/target input contracts and new-goal direction rules; 2.1 added explicit Schema 2 root-object wording after bare task objects; 2.2 unified the root-envelope requirement across task/system.md, task/user.md and the embedded output-schema description; 2.3 (2026-11-02, option-C decision) adds a complete schema-validated few-shot output example demonstrating the root envelope, nested task shape and null step dates with needs_review, referenced from system.md, pending live validation.",
   "validation_totals": {
     "confirmed_dispatched_all_providers": 37,
     "additional_unobserved_dispatches_maximum": 5,
@@ -761,11 +761,11 @@
     "schema/diagnosis-turn-5w2h.schema.json": "c286dc4b1b01f68acb6d2f72b83fe35f0c3ced90fdc3a48b44a44d5e343e6c26",
     "schema/diagnosis-turn-5why.schema.json": "fcf1381052eeea6234a1ce7933c941978183e62e3cdb00916668c6d06bd9e0bd",
     "schema/task-output.schema.json": "96a5eac0feac68669cf6f11402366679c1ce9c4bfd6418a30c63649e577eaf8f",
-    "task/system.md": "091368f0db8657285a6cd5f3bb526eb44db95674cffe25a56d0bc04d93d83d58",
-    "task/user.md": "35ce29a9904334a3b70d59aed3a02fb23131739a44ea6e10b780a1d71601a803"
+    "task/system.md": "283d20d3d1e3086f1674ae0d083bb86098dd385f084718001c9d96943302e636",
+    "task/user.md": "6827ea65c3530b5860ced0728abb5b98b411d9413cf672e0e56d69aba5b94aae"
   },
   "current_acceptance": {
-    "state": "candidate_task_prompt_2_2_live_validation_daily_failed",
+    "state": "candidate_task_prompt_2_3_pending_live_validation",
     "date": "2026-11-02",
     "static_review_unresolved_p0": null,
     "static_review_unresolved_p1": null,
@@ -777,19 +777,27 @@
     "proposed_maximum_attempts": 16,
     "proposed_is_authorized": false,
     "limits": [
-      "Task prompt 2.2 failed the live output contract on the daily-schedule scenario twice on 2026-11-02: the model returned one complete bare task object with all contract task fields but no {schema_version, summary, tasks} root envelope (finish_reason stop, not truncation).",
-      "The same bare-object failure mode was observed for prompt 2.0 (two scenarios), 2.1 (one retest) and 2.2 (harness-fixed retest); further prompt wording iterations were stopped per the agreed no-stacking rule.",
-      "The first 2026-11-02 measurement was invalidated by a harness extraction bug (largest-object heuristic selected a smartCriteria block); the harness was fixed and the scenario re-measured once - the failure stands on the corrected run.",
-      "One 2026-10-30 dispatch (2.2 final retest original launch) has unknown status because the prior session died; it is counted as unconfirmed and used as no evidence.",
-      "Whether the adaptation layer may wrap a sole complete bare task object into the root envelope is an open product decision; it was not applied to acceptance, so the daily scenario stays failed.",
-      "Scope clarification timed out three times; warning resolution, correction/restate, pending recovery, diagnosis-reference task generation, unknown-target semantics and all other 2.2 task scenarios remain unverified.",
+      "User decision 2026-11-02: option C hybrid envelope policy (strict-first prompt requirement plus audited local wrap fallback).",
+      "Task prompt 2.3 adds a complete schema-validated few-shot output example (root envelope + one nested task with null step dates and needs_review) to task/user.md, referenced from task/system.md; it has NO live validation yet.",
+      "Prompt 2.2 daily-schedule live failure remains on record: bare task object with no root envelope across 2.0/2.1/2.2.",
+      "Scope clarification timed out three times; warning resolution, correction/restate, pending recovery, diagnosis-reference task generation, unknown-target semantics and all 2.3 task scenarios remain unverified.",
       "Prompt/provider work package remains unfrozen and engineering_ready remains false."
     ],
     "remaining_planning_gate": "Repair task JSON reliability and complete only explicitly authorized affected regressions; keep failed and unverified scenarios open.",
     "task_output_schema_version": "2",
-    "current_task_prompt_version": "2.2",
+    "current_task_prompt_version": "2.3",
     "unconfirmed_dispatches_not_counted": 1,
-    "dispatch_accounting": "25 confirmed = main batch 16 (2026-10-30) + root-contract followup 6 (2026-10-30) + recovery 3 (2026-11-02); 1 additional launch on 2026-10-30 has unknown status and is excluded from all counts and evidence."
+    "dispatch_accounting": "25 confirmed = main batch 16 (2026-10-30) + root-contract followup 6 (2026-10-30) + recovery 3 (2026-11-02); 1 additional launch on 2026-10-30 has unknown status and is excluded from all counts and evidence.",
+    "envelope_policy": {
+      "decision": "option_c_hybrid_adopted_2026_11_02",
+      "strict_first": true,
+      "fallback": "adaptation layer may wrap one sole bare-task object (validated against the task subschema) into the Schema 2 root envelope; envelope_locally_reconstructed must be recorded wherever the result is stored",
+      "fallback_summary_rule": "reuse the bare task object summary string when non-empty, else empty string",
+      "refused_cases": "multiple bare-task candidates, or a bare object failing the task subschema",
+      "implementation": "tools/extract_provider_json.py --policy adapt",
+      "note": "The prompt still requires the model to output the root envelope itself; the fallback never invents business values"
+    },
+    "current_version_confirmed_dispatches_note": "Counts the whole new-generation live series (task prompt 2.x texts: 16 main + 6 followup + 3 recovery). It is NOT the dispatch count of the current 2.3 text, which is 0 so far."
   },
   "plan_readiness_review": {
     "date": "2026-10-30",
@@ -862,7 +870,7 @@
   "context_policy_version": "2",
   "current_input_contract_hashes": {
     "contracts/v1/diagnosis-input.schema.json": "e54bd7728f368474fb44e6fdbc5569f496094306ab4b9f6ba2cca3c2b3d7ebd4",
-    "contracts/v1/task-input.schema.json": "6a19da8a0290b2ffadc232ce67c9cae3ad497c097e96ab7be34659001eb954f9"
+    "contracts/v1/task-input.schema.json": "aa013fedc4630755ea1388c605fe9f6edb03b45bcb64e463d7bb060874680991"
   },
   "current_live_validation": {
     "batch_id": "zai-glm53-current-16",
@@ -1146,7 +1154,7 @@
       "task_output_schema": "2",
       "diagnosis_turn_schema": "3"
     },
-    "batch_scope_note": "This 16-dispatch batch tested task prompt 2.0 text as it existed then. Current task candidate is 2.2 after post-batch fixes; follow-up results are recorded separately and do not retroactively change this batch.",
+    "batch_scope_note": "This 16-dispatch batch tested task prompt 2.0 text as it existed then (diagnosis prompts 2.0, unchanged since). Follow-up batches recorded below tested 2.0-patch/2.1/2.2. The current task candidate is 2.3 (few-shot shape example added 2026-11-02 under the option-C decision) and has zero live dispatches so far; nothing in this batch is evidence for 2.3.",
     "followup_total_unconfirmed_dispatched": 1,
     "total_confirmed_dispatches_all_batches": 25,
     "total_unconfirmed_dispatches_all_batches": 1
