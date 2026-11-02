@@ -217,8 +217,8 @@ pub fn upsert_analysis_revision(
             rusqlite::Error::QueryReturnedNoRows => Ok(None),
             other => Err(other),
         })?;
-    let (run_id, revision_no, created_run) = match existing {
-        Some((run_id, current)) => (run_id, (current + 1) as u32, false),
+    let (run_id, revision_no, created_run, previous_revision) = match existing {
+        Some((run_id, current)) => (run_id, (current + 1) as u32, false, Some(current as u32)),
         None => {
             let run_id = uuid::Uuid::new_v4().to_string();
             tx.execute(
@@ -228,7 +228,7 @@ pub fn upsert_analysis_revision(
                  VALUES (?1, ?2, ?3, 1, ?4, ?5, ?5)",
                 params![run_id, workspace_id, period_key, fingerprint, utc_iso(now)],
             )?;
-            (run_id, 1, true)
+            (run_id, 1, true, None)
         }
     };
     if revision_no > 1 {
@@ -239,6 +239,16 @@ pub fn upsert_analysis_revision(
         )?;
     }
     insert_revision_row(&tx, &run_id, revision_no, &fingerprint, payload, now)?;
+    // 同事务继承 period links、封存旧 revision 快照并建新 revision snapshot 0
+    // （task-lifecycle §6；无任务时为显式空快照）。
+    crate::repository::task_store::adopt_revision_tasks(
+        &tx,
+        &run_id,
+        previous_revision.map(|r| r as i64),
+        revision_no as i64,
+        now,
+    )
+    .map_err(|e| RepoError::TaskService(e.to_string()))?;
     tx.commit()?;
     Ok(RevisionUpsert {
         run_id,

@@ -17,6 +17,10 @@ use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::Connection;
 
 pub mod analysis_runs;
+pub mod history_delete;
+pub mod reconcile;
+pub mod task_store;
+pub mod tasks;
 
 /// repository 层错误码（CLI cli-surface 词法对齐）。
 #[derive(Debug, thiserror::Error)]
@@ -42,6 +46,9 @@ pub enum RepoError {
     /// 底层 SQLite 错误。
     #[error("db error: {0}")]
     Db(#[from] rusqlite::Error),
+    /// 任务服务层错误（跨模块传递时保留词法）。
+    #[error("{0}")]
+    TaskService(String),
 }
 
 /// UTC ISO-8601 毫秒（时间戳存储格式）。
