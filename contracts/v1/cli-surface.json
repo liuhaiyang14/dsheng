@@ -148,7 +148,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": "docs/specs/data-period-import.md",
-      "notes": []
+      "notes": [],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/scanSummaryView"
     },
     {
       "command": "mapping show",
@@ -156,7 +157,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": "docs/specs/data-period-import.md",
-      "notes": []
+      "notes": [],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/fieldMappingView"
     },
     {
       "command": "mapping set",
@@ -230,7 +232,20 @@
       "input_contract": "docs/specs/data-period-import.md",
       "notes": [
         "no Provider; explicit policy required for boundary-crossing range; preserve historical snapshots"
-      ]
+      ],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/analysisRunView"
+    },
+    {
+      "command": "analysis show",
+      "syntax": "dsheng analysis show --workspace <id> --run <id> [--revision <n>] --json",
+      "kind": "read",
+      "provider_calls_maximum": 0,
+      "input_contract": null,
+      "notes": [
+        "reads a saved immutable revision without recalculation; latest current revision when --revision omitted",
+        "added by approved additive contract extension 2026-11-02"
+      ],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/analysisRunView"
     },
     {
       "command": "diagnosis generate",
@@ -282,7 +297,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": null,
-      "notes": []
+      "notes": [],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/diagnosisReportSummaryView"
     },
     {
       "command": "diagnosis show",
@@ -290,7 +306,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": null,
-      "notes": []
+      "notes": [],
+      "output_contract": "crates/dsheng-core/prompts/v1/schema/diagnosis-report.schema.json (report_revision snapshot object)"
     },
     {
       "command": "diagnosis export",
@@ -328,7 +345,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": null,
-      "notes": []
+      "notes": [],
+      "output_contract": "attempt state object: attempt_id/session_id/operation/request_stage/request_count/terminal_state/error_code (descriptive, envelope-wrapped)"
     },
     {
       "command": "generation cancel",
@@ -346,7 +364,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": null,
-      "notes": []
+      "notes": [],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/taskView"
     },
     {
       "command": "task show",
@@ -354,7 +373,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": null,
-      "notes": []
+      "notes": [],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/taskView"
     },
     {
       "command": "task update",
@@ -404,7 +424,8 @@
       "input_contract": "contracts/v1/task-reconcile.schema.json",
       "notes": [
         "Schema includes candidate identity, expected revisions and apply_token; --dry-run returns diff/apply_token; --apply requires token; no model identity matching"
-      ]
+      ],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/reconcilePreviewView (--dry-run only; --apply returns applied result summary)"
     },
     {
       "command": "task timeline",
@@ -412,7 +433,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": null,
-      "notes": []
+      "notes": [],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/timelineEntryView"
     },
     {
       "command": "history list",
@@ -420,7 +442,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": "docs/specs/task-lifecycle.md",
-      "notes": []
+      "notes": [],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/historyEntryView"
     },
     {
       "command": "history show",
@@ -428,7 +451,8 @@
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": "docs/specs/task-lifecycle.md",
-      "notes": []
+      "notes": [],
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/historyDetailView"
     },
     {
       "command": "history revisions",

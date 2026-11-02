@@ -87,7 +87,11 @@ fn cli_surface_catalog_matches_rust_enum() {
     let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let errors = v["errors"].as_object().expect("errors 对象");
     let commands = v["commands"].as_array().unwrap();
-    assert_eq!(commands.len(), 53, "53 条命令");
+    assert_eq!(
+        commands.len(),
+        54,
+        "54 条命令（2026-11-02 增补 analysis show）"
+    );
     for (code, spec) in errors {
         let parsed: dsheng_core::contracts::cli::CliErrorCode =
             serde_json::from_value(serde_json::Value::String(code.clone()))
@@ -117,5 +121,66 @@ fn task_and_diagnosis_input_schemas_are_valid_json() {
         let v: serde_json::Value =
             serde_json::from_str(&raw).unwrap_or_else(|e| panic!("{rel} 不是合法 JSON: {e}"));
         assert!(v.get("$id").is_some(), "{rel} 缺 $id");
+    }
+}
+
+#[test]
+fn read_views_schema_defs_and_cli_hooks() {
+    let raw = read_contract("contracts/v1/read-views.schema.json");
+    let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(v["$id"], "dsheng-read-views-v1");
+    let defs = v["$defs"].as_object().unwrap();
+    for required in [
+        "scanSummaryView",
+        "fieldMappingView",
+        "metricRowView",
+        "metricSeriesView",
+        "analysisRunView",
+        "taskView",
+        "taskCandidateView",
+        "timelineEntryView",
+        "historyEntryView",
+        "historyDetailView",
+        "diagnosisReportSummaryView",
+        "reconcilePreviewView",
+        "comparisonView",
+    ] {
+        assert!(defs.contains_key(required), "read-views 缺 {required}");
+        assert_eq!(
+            defs[required]["additionalProperties"], false,
+            "{required} 必须封闭字段"
+        );
+    }
+    // cli-surface 已挂接读侧输出契约
+    let cli: serde_json::Value =
+        serde_json::from_str(&read_contract("contracts/v1/cli-surface.json")).unwrap();
+    let hooked: Vec<&str> = cli["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|c| {
+            c["output_contract"]
+                .as_str()
+                .unwrap_or("")
+                .contains("read-views")
+        })
+        .map(|c| c["command"].as_str().unwrap())
+        .collect();
+    for expected in [
+        "scan",
+        "mapping show",
+        "analyze",
+        "analysis show",
+        "diagnosis list",
+        "task list",
+        "task show",
+        "task timeline",
+        "history list",
+        "history show",
+    ] {
+        assert!(
+            hooked.contains(&expected),
+            "命令 {expected} 未挂 read-views 输出契约"
+        );
     }
 }
