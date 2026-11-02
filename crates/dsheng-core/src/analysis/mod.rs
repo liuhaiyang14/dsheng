@@ -6,6 +6,7 @@
 
 pub mod engine;
 pub mod export_layout;
+pub mod fingerprint;
 pub mod observations;
 pub mod periods;
 pub mod targets;
@@ -15,6 +16,10 @@ pub use engine::{
     flow_sum, inventory_rollforward, period_gap, positive_div, ratio_aggregate,
     validate_formula_json, ClosingObservation, ComparisonOutcome, EngineReason, RollforwardInput,
     RollforwardOutcome, INBOUND_PAYMENT_GAP_LABEL, INVOICE_RECEIPT_GAP_LABEL,
+};
+pub use fingerprint::{
+    canonical_json, sha256_hex, AnalysisRevisionInput, BaseRef, ConflictResolutionSnapshot,
+    ManualInputSnapshot, MetricDefSnapshot, SourceSelection, CANONICALIZATION_VERSION,
 };
 pub use observations::{
     aggregate_cumulative_vs_months, aggregate_with_authoritative, dedupe_detail_rows,
