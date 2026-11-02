@@ -1,0 +1,32 @@
+{
+  "name": "dsheng-ui",
+  "private": true,
+  "version": "0.1.0",
+  "description": "两表一单 · 桌面 UI（纯前端阶段；Tauri 壳由主 Agent 集成时接入）",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:fixtures": "vite -- --fixtures",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "echarts": "^5.5.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.20.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^25.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8"
+  }
+}
