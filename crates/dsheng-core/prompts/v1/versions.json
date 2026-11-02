@@ -3,7 +3,7 @@
   "status": "candidate",
   "prompt_bundles": {
     "task": {
-      "prompt_version": "2.0",
+      "prompt_version": "2.2",
       "files": [
         "task/system.md",
         "task/user.md"
@@ -744,7 +744,7 @@
   "manifest_schema_version": "1",
   "schema_version_semantics": "Manifest format only; runtime output schema version comes from the selected prompt bundle.",
   "diagnosis_report_schema_version": "3",
-  "current_revision_reason": "Close plan contracts: typed metric/scope/target inputs, full fixed-source context, clarification/restate/revise lifecycle and evidence-typed warning resolution. All affected bundles need fresh real content validation.",
+  "current_revision_reason": "2.0 rebuilt typed metric/scope/target input contracts and new-goal direction rules; 2.1 added explicit Schema 2 root-object wording after bare task objects; 2.2 unified the root-envelope requirement across task/system.md, task/user.md and the embedded output-schema description after 2.1 still returned a bare object.",
   "validation_totals": {
     "confirmed_dispatched_all_providers": 37,
     "additional_unobserved_dispatches_maximum": 5,
@@ -760,31 +760,36 @@
     "schema/diagnosis-turn-5w.schema.json": "721e1733a5e75baa3db48a0d3fa20e37cc94454885bc72c386feee1653b55d4b",
     "schema/diagnosis-turn-5w2h.schema.json": "c286dc4b1b01f68acb6d2f72b83fe35f0c3ced90fdc3a48b44a44d5e343e6c26",
     "schema/diagnosis-turn-5why.schema.json": "fcf1381052eeea6234a1ce7933c941978183e62e3cdb00916668c6d06bd9e0bd",
-    "schema/task-output.schema.json": "a8a134b4ea7d8de687b3d498368b5592264a1dd052363a76d3bebf12e4072137",
-    "task/system.md": "64967faccbf8207b471e7a45799304288deb836d346caae66255ff862e7e47fd",
-    "task/user.md": "8fe4664d28345c3eef91e7dfae1badfba815fdcf3ea2c408719a15891824ed70"
+    "schema/task-output.schema.json": "96a5eac0feac68669cf6f11402366679c1ce9c4bfd6418a30c63649e577eaf8f",
+    "task/system.md": "091368f0db8657285a6cd5f3bb526eb44db95674cffe25a56d0bc04d93d83d58",
+    "task/user.md": "35ce29a9904334a3b70d59aed3a02fb23131739a44ea6e10b780a1d71601a803"
   },
   "current_acceptance": {
-    "state": "candidate_live_validation_complete_contract_incomplete",
-    "date": "2026-10-30",
+    "state": "candidate_task_prompt_2_2_live_validation_daily_failed",
+    "date": "2026-11-02",
     "static_review_unresolved_p0": null,
     "static_review_unresolved_p1": null,
     "prompt_and_provider_work_package_frozen": false,
     "engineering_ready": false,
-    "current_version_confirmed_dispatches": 16,
+    "current_version_confirmed_dispatches": 25,
     "remaining_authorized_attempts": 0,
     "required_live_matrix": "docs/specs/prompt-context-validation.md#6",
     "proposed_maximum_attempts": 16,
     "proposed_is_authorized": false,
     "limits": [
-      "Current candidate 2.0/2/3 was dispatched 16 times to Z.ai Coding Plan glm-5.3 using synthetic inputs only; live validation is complete for this allowance.",
-      "Diagnosis initial/continuation and off-topic samples passed reviewed checks; scope clarification timed out.",
-      "Task responses in this batch lack retained bodies; useful-field extraction is unverified rather than rejected solely for provider formatting.",
-      "Warning resolution, correction/restate, and several matrix scenarios remain unverified.",
-      "Prompt output guidance changed after the live batch; affected task/diagnosis behavior is unverified until a future authorized run."
+      "Task prompt 2.2 failed the live output contract on the daily-schedule scenario twice on 2026-11-02: the model returned one complete bare task object with all contract task fields but no {schema_version, summary, tasks} root envelope (finish_reason stop, not truncation).",
+      "The same bare-object failure mode was observed for prompt 2.0 (two scenarios), 2.1 (one retest) and 2.2 (harness-fixed retest); further prompt wording iterations were stopped per the agreed no-stacking rule.",
+      "The first 2026-11-02 measurement was invalidated by a harness extraction bug (largest-object heuristic selected a smartCriteria block); the harness was fixed and the scenario re-measured once - the failure stands on the corrected run.",
+      "One 2026-10-30 dispatch (2.2 final retest original launch) has unknown status because the prior session died; it is counted as unconfirmed and used as no evidence.",
+      "Whether the adaptation layer may wrap a sole complete bare task object into the root envelope is an open product decision; it was not applied to acceptance, so the daily scenario stays failed.",
+      "Scope clarification timed out three times; warning resolution, correction/restate, pending recovery, diagnosis-reference task generation, unknown-target semantics and all other 2.2 task scenarios remain unverified.",
+      "Prompt/provider work package remains unfrozen and engineering_ready remains false."
     ],
     "remaining_planning_gate": "Repair task JSON reliability and complete only explicitly authorized affected regressions; keep failed and unverified scenarios open.",
-    "task_output_schema_version": "2"
+    "task_output_schema_version": "2",
+    "current_task_prompt_version": "2.2",
+    "unconfirmed_dispatches_not_counted": 1,
+    "dispatch_accounting": "25 confirmed = main batch 16 (2026-10-30) + root-contract followup 6 (2026-10-30) + recovery 3 (2026-11-02); 1 additional launch on 2026-10-30 has unknown status and is excluded from all counts and evidence."
   },
   "plan_readiness_review": {
     "date": "2026-10-30",
@@ -857,7 +862,7 @@
   "context_policy_version": "2",
   "current_input_contract_hashes": {
     "contracts/v1/diagnosis-input.schema.json": "e54bd7728f368474fb44e6fdbc5569f496094306ab4b9f6ba2cca3c2b3d7ebd4",
-    "contracts/v1/task-input.schema.json": "58ba2a2597ec0271b10e4de640aed66f6c53db27f1ca521fb1886359405e2d2a"
+    "contracts/v1/task-input.schema.json": "6a19da8a0290b2ffadc232ce67c9cae3ad497c097e96ab7be34659001eb954f9"
   },
   "current_live_validation": {
     "batch_id": "zai-glm53-current-16",
@@ -999,6 +1004,151 @@
       "prompt_revision_after_live_batch": "task/diagnosis output guidance now prefers contract-shaped JSON while allowing provider wrappers; extracted objects still require output-contract validation. No additional live request was available.",
       "provider_format_strict_validation": false,
       "output_contract_validation_required": true
-    }
+    },
+    "followup_batches": [
+      {
+        "batch_id": "zai-glm53-task-root-contract-followup",
+        "date": "2026-10-30",
+        "provider": "Z.ai Coding Plan",
+        "base_url": "https://api.z.ai/api/coding/paas/v4",
+        "endpoint": "/chat/completions",
+        "model": "glm-5.3",
+        "synthetic_inputs_only": true,
+        "automatic_retries": 0,
+        "confirmed_dispatched": 6,
+        "authentication_or_quota_errors": 0,
+        "prompt_revision": "task 2.0 text patch before version bump to 2.1; final 2.1 validation remains pending",
+        "results": [
+          {
+            "scenario": "5why_initial_current",
+            "result": "contract_pass",
+            "elapsed_seconds": 145.3,
+            "response_sha256": "027c3627bc6f389250aa22e0c23d7483b90102ea9786cc03fb79e6fca172d2ae",
+            "content_sha256": "ae38045ca63fea2016b3ace299855dc18403990c6ea139061b176ee4507f69b6",
+            "input_sha256": "dab0133223ad3918dd41b721dd400a09fc7ea22d213b18a1f4471fa486e4692"
+          },
+          {
+            "scenario": "scope_clarification_current",
+            "result": "timeout",
+            "elapsed_seconds": 180.1,
+            "response_sha256": null,
+            "content_sha256": null,
+            "input_sha256": "94388cd1c8d1f3e9f8e7a702851a727e19c835ad613ff8d7455769f6b04d44a3"
+          },
+          {
+            "scenario": "task_monthly_floor_current",
+            "result": "contract_pass",
+            "elapsed_seconds": 94.6,
+            "response_sha256": "8cbf300035d369a5250226fd8a5ab9fd1a2067d7bddd839ec1928d823adf2137",
+            "content_sha256": "3edd4ac037dfe959ebdb5b89e2c1d9adb7450946039851ddb2b9f6c007a9bef0",
+            "input_sha256": "2ea771c0c269adc0434d33afd629c12a2fb1b2b5f0f0da457fb5e24e5552d63f"
+          },
+          {
+            "scenario": "task_daily_schedule_current_pre_patch",
+            "result": "contract_fail",
+            "elapsed_seconds": 87.9,
+            "response_sha256": "83db46d5afe6b176f8a0736c2204231b57ef15fd21aef2ba6e0f5e5d2b00025d",
+            "content_sha256": "a7c7ce5ea98b82f18835ba3d88c9b6f975dbdf68f581dccc3d47205022b43202",
+            "input_sha256": "5b4031333ea474d88136ef39bc99c462296c5c457d76ec087d09032d92ead248",
+            "failure": "bare task object missing schema_version, summary and tasks"
+          },
+          {
+            "scenario": "task_minimal_unknown_current_pre_patch",
+            "result": "contract_fail",
+            "elapsed_seconds": 108.3,
+            "response_sha256": "98e61bd3e8d89d5515c053ccd5aab3f83b808d31662fe3a7dfce3c267242b369",
+            "content_sha256": "74867c248efdeec6970a29748e2e83250e47ab1fa02d794556c953f2f74b9520",
+            "input_sha256": "d228637930d8fd4e41b8a5b0a154aa599a78b211cdbf1f99ca5f25b2bc366a22",
+            "failure": "bare task object missing schema_version, summary and tasks"
+          },
+          {
+            "scenario": "task_daily_schedule_prompt_patch_retest",
+            "result": "contract_pass",
+            "elapsed_seconds": 78.3,
+            "response_sha256": "93b16959125d0c141b7acc317d9f81b48efcded965d7c63bcc48542e20296a85",
+            "content_sha256": "2f262488630cade11ad84e0da9b9cc38d7547fb6619804f21daff01b8b7ba8af",
+            "input_sha256": "5b4031333ea474d88136ef39bc99c462296c5c457d76ec087d09032d92ead248",
+            "prompt_text_revision": "2.0 root-contract patch; request payload still carried 2.0"
+          }
+        ],
+        "interpretation": "The failure was a prompt-contract ambiguity: task system/user said one task/minimal object but did not repeat that Schema 2 requires the root wrapper. After explicit root-wrapper wording, the daily scenario passed; the patch was versioned as task prompt 2.1 and needs a fresh 2.1 request.",
+        "current_candidate_after_followup": "2.2",
+        "final_candidate_validation": "pending"
+      },
+      {
+        "batch_id": "zai-glm53-task-2-2-retest-recovery",
+        "date": "2026-11-02",
+        "provider": "Z.ai Coding Plan",
+        "base_url": "https://api.z.ai/api/coding/paas/v4",
+        "endpoint": "/chat/completions",
+        "model": "glm-5.3",
+        "synthetic_inputs_only": true,
+        "automatic_retries": 0,
+        "authentication_or_quota_errors": 0,
+        "confirmed_dispatched": 3,
+        "unconfirmed_dispatched": 1,
+        "scope": "Recovery of the follow-up series interrupted on 2026-10-30 when the prior planning session died mid-run; single-scenario task daily-schedule regressions of the task prompt candidate only. Approved under the user retest authorization of 2026-10-30.",
+        "results": [
+          {
+            "scenario": "task_daily_schedule_prompt2_1_root_contract_retest",
+            "dispatched_date": "2026-10-30",
+            "result": "contract_fail",
+            "elapsed_seconds": null,
+            "response_sha256": null,
+            "content_sha256": null,
+            "failure": "bare task object missing schema_version, summary and tasks",
+            "metadata_note": "response hashes and elapsed time were lost when the prior session terminated; dispatch and failure are recorded from that session report only"
+          },
+          {
+            "scenario": "task_daily_schedule_prompt2_2_final_retest",
+            "dispatched_date": "2026-10-30",
+            "result": "result_lost",
+            "dispatch_status": "unknown",
+            "elapsed_seconds": null,
+            "response_sha256": null,
+            "content_sha256": null,
+            "note": "launched 2026-10-30 15:43 local in a session that then died of unrelated provider quota errors; no response was ever observed; counted as unconfirmed, usable as neither pass nor fail evidence"
+          },
+          {
+            "scenario": "task_daily_schedule_prompt2_2_final_retest_redo",
+            "dispatched_date": "2026-11-02",
+            "result": "contract_fail",
+            "elapsed_seconds": 110.5,
+            "response_sha256": "6cd38658f9e4d9605ff53f3501544240f303d1b2e1412f5c7265613c4516ba76",
+            "content_sha256": "80c96a5a80c84ba60ccc6279352a5c0954763d2d91762c7cf3df343e8e3803cd",
+            "input_sha256": "6b199aa1d3f80b069f4ad749a9b290243d827309e5c0e1b1befa8ca0e66cb202",
+            "failure": "extracted object had only SMART letter keys (A/M/R/S/T); this measurement was invalidated by the harness extraction confound documented in harness_note and re-measured once below"
+          },
+          {
+            "scenario": "task_daily_schedule_prompt2_2_harness_fixed_retest",
+            "dispatched_date": "2026-11-02",
+            "result": "contract_fail",
+            "elapsed_seconds": 106.0,
+            "response_sha256": "79dc5f303b7067abbd365bda337f2bc5d788bba043629d94543ca18dd9481294",
+            "content_sha256": "5406aabcc5f03b2c5b43d53139773d3086cf4e6e8c67258000604aab2ee3f9e5",
+            "input_sha256": "6b199aa1d3f80b069f4ad749a9b290243d827309e5c0e1b1befa8ca0e66cb202",
+            "finish_reason": "stop",
+            "failure": "response contained one complete bare task object (all contract task fields present) plus seven smaller JSON fragments, and no candidate carried the {schema_version, summary, tasks} root envelope"
+          }
+        ],
+        "harness_note": "The retest harness previously selected the largest JSON object in a response; on the 2026-11-02 redo it selected a smartCriteria-shaped object (top-level keys A/M/R/S/T from the output schema $defs) and invalidated that measurement. The harness was corrected to prefer a schema-passing candidate, then the same scenario was re-measured once; the corrected run still found no root envelope. The corrected offline extractor is preserved in tools/extract_provider_json.py.",
+        "interpretation": "glm-5.3 returned a bare task object without the Schema 2 root envelope on the daily scenario across task prompt 2.0, 2.1 and 2.2 despite three rounds of explicit root-object wording; the task fields themselves were complete. Under the agreed policy this remains an output-contract failure. Whether the adaptation layer may locally wrap a sole complete bare task object into the root envelope is an open product decision and was NOT applied to acceptance.",
+        "final_candidate_validation": "failed",
+        "current_candidate_after_followup": "2.2",
+        "authentication_or_quota_errors_note": "Zero auth/quota errors on the Z.ai Coding Plan endpoint itself. The prior session died of quota errors on an unrelated third-party provider (its own agent backend), which is why one launch result was lost; that loss is not a Z.ai auth/quota failure."
+      }
+    ],
+    "followup_total_confirmed_dispatched": 9,
+    "remaining_authorized_attempts_for_original_16": 0,
+    "candidate_at_batch_time": {
+      "task": "2.0",
+      "diagnosis": "2.0",
+      "task_output_schema": "2",
+      "diagnosis_turn_schema": "3"
+    },
+    "batch_scope_note": "This 16-dispatch batch tested task prompt 2.0 text as it existed then. Current task candidate is 2.2 after post-batch fixes; follow-up results are recorded separately and do not retroactively change this batch.",
+    "followup_total_unconfirmed_dispatched": 1,
+    "total_confirmed_dispatches_all_batches": 25,
+    "total_unconfirmed_dispatches_all_batches": 1
   }
 }

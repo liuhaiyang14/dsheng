@@ -4,7 +4,7 @@
 
 ## 1. 版本与唯一资源
 
-任务 prompt 2.0 / 输出 schema 2；三种诊断 prompt 均 2.0 / turn 与 report schema 3；输入合同版本2。v1目录是集合名称。实际文件、哈希和冻结状态以 versions.json 为准。旧样例只支持当时版本，不能算本版通过。task/system、task/user；diagnosis/system、diagnosis/user+单个framework；每次附完整所选输出schema。
+任务 prompt 2.2 / 输出 schema 2；三种诊断 prompt 均 2.0 / turn 与 report schema 3；输入合同版本2。v1目录是集合名称。实际文件、哈希和冻结状态以 versions.json 为准。旧样例只支持当时版本，不能算本版通过。task/system、task/user；diagnosis/system、diagnosis/user+单个framework；每次附完整所选输出schema。
 
 仅生成任务、生成诊断和用户主动续问调用Provider；本地分析、重生成候选匹配、补录、SMART失效标记、确认和导出均不调用。请求预算、接收方确认见 provider-config-delivery.md。
 
@@ -71,11 +71,11 @@ schema3 warning在旧字段外增加resolution_requirement，枚举source_record
 
 正向fixture须采用明确管理选择风险+首轮已有完整政策依据，用户补充只明确其适用选择；不得让模型必造指定ID或伪造首轮。首轮实际未生成符合条件的风险时如实记未覆盖，而非手工插入warning。
 
-## 6. 待授权真实复测清单
+## 6. 真实复测清单与执行状态
 
-新版本没有调用证据，禁止标frozen。全部使用合成数据、真实glm-5.3指定入口、model/messages、不自动重试。每轮必须使用真实返回聚合报告，源hash按合成source canonical bytes计算，不用版本字串代替。
+本版禁止单凭静态合同标frozen。全部使用合成数据、真实glm-5.3指定入口、model/messages、不自动重试。每轮必须使用真实返回聚合报告，源hash按合成source canonical bytes计算，不用版本字串代替。
 
-计划上限16次，不构成授权：
+**执行状态（2026-11-02）**：主批16次已于2026-10-30获授权并全部派发；复批9次（另1次派发状态未知）经用户2026-10-30复测批准派发。已有证据：5WHY/5W/5W2H首轮与续问（LV03/LV04）、跑题纠偏（LV08部分）、任务月度下限（LV05部分）通过；**任务日度排期（LV07）在prompt 2.0/2.1/2.2下实测输出合同未通过**（裸任务对象缺根包装，已停止堆叠提示词修订）；范围澄清（LV02）超时3次未验证；警告正向解除（LV01）、更正/重述、pending恢复、诊断引用任务（LV06）及多数场景仍未验证。下表为原始计划矩阵，未执行/未通过项保持开放，新增真实调用须另行授权：
 
 | 次序 | 场景 | 证据 |
 | --- | --- | --- |

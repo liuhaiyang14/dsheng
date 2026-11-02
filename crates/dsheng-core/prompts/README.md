@@ -1,6 +1,6 @@
 # 内置提示词资源
 
-当前任务prompt 2.0 / output schema 2；三框架诊断prompt 2.0 / turn、report schema 3；输入和context policy为2。v1是资源集合名称。当前版本真实请求及结果按 versions.json 本轮批次记录，候选在真实内容验收完成前未冻结。
+当前任务prompt 2.2 / output schema 2；三框架诊断prompt 2.0 / turn、report schema 3；输入和context policy为2。v1是资源集合名称。当前版本真实请求及结果按 versions.json 本轮批次记录，候选在真实内容验收完成前未冻结。
 
 ## 装配
 

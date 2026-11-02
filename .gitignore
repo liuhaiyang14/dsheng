@@ -33,3 +33,7 @@ coverage/
 *.pdf
 exports/
 data/
+
+# Python build output
+__pycache__/
+*.pyc

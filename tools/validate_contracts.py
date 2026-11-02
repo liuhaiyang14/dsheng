@@ -153,7 +153,7 @@ def base_input(workflow):
         "actual": Decimal("100.25"), "delta": Decimal("-10"), "mom": None, "yoy": None,
         "evidence_ids": [EVIDENCE]}
     data = {"request": {"input_schema_version": "2", "run_id": UUID, "analysis_revision_no": 1,
-        "analysis_input_fingerprint": HASH, "prompt_version": "2.0", "workflow": workflow,
+        "analysis_input_fingerprint": HASH, "prompt_version": "2.2" if workflow == "task" else "2.0", "workflow": workflow,
         "schema_version": "2" if workflow == "task" else "3"},
         "workspace": {"workspace_id": UUID, "industry": None, "cadence": "month",
             "timezone": "Asia/Shanghai", "metric_definitions": [definition]}, "metrics": [metric],
@@ -170,7 +170,7 @@ def base_input(workflow):
     if workflow == "task":
         data["period"].update(target_from="2026-10-01", target_to="2026-10-31", target_grain="month")
         data.update(business_review={"summary": "合成Schema输入", "prior_task_outcomes": []},
-            task_skill_context={"rules_version": "2.0", "required_fields": ["task_key", "title", "summary", "category", "metric_id", "source_period", "target_period", "baseline", "target_value", "unit", "owner", "planned_start", "due_date", "steps", "resource_need", "success_criteria", "evidence_ids", "assumptions", "needs_review", "smart_check"],
+            task_skill_context={"rules_version": "2.2" if workflow == "task" else "2.0", "required_fields": ["task_key", "title", "summary", "category", "metric_id", "source_period", "target_period", "baseline", "target_value", "unit", "owner", "planned_start", "due_date", "steps", "resource_need", "success_criteria", "evidence_ids", "assumptions", "needs_review", "smart_check"],
                 "category_options": ["revenue", "cost", "efficiency", "other"]},
             optional_diagnosis_reference=None, user_context=None,
             output_contract={"schema": "task-output-v2", "schema_version": "2"})

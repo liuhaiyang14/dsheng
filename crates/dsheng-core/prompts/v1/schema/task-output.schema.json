@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "task-output-v2",
   "title": "Task output v2",
+  "description": "The response root is always this object with schema_version, summary, and tasks. A bare task object is invalid even when tasks contains only one item.",
   "type": "object",
   "additionalProperties": false,
   "required": [
