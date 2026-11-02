@@ -100,6 +100,12 @@ UI=UI 工作包；CLI=CLI/导出工作包；DOC=Skill 与手册工作包；REL=�
 | 65 | PT | 实现完成 | 夹具接线（contract_fixtures.rs：DC 56 条解析）；算例执行待数据包合并 |
 | 66 | PT | 实现完成 | 夹具接线（TS 34+50 条解析）；用例执行待数据包合并 |
 | 71 | PT | 进行中 | 集成轮 1 将执行首轮独立只读复审 |
+| 34 | E2E(UI) | 实现完成 | src-ui 空档案切换测试（shell.test.tsx）；E2E 待 Tauri 壳 |
+| 8-10/23-26/32-34 UI 部分 | E2E(UI) | 实现完成 | src-ui 8 测试文件 54 用例（cf05892）；核心侧待数据包 |
+| 合同扩展 | PT | 已归档 | 2026-11-02 用户批准：read-views.schema.json＋analysis show（9e405e6） |
+
+集成待办（UI 字段对齐）：src-ui 的 `diff_value`→`delta`、mom/yoy 简化对象→完整 comparisonView、
+taskCandidateView 增 `envelope_locally_reconstructed`——UI 包合并后由主 Agent 安排适配轮。
 
 （未列出的用例均为 `待工程`；每轮合并后由主 Agent 把达成项从上表更新并链接到
 具体测试名/提交哈希/复审报告。）
