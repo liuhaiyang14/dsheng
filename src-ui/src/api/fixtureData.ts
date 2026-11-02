@@ -332,6 +332,7 @@ export const fixtureAnalysisRun: AnalysisRunView = {
       buckets: dailyBuckets,
       actual: dailySeries(settlementDaily),
       plan: dailyBuckets.map(() => '7500'),
+      diff: dailySeries(['-1380', '-20', '-2290', '840', '-610', '-3380', '-3520', '-350', '760', '-1520', '240', '-1190', '-2980', '-3490', '320', '-960', '0', '610', '-1570', '-240', '-2720', '-3180', '550', '-790', '-1880', '480', '-2610', '-3090']),
       composition: null,
     },
     {
@@ -341,6 +342,7 @@ export const fixtureAnalysisRun: AnalysisRunView = {
       buckets: dailyBuckets,
       actual: dailySeries(marginDaily),
       plan: dailyBuckets.map(() => '20.0'),
+      diff: null,
       composition: null,
     },
     {
@@ -350,6 +352,7 @@ export const fixtureAnalysisRun: AnalysisRunView = {
       buckets: dailyBuckets,
       actual: dailySeries(cashDaily),
       plan: dailyBuckets.map(() => '90.0'),
+      diff: null,
       composition: [
         { name: '已回款', value: '1166460' },
         { name: '已开票未回款', value: '95340' },
@@ -363,6 +366,7 @@ export const fixtureAnalysisRun: AnalysisRunView = {
       buckets: dailyBuckets,
       actual: dailySeries(hourlyDaily),
       plan: dailyBuckets.map(() => '450'),
+      diff: null,
       composition: null,
     },
   ],

@@ -40,6 +40,7 @@ export function createRuntimeClient(): RuntimeClient {
 }
 
 export * from './types';
+export * from './format';
 export type {
   AnalyzeInput,
   DiagnosisContinueRequest,

@@ -769,6 +769,8 @@ export interface MetricSeriesView {
   actual: (DecimalString | null)[];
   /** 计划/目标线；无则 null。 */
   plan: (DecimalString | null)[];
+  /** 逐桶差异（核心计算返回）；无则 null。 */
+  diff: (DecimalString | null)[] | null;
   /** 构成分析用的分类构成（如回款构成）。 */
   composition: { name: string; value: DecimalString }[] | null;
 }
