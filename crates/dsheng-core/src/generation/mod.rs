@@ -6,3 +6,9 @@
 //!
 //! 硬约束：提示词正文已冻结（见 contracts::prompts），不得修改/重设计；
 //! 发现契约缺口报告主 Agent。禁止 Mock Provider/伪造模型响应。
+
+pub mod assemble;
+pub mod context;
+pub mod input;
+pub mod report;
+pub mod task_candidate;
