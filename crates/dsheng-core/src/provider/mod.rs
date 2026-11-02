@@ -8,5 +8,6 @@
 //! 硬约束：禁止 Mock Provider、假 endpoint、录制回放、自动重试；
 //! 纯逻辑测试可用依赖注入并标明测试层次。
 
+pub mod confirm;
 pub mod extract;
 pub mod schema;
