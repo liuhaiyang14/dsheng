@@ -1359,6 +1359,9 @@ export class FixtureClient implements DshengClient {
       task_snapshot_no: entry.task_snapshot_no,
       captured_at: entry.updated_at,
       metrics: structuredClone(fixtureAnalysisRun.metrics),
+      series: structuredClone(fixtureAnalysisRun.series),
+      grain: entry.cadence,
+      period: entry.period,
       tasks,
     };
   }

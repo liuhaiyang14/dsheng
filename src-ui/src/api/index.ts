@@ -40,5 +40,15 @@ export function createRuntimeClient(): RuntimeClient {
 }
 
 export * from './types';
+export type {
+  AnalyzeInput,
+  DiagnosisContinueRequest,
+  DiagnosisGenerateRequest,
+  DshengClient,
+  ExportResult,
+  TaskGenerateRequest,
+  TaskReconcileDryRunResult,
+  TaskTimelineQuery,
+} from './client';
 export { FixtureClient } from './fixtureClient';
 export { FIXTURE_DEMO_ANNOTATION } from './fixtureData';

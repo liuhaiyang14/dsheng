@@ -898,6 +898,10 @@ export interface HistoryDetailView {
   task_snapshot_no: number;
   captured_at: IsoDateTime;
   metrics: MetricRowView[];
+  /** 图表序列（缺桶 null）；只读快照。 */
+  series: MetricSeriesView[];
+  grain: Cadence;
+  period: DateRange;
   tasks: {
     task_id: string;
     title: string;
