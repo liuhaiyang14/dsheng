@@ -8,4 +8,6 @@
 //! 发现契约缺口报告主 Agent。禁止 Mock Provider/伪造模型响应。
 
 pub mod assemble;
+pub mod context;
 pub mod input;
+pub mod report;
