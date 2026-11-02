@@ -1,0 +1,20 @@
+[package]
+name = "dsheng-core"
+description = "dsheng 两表一单本地经营分析工具共享 Rust 核心（桌面 Tauri 与 CLI 复用）"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+rust_decimal = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+rusqlite = { workspace = true }
+regex = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

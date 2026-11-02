@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/dsheng-core",
+    "crates/dsheng-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# 按主计划 11.1：不放置 LICENSE，保留所有权利（未授予默认复制/修改/分发权）。
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+rust_decimal = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+sha2 = "0.10"
+thiserror = "2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+regex = "1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

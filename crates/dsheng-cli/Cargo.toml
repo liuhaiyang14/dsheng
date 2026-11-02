@@ -1,0 +1,14 @@
+[package]
+name = "dsheng-cli"
+description = "dsheng 独立 CLI（链接同一 dsheng-core；完整命令面由 CLI 工作包实现）"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[[bin]]
+name = "dsheng"
+path = "src/main.rs"
+
+[dependencies]
+dsheng-core = { path = "../dsheng-core" }
+serde_json = { workspace = true }
