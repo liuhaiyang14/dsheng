@@ -419,3 +419,59 @@ fn s1_gate_flag_pairs_validated_at_parse() {
         "gate 非法组合或 workspace 校验必须先于其他错误: {code_name}"
     );
 }
+
+#[test]
+fn s1_provider_set_protocol_const_rejected_by_serde() {
+    // F3：protocol const 校验由 core ChatCompletionsMarker 的 Deserialize 承担
+    // （jsonio 旁路已移除；非 "chat_completions" 在解析边界拒绝）
+    let db = tmp_db("pvproto");
+    let dir = tempfile::tempdir().expect("临时目录");
+    let in_file = dir.path().join("ws.json");
+    std::fs::write(
+        &in_file,
+        r#"{"schema_version":"1","operation":"workspace_create","name":"w","initial_period_policy":{"cadence":"month","effective_from":"2026-01-01"}}"#,
+    )
+    .unwrap();
+    let (out, code) = run(&[
+        "workspace",
+        "create",
+        "--db",
+        &db,
+        "--input-json",
+        in_file.to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let ws_id = envelope_ok(&out)["workspace"]["workspace_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for bad_protocol in ["openai", "chat_completions_v2", ""] {
+        let upsert = format!(
+            r#"{{"schema_version":"1","operation":"provider_upsert","workspace_id":"{ws_id}","provider_id":null,"expected_revision":null,"config":{{"name":"p1","protocol":"{bad_protocol}","base_url":"https://api.example.com/v1","model":"m","stream":false,"timeouts":{{"connect_seconds":15,"response_seconds":180,"total_seconds":240}},"budget":{{"context_window_tokens":32768,"output_reserve_tokens":8192}}}},"key_action":"keep"}}"#
+        );
+        let f = dir.path().join("p_bad.json");
+        std::fs::write(&f, &upsert).unwrap();
+        let (out, code) = run(&[
+            "provider",
+            "set",
+            "--db",
+            &db,
+            "--workspace",
+            &ws_id,
+            "--input-json",
+            f.to_str().unwrap(),
+            "--json",
+        ]);
+        assert_eq!(code, 2, "protocol={bad_protocol} 必须解析拒绝: {out}");
+        let (code_name, detail) = envelope_err(&out);
+        assert_eq!(code_name, "INVALID_ARGUMENT");
+        assert!(
+            detail["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("chat_completions"),
+            "错误信息指向 const: {out}"
+        );
+    }
+}

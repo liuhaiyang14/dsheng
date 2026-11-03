@@ -99,26 +99,8 @@ pub fn parse_settings_operation(
                 .ok_or_else(|| CliError::invalid("缺少 policy"))?;
             obj.insert("policy".into(), materialize_policy_json(policy)?);
         }
-        "provider_upsert" => {
-            // core ChatCompletionsMarker 为 unit 类型（合同 const "chat_completions"
-            // 的字符串形式在其 Deserialize 之外——core 类型缺口，报告主 Agent）。
-            // CLI 在解析前校验 const 并转 null 供 unit 反序列化。
-            let config = obj
-                .get_mut("config")
-                .ok_or_else(|| CliError::invalid("缺少 config"))?;
-            if let Some(config) = config.as_object_mut() {
-                match config.get("protocol") {
-                    Some(serde_json::Value::String(s)) if s == "chat_completions" => {
-                        config.insert("protocol".into(), serde_json::Value::Null);
-                    }
-                    _ => {
-                        return Err(CliError::invalid(
-                            "protocol 必须为 \"chat_completions\"（settings.schema const）",
-                        ))
-                    }
-                }
-            }
-        }
+        // provider_upsert：protocol const 校验由 core ChatCompletionsMarker 的
+        // Deserialize 承担（serde const；不再旁路转换）
         _ => {}
     }
     serde_json::from_value(serde_json::Value::Object(obj))
