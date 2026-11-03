@@ -18,6 +18,8 @@ regex = { workspace = true }
 # 数据工作包：表格读取（xlsx/xls）与 CSV
 calamine = "0.38"
 csv = "1"
+# 数据工作包：IANA 时区（Asia/Shanghai 等本地日历日转换，§3.1）
+chrono-tz = "0.10"
 # Provider 工作包：HTTP（仅 HTTPS/回环；禁重定向）与 JSON Schema Draft 2020-12 校验
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip"] }
 jsonschema = { version = "0.60", default-features = false }

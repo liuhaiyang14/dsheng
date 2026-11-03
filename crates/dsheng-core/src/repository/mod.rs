@@ -4,11 +4,72 @@
 //! migrations/0001_init.sql 为 Phase 0 冻结基线。数据工作包实现 repository 层；
 //! 修改冻结唯一键/事务语义须经主 Agent 批准并以新 migration 版本提交。
 //!
-//! Phase 0 仅提供：嵌入 migration 清单 + 最小应用器（供测试/首启建库骨架）。
-//! 完整迁移协议（排他锁、一致性备份、回滚、schema 版本协商）由数据工作包
-//! 按合同 §9 实现，替换本模块时保持 [`MIGRATIONS`] 契约不变。
+//! - [`analysis_runs`]：period_key / 策略版本化 / 不可变 run revision / 输入指纹；
+//! - [`tasks`]：任务内容/进度/period_link 编辑、状态机、事件、快照、幂等；
+//! - [`reconcile`]：候选合并 dry-run/apply 与 apply_token；
+//! - [`history_delete`]：run 历史删除预览/确认；
+//! - [`migration`]：schema 版本协商、一致性备份、排他锁、单事务迁移。
+//!
+//! Phase 0 提供：嵌入 migration 清单 + 最小应用器（供测试/首启建库骨架）；
+//! 完整迁移协议在 [`migration`]。
 
+use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::Connection;
+
+pub mod analysis_runs;
+pub mod history_delete;
+pub mod migration;
+pub mod reconcile;
+pub mod task_store;
+pub mod tasks;
+
+/// repository 层错误码（CLI cli-surface 词法对齐）。
+#[derive(Debug, thiserror::Error)]
+pub enum RepoError {
+    /// expected revision 与当前不一致（lifecycle §1）。
+    #[error("REVISION_CONFLICT")]
+    RevisionConflict,
+    /// 跨 workspace 访问（lifecycle §1）。
+    #[error("WORKSPACE_MISMATCH")]
+    WorkspaceMismatch,
+    /// 策略版本 [from,to) 区间重叠（data-period §3.1）。
+    #[error("POLICY_OVERLAP_REJECTED")]
+    PolicyOverlapRejected,
+    /// 分析范围跨策略版本且未显式选择。
+    #[error("POLICY_SELECTION_REQUIRED")]
+    PolicySelectionRequired,
+    /// 同 mutation_id 不同 digest。
+    #[error("IDEMPOTENCY_CONFLICT")]
+    IdempotencyConflict,
+    /// 已删除 mutation 的结果重放。
+    #[error("MUTATION_RESULT_DELETED")]
+    MutationResultDeleted,
+    /// 底层 SQLite 错误。
+    #[error("db error: {0}")]
+    Db(#[from] rusqlite::Error),
+    /// 任务服务层错误（跨模块传递时保留词法）。
+    #[error("{0}")]
+    TaskService(String),
+}
+
+/// UTC ISO-8601 毫秒（时间戳存储格式）。
+pub fn utc_iso(now: DateTime<Utc>) -> String {
+    now.to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+/// 测试/引导用：确保 workspace 存在。
+pub fn ensure_workspace(
+    conn: &Connection,
+    workspace_id: &str,
+    name: &str,
+) -> Result<(), RepoError> {
+    conn.execute(
+        "INSERT OR IGNORE INTO workspaces (workspace_id, name, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?3)",
+        rusqlite::params![workspace_id, name, utc_iso(Utc::now())],
+    )?;
+    Ok(())
+}
 
 /// 嵌入 migration 清单（顺序即版本；发布包含同一清单）。
 pub const MIGRATIONS: &[(&str, &str)] =
