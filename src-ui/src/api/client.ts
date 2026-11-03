@@ -40,6 +40,7 @@ import type {
   WorkspaceUpdateInput,
   WorkspaceUseInput,
   WorkspaceView,
+  TaskStatus,
 } from './types';
 
 export interface AnalyzeInput {
@@ -48,6 +49,10 @@ export interface AnalyzeInput {
   from: IsoDate;
   to: IsoDate;
   grain: Cadence | 'auto';
+  /** 历史回算：显式选择周期策略版本（可选）。 */
+  policy_id?: string;
+  /** 历史回算：按指定口径重算（可选）。 */
+  recalculate?: boolean;
 }
 
 export interface DiagnosisGenerateRequest {
@@ -57,6 +62,8 @@ export interface DiagnosisGenerateRequest {
   problem: string;
   focus_metric_id?: string;
   provider_id?: string;
+  /** CLI 合同必填：≥1 条当前 run 来源证据 ID。 */
+  evidence_ids: string[];
 }
 
 export interface DiagnosisContinueRequest {
@@ -86,10 +93,20 @@ export interface TaskReconcileDryRunResult {
   expires_at: string;
 }
 
+/** 诊断报告导出结果（核心 CLI 契约形状 export_written）。 */
 export interface ExportResult {
-  /** 导出文件写入路径（由核心/壳层落盘）。 */
-  out_path: string;
-  format: 'md' | 'json';
+  written: boolean;
+  out: string;
+  bytes: number;
+}
+
+/** task update 返回摘要（核心 CLI 契约形状；重读用 taskShow）。 */
+export interface TaskUpdateSummary {
+  task_id: string;
+  task_revision_no: number;
+  status: TaskStatus;
+  progress: string;
+  replayed: boolean;
 }
 
 export interface DshengClient {
@@ -169,7 +186,7 @@ export interface DshengClient {
   // ---- 任务读写 ----
   taskList(workspaceId: string, runId?: string): Promise<TaskView[]>;
   taskShow(workspaceId: string, taskId: string): Promise<TaskView>;
-  taskUpdate(input: TaskEditInput): Promise<TaskView>;
+  taskUpdate(input: TaskEditInput): Promise<TaskUpdateSummary>;
   taskTimeline(query: TaskTimelineQuery): Promise<TimelineEntryView[]>;
 
   // ---- 历史查询 ----

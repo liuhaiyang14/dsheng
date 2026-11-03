@@ -317,7 +317,8 @@ export function TaskDrawer({
     };
     setBusy(true);
     try {
-      const updated = await client.taskUpdate(input);
+      await client.taskUpdate(input);
+      const updated = await client.taskShow(input.workspace_id, input.task_id);
       setCurrent(updated);
       setDirty(false);
       setSourceNote('');
@@ -387,7 +388,8 @@ export function TaskDrawer({
     };
     setBusy(true);
     try {
-      const updated = await client.taskUpdate(input);
+      await client.taskUpdate(input);
+      const updated = await client.taskShow(input.workspace_id, input.task_id);
       setCurrent(updated);
       setAdjustmentReason('');
       setBlockedReason('');

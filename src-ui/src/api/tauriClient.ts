@@ -94,7 +94,9 @@ export class TauriClient implements DshengClient {
 
   // ---- workspace（dsheng workspace list/create/update/use） ----
   workspaceList(): Promise<WorkspaceView[]> {
-    return this.invoke('workspace_list');
+    return this.invoke<{ workspaces: WorkspaceView[] }>('workspace_list').then(
+      (d) => d.workspaces,
+    );
   }
   workspaceCreate(input: WorkspaceCreateInput): Promise<WorkspaceView> {
     return this.invoke('workspace_create', { input });
@@ -108,7 +110,9 @@ export class TauriClient implements DshengClient {
 
   // ---- period（dsheng workspace period list/set） ----
   periodList(workspaceId: string): Promise<PeriodPolicyView[]> {
-    return this.invoke('period_list', { workspaceId });
+    return this.invoke<{ policies: PeriodPolicyView[] }>('period_list', { workspaceId }).then(
+      (d) => d.policies,
+    );
   }
   periodSet(input: PeriodPolicySetInput): Promise<PeriodPolicyView> {
     return this.invoke('period_set', { input });
@@ -116,7 +120,9 @@ export class TauriClient implements DshengClient {
 
   // ---- provider（保存不发请求；无连接测试命令） ----
   providerList(workspaceId: string): Promise<ProviderView[]> {
-    return this.invoke('provider_list', { workspaceId });
+    return this.invoke<{ providers: ProviderView[] }>('provider_list', { workspaceId }).then(
+      (d) => d.providers,
+    );
   }
   providerSet(
     input: ProviderUpsertInput,
@@ -140,7 +146,9 @@ export class TauriClient implements DshengClient {
     return this.invoke('scan', { workspaceId, directoryLabel });
   }
   fieldMappings(workspaceId: string, runId: string): Promise<FieldMappingRow[]> {
-    return this.invoke('mapping_show', { workspaceId, runId });
+    return this
+      .invoke<{ mappings: FieldMappingRow[] }>('mapping_show', { workspaceId, runId })
+      .then((d) => d.mappings);
   }
 
   // ---- 经营分析（dsheng analyze；本地计算，无 Provider） ----
@@ -169,7 +177,12 @@ export class TauriClient implements DshengClient {
     workspaceId: string,
     runId: string,
   ): Promise<DiagnosisReport[]> {
-    return this.invoke('diagnosis_list', { workspaceId, runId });
+    return this
+      .invoke<{ run_id: string; reports: DiagnosisReport[] }>('diagnosis_list', {
+        workspaceId,
+        runId,
+      })
+      .then((d) => d.reports);
   }
   diagnosisShow(
     workspaceId: string,
@@ -219,21 +232,28 @@ export class TauriClient implements DshengClient {
 
   // ---- 任务读写（dsheng task list/show/update、task timeline） ----
   taskList(workspaceId: string, runId?: string): Promise<TaskView[]> {
-    return this.invoke('task_list', { workspaceId, runId: runId ?? null });
+    return this.invoke<{ tasks: TaskView[] }>('task_list', {
+      workspaceId,
+      runId: runId ?? null,
+    }).then((d) => d.tasks);
   }
   taskShow(workspaceId: string, taskId: string): Promise<TaskView> {
     return this.invoke('task_show', { workspaceId, taskId });
   }
-  taskUpdate(input: TaskEditInput): Promise<TaskView> {
+  taskUpdate(input: TaskEditInput): Promise<import('./client').TaskUpdateSummary> {
     return this.invoke('task_update', { input });
   }
   taskTimeline(query: TaskTimelineQuery): Promise<TimelineEntryView[]> {
-    return this.invoke('task_timeline', { query });
+    return this
+      .invoke<{ entries: TimelineEntryView[] }>('task_timeline', { query })
+      .then((d) => d.entries);
   }
 
   // ---- 历史（dsheng history list/show） ----
   historyList(workspaceId: string): Promise<HistoryEntryView[]> {
-    return this.invoke('history_list', { workspaceId });
+    return this.invoke<{ runs: HistoryEntryView[] }>('history_list', { workspaceId }).then(
+      (d) => d.runs,
+    );
   }
   historyShow(
     workspaceId: string,
