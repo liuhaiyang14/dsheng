@@ -29,9 +29,15 @@ pub fn default_db_path() -> PathBuf {
     dir.join("dsheng.sqlite3")
 }
 
-/// 打开数据库：目录创建 → 版本协商 → 首启迁移（空库）/已建库校验。
+/// 打开数据库：`--db` 显式 > `DSHENG_DB` > 平台数据目录。
 pub fn open_db(explicit: Option<&String>) -> CliResult<Connection> {
     let path = explicit.map(PathBuf::from).unwrap_or_else(default_db_path);
+    open_db_at(&path)
+}
+
+/// 在显式路径打开数据库（CLI `--db` 与桌面壳共用；目录创建 → 版本协商 →
+/// 首启迁移（空库）/已建库校验）。桌面壳据此与 CLI 共享同一实现与错误映射。
+pub fn open_db_at(path: &std::path::Path) -> CliResult<Connection> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
             CliError::new(
@@ -40,7 +46,7 @@ pub fn open_db(explicit: Option<&String>) -> CliResult<Connection> {
             )
         })?;
     }
-    let paths = DatabasePaths::new(&path);
+    let paths = DatabasePaths::new(path);
     let conn = open_with_negotiation(
         &paths,
         dsheng_core::repository::migration::current_support(),

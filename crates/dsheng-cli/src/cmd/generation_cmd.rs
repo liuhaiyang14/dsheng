@@ -173,96 +173,134 @@ pub fn diagnosis_generation(
             dry_run,
             confirmation_id,
             confirm_send,
-        } => {
-            if !answers_stdin {
-                return Err(CliError::invalid(
-                    "diagnosis continue 需要 --answers-stdin 提供本轮完整答复",
-                )
-                .with_field("--answers-stdin"));
-            }
-            let conn = ctx::open_db(db)?;
-            let ws = ctx::resolve_workspace(&conn, workspace.as_ref())?;
-            let (run, framework_raw, frozen): (String, String, Option<String>) = conn
-                .query_row(
-                    "SELECT run_id, COALESCE(framework, '5why'), frozen_at
-                     FROM generation_sessions WHERE session_id = ?1",
-                    rusqlite::params![session],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-                )
-                .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "session 不存在"))?;
-            if frozen.is_some() {
-                return Err(CliError::new(
-                    CliErrorCode::DataValidationFailed,
-                    "session 已冻结（revise 后的新会话继续）",
-                ));
-            }
-            let framework: Framework = match framework_raw.as_str() {
-                "5why" => Framework::Why5,
-                "5w" => Framework::W5,
-                "5w2h" => Framework::W5h2,
-                _ => return Err(CliError::invalid("framework 取值非法")),
-            };
-            let answer = jsonio::read_stdin_text()?;
-            if answer.trim().is_empty() {
-                return Err(CliError::new(
-                    CliErrorCode::DataValidationFailed,
-                    "answers-stdin 为空",
-                ));
-            }
-            let problem: String = conn
-                .query_row(
-                    "SELECT problem_statement FROM diagnosis_reports WHERE session_id = ?1
-                     ORDER BY report_revision_no DESC LIMIT 1",
-                    rusqlite::params![session],
-                    |r| r.get(0),
-                )
-                .unwrap_or_else(|_| "继续诊断".into());
-            drop(conn);
-            let mut conn = ctx::open_db(db)?;
-            let material = gen::build_diagnosis_payload(
-                &conn,
-                ws.workspace_id,
-                &run,
-                framework,
-                &problem,
-                &[],
-                &[],
-                dsheng_core::generation::input::SessionStateProjection {
-                    accepted_facts: vec![],
-                    prior_report_summary: None,
-                    unresolved_questions: vec![],
-                    pending_clarification: None,
-                },
-                Some(
-                    dsheng_core::generation::input::ContinuationInputProjection {
-                        mode: dsheng_core::generation::input::ContinuationMode::Append,
-                        answer_to_turn_id: None,
-                        selected_open_question_ids: vec![],
-                        user_message: answer.trim().to_string(),
-                    },
-                ),
-                answer.trim(),
-            )?;
-            gate_and_run(
-                &mut conn,
-                ws.workspace_id,
-                provider,
-                dry_run,
-                confirmation_id,
-                confirm_send,
-                material,
-                GenerationOperation::DiagnosisContinue,
-                DIAG_PROMPT,
-                DIAG_SCHEMA,
-                Box::new(gen::HttpDispatch),
-                OutputKind::Diagnosis { framework },
-            )
-        }
+        } => diagnosis_continue_value(
+            workspace,
+            session,
+            AnswerSource::Stdin {
+                require_flag: answers_stdin,
+            },
+            provider,
+            dry_run,
+            confirmation_id,
+            confirm_send,
+            db,
+        ),
         other => {
             let _ = other;
             Err(CliError::invalid("该 diagnosis 子命令不经生成门禁层"))
         }
     }
+}
+
+/// diagnosis continue 答复来源：CLI=stdin（`--answers-stdin` flag 校验）；
+/// 桌面壳=进程内联文本（supplement_fact）。
+pub enum AnswerSource {
+    Stdin { require_flag: bool },
+    Inline(String),
+}
+
+/// diagnosis continue（进程内入口；CLI 与桌面壳共用同一实现）。
+/// answer 读取位置/校验顺序与原 CLI 路径一致（仅来源不同）。
+#[allow(clippy::too_many_arguments)]
+pub fn diagnosis_continue_value(
+    workspace: Option<String>,
+    session: String,
+    answer: AnswerSource,
+    provider: Option<String>,
+    dry_run: bool,
+    confirmation_id: Option<String>,
+    confirm_send: bool,
+    db: Option<&String>,
+) -> CliResult<serde_json::Value> {
+    if let AnswerSource::Stdin {
+        require_flag: false,
+    } = answer
+    {
+        return Err(
+            CliError::invalid("diagnosis continue 需要 --answers-stdin 提供本轮完整答复")
+                .with_field("--answers-stdin"),
+        );
+    }
+    let conn = ctx::open_db(db)?;
+    let ws = ctx::resolve_workspace(&conn, workspace.as_ref())?;
+    let (run, framework_raw, frozen): (String, String, Option<String>) = conn
+        .query_row(
+            "SELECT run_id, COALESCE(framework, '5why'), frozen_at
+             FROM generation_sessions WHERE session_id = ?1",
+            rusqlite::params![session],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "session 不存在"))?;
+    if frozen.is_some() {
+        return Err(CliError::new(
+            CliErrorCode::DataValidationFailed,
+            "session 已冻结（revise 后的新会话继续）",
+        ));
+    }
+    let framework: Framework = match framework_raw.as_str() {
+        "5why" => Framework::Why5,
+        "5w" => Framework::W5,
+        "5w2h" => Framework::W5h2,
+        _ => return Err(CliError::invalid("framework 取值非法")),
+    };
+    let answer = match answer {
+        AnswerSource::Stdin { .. } => jsonio::read_stdin_text()?,
+        AnswerSource::Inline(text) => text,
+    };
+    if answer.trim().is_empty() {
+        return Err(CliError::new(
+            CliErrorCode::DataValidationFailed,
+            "answers-stdin 为空",
+        ));
+    }
+    let problem: String = conn
+        .query_row(
+            "SELECT problem_statement FROM diagnosis_reports WHERE session_id = ?1
+             ORDER BY report_revision_no DESC LIMIT 1",
+            rusqlite::params![session],
+            |r| r.get(0),
+        )
+        .unwrap_or_else(|_| "继续诊断".into());
+    drop(conn);
+    let mut conn = ctx::open_db(db)?;
+    let material = gen::build_diagnosis_payload(
+        &conn,
+        ws.workspace_id,
+        &run,
+        framework,
+        &problem,
+        &[],
+        &[],
+        dsheng_core::generation::input::SessionStateProjection {
+            accepted_facts: vec![],
+            prior_report_summary: None,
+            unresolved_questions: vec![],
+            pending_clarification: None,
+        },
+        Some(
+            dsheng_core::generation::input::ContinuationInputProjection {
+                mode: dsheng_core::generation::input::ContinuationMode::Append,
+                answer_to_turn_id: None,
+                selected_open_question_ids: vec![],
+                user_message: answer.trim().to_string(),
+            },
+        ),
+        answer.trim(),
+    )?;
+    gate_and_run(
+        &mut conn,
+        ws.workspace_id,
+        provider,
+        dry_run,
+        confirmation_id,
+        confirm_send,
+        material,
+        GenerationOperation::DiagnosisContinue,
+        DIAG_PROMPT,
+        DIAG_SCHEMA,
+        Box::new(gen::HttpDispatch),
+        OutputKind::Diagnosis { framework },
+    )
 }
 
 /// task generate（经 task_cmd 转发）。
