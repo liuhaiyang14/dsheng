@@ -554,3 +554,51 @@ fn decimal_rows_with_formula_text_in_source_column_are_observed() {
     assert_eq!(evidence, vec![format!("cell:{FILE_LABEL}:核算表:H12")]);
     std::fs::remove_dir_all(&env.dir).ok();
 }
+
+// ---- F1：空格=missing（不产生 0 观察）；显式 0 与负数原样保留 ----
+
+fn target(data: &Value, key: &str) -> Option<String> {
+    metric(data, key).and_then(|m| m["target_value"].as_str().map(str::to_string))
+}
+
+#[test]
+fn blank_cells_are_missing_and_explicit_zero_or_negative_kept() {
+    let env = Env::new("hard-f1");
+    let (out, code) = env.analyze(None);
+    assert_eq!(code, 0, "{out}");
+    let data = &out["data"];
+    // 当月销项开票：E/F/H 全为带样式空格 → 无任何观察（缺失≠0），不出 0
+    assert_eq!(actual(data, "invoice_amount"), None, "空实绩格不得算成 0");
+    assert_eq!(target(data, "invoice_amount"), None, "空预定格不得算成 0");
+    // 当月收款：H 为显式数值 0 → 0 保留；预定/差异照常
+    assert_eq!(actual(data, "receipts_amount").as_deref(), Some("0"));
+    assert_eq!(target(data, "receipts_amount").as_deref(), Some("50000"));
+    assert_eq!(
+        metric(data, "receipts_amount").unwrap()["delta"].as_str(),
+        Some("-50000")
+    );
+    // 当月付款：实绩有值、预定格为空 → target null，delta null（不以 0 代替）
+    assert_eq!(actual(data, "payments_amount").as_deref(), Some("76543.21"));
+    assert_eq!(target(data, "payments_amount"), None);
+    assert!(metric(data, "payments_amount").unwrap()["delta"].is_null());
+    // 负数原样
+    assert_eq!(
+        actual(data, "settlement_income").as_deref(),
+        Some("-4321.37")
+    );
+    // `待补`（pending_input）与 `—` 占位：不是数值，也不是 0
+    assert_eq!(actual(data, "purchase_signed_amount"), None);
+    assert_eq!(actual(data, "inventory_amount"), None);
+    // revision 快照同样不含空格补出的 0
+    let conn = rusqlite::Connection::open(&env.db).unwrap();
+    let normalized: String = conn
+        .query_row(
+            "SELECT normalized_metrics_json FROM run_revisions WHERE run_id = ?1",
+            rusqlite::params![out["data"]["run_id"].as_str().unwrap()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let snapshot: Value = serde_json::from_str(&normalized).unwrap();
+    assert!(metric(&snapshot, "invoice_amount").is_none());
+    std::fs::remove_dir_all(&env.dir).ok();
+}

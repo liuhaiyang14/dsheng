@@ -339,3 +339,26 @@ fn sheet_not_starting_at_a1_keeps_absolute_coordinates() {
     assert_eq!(grid[0][0], CellValue::Empty);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn blank_value_cells_are_missing_not_zero() {
+    // F1：带样式的空数值格 → Empty/missing，绝不读成 0；显式 0 才是 valid 0
+    let dir = temp_dir();
+    let path = dir.join("合成核算表.xlsx");
+    write_workbook(&path, &[("核算表", sheet_xml(&accounting_rows(), &[]))]);
+    let sheets = read_workbook(&path).expect("读取");
+    let rows = &sheets[0].rows;
+    for (row, col) in [(38usize, 4usize), (38, 5), (38, 7), (36, 4), (20, 4)] {
+        let cell = &rows[row - 1][col];
+        assert_eq!(cell, &CellValue::Empty, "R{row}C{col}");
+        assert_eq!(cell.value_state(), ValueState::Missing);
+        assert_eq!(cell.exact_decimal(), None, "空格不产生 0");
+    }
+    let zero = &rows[35][7];
+    assert_eq!(zero.value_state(), ValueState::Valid);
+    assert_eq!(zero.exact_decimal(), Some(Decimal::ZERO));
+    // `—` 占位是文本（非数值、非 0）
+    assert_eq!(rows[37][6], CellValue::Text("—".into()));
+    assert_eq!(rows[37][6].exact_decimal(), None);
+    std::fs::remove_dir_all(&dir).ok();
+}
