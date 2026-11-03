@@ -1,0 +1,175 @@
+{
+  "schema_version": 1,
+  "product": "dsheng",
+  "identifier": "com.dsheng.desktop",
+  "version": "0.1.0",
+  "generated_at": "2026-11-03T06:12:55+00:00",
+  "git": {
+    "commit": "26db41da2b799f51f43f448764cad28d376bbd69",
+    "branch": "wp/release",
+    "dirty": false
+  },
+  "versions": {
+    "cargo_workspace": "0.1.0",
+    "tauri_conf": "0.1.0",
+    "tauri_cargo": "0.1.0",
+    "ui_package": "0.1.0"
+  },
+  "signing": {
+    "signed": false,
+    "note": "unsigned：不签名、不绕过 Gatekeeper/SmartScreen；见 docs/release/UNSIGNED.md"
+  },
+  "artifacts": [
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "file": "dsheng-cli_0.1.0_macos_arm64.zip",
+      "size_bytes": 6326705,
+      "sha256": "b7231213a7bd97a10bd44d1f5d02e39471d93bbf072f94b31da32e8213405529",
+      "zip": {
+        "entries": 6,
+        "top_level": [
+          "dsheng-cli_0.1.0_macos_arm64"
+        ],
+        "includes_migrations": false,
+        "includes_cli_binary": true
+      }
+    },
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "arm64",
+      "file": "dsheng_0.1.0_macos_arm64.dmg",
+      "size_bytes": 10100390,
+      "sha256": "3239b13c0fe06d57a2d9ef5ff5599e22ea97bda8cc5e6b6954ca2850c0a0758b"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "file": "dsheng_0.1.0_macos_arm64_portable.zip",
+      "size_bytes": 16444714,
+      "sha256": "f64e5986d760e19d380020c2fd3446ad0f1d2e77a143e6479ae6c1e9de9fe039",
+      "zip": {
+        "entries": 27,
+        "top_level": [
+          "dsheng_0.1.0_macos_arm64_portable"
+        ],
+        "includes_migrations": true,
+        "includes_cli_binary": true
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "present"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "present"
+    },
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "msi",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "present"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "skill",
+      "kind": "skill-zip",
+      "platform": null,
+      "arch": null,
+      "status": "missing"
+    },
+    {
+      "category": "manual",
+      "kind": "manual-zip",
+      "platform": null,
+      "arch": null,
+      "status": "missing"
+    }
+  ],
+  "components": {
+    "cli_install_helpers": [
+      {
+        "kind": "install-helper",
+        "platform": "macos",
+        "file": "install/macos-user-install.sh",
+        "size_bytes": 2955,
+        "sha256": "10fb6f5a42a39fc99df218a69fa63d9079f6c3cf0901d9b3721405ce8a129ab5"
+      },
+      {
+        "kind": "install-helper",
+        "platform": "windows",
+        "file": "install/windows-user-install.ps1",
+        "size_bytes": 3100,
+        "sha256": "1d1e7d948c59b59bb1e65c3c66abba1f60d00298142c23a1bd6b4e095b15e1a3"
+      }
+    ],
+    "migrations": [
+      {
+        "name": "0001_init.sql",
+        "sha256": "c3b9b4ff9c282a57a9840669c9c825d16833c3dd627d2ec7b3476e394536f841"
+      },
+      {
+        "name": "0002_stable_metric_identity.sql",
+        "sha256": "235f0b70e79643d7cd30d5edd7b001a8a30a4ef3f29e134465d774df7cd18046"
+      }
+    ],
+    "db_schema_version": 2
+  }
+}
