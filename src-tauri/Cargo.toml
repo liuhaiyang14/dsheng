@@ -18,6 +18,12 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 dsheng-core = { path = "../crates/dsheng-core" }
+# 导出库（src-tauri/src/export）依赖——CLI 工作包加入（导出实现所有权；
+# 与 CLI 侧 crates/dsheng-cli/Cargo.toml 保持同一版本）
+rust_xlsxwriter = "0.102"
+zip = { version = "9", default-features = false, features = ["deflate"] }
+png = "0.18"
+rust_decimal = "1" 
 
 [features]
 default = []
