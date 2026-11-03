@@ -257,6 +257,18 @@ fn accounting_sheet() -> String {
                 T("H33", "—"),
             ],
         ),
+        (
+            34,
+            vec![
+                T("A34", "O"),
+                T("B34", "（迄今为止的）库存余额"),
+                T("C34", "合成：期末余额（stock）"),
+                Blank("E34"),
+                Blank("F34"),
+                T("G34", "—"),
+                Blank("H34"),
+            ],
+        ),
         (35, vec![T("A35", "【表外参考（现金与往来）】")]),
         (
             36,
@@ -453,9 +465,29 @@ impl Env {
                 "explicit_target_only",
                 false,
             ),
+            // stock 指标（空格即使显式确认也不补 0：需期末，缺期初当零是禁止行为）
+            (
+                "inventory_balance",
+                "库存余额",
+                "（迄今为止的）库存余额",
+                money,
+                "neutral",
+                "explicit_target_only",
+                false,
+            ),
         ] {
+            let semantic_type = if key == "inventory_balance" {
+                "stock"
+            } else {
+                "flow"
+            };
+            let aggregation = if key == "inventory_balance" {
+                "closing_balance_or_rollforward"
+            } else {
+                "sum_disjoint"
+            };
             let body = format!(
-                r#"{{"metric_key":"{key}","label":"{label}","label_aliases":["{alias}"],"semantic_type":"flow","unit_signature":{unit},"direction":"{direction}","target_constraint_scope":"{scope}","revenue_semantics":{revenue},"aggregation":"sum_disjoint","required_inputs":[],"comparison_policy":{{"positive_base":"relative_change","zero_or_negative_base":"absolute_only"}},"effective_from":"2026-01-01","expected_revision":0}}"#
+                r#"{{"metric_key":"{key}","label":"{label}","label_aliases":["{alias}"],"semantic_type":"{semantic_type}","unit_signature":{unit},"direction":"{direction}","target_constraint_scope":"{scope}","revenue_semantics":{revenue},"aggregation":"{aggregation}","required_inputs":[],"comparison_policy":{{"positive_base":"relative_change","zero_or_negative_base":"absolute_only"}},"effective_from":"2026-01-01","expected_revision":0}}"#
             );
             let path = me.dir.join(format!("metric_{key}.json"));
             std::fs::write(&path, body).unwrap();
@@ -600,5 +632,103 @@ fn blank_cells_are_missing_and_explicit_zero_or_negative_kept() {
         .unwrap();
     let snapshot: Value = serde_json::from_str(&normalized).unwrap();
     assert!(metric(&snapshot, "invoice_amount").is_none());
+    std::fs::remove_dir_all(&env.dir).ok();
+}
+
+// ---- F3：显式确认后空值可按 0 计（coverage 兼容实现） ----
+
+/// 读取 run 最新 revision 的 period_policy 快照。
+fn policy_snapshot(env: &Env, run_id: &str) -> Value {
+    let conn = rusqlite::Connection::open(&env.db).unwrap();
+    let raw: String = conn
+        .query_row(
+            "SELECT period_policy_snapshot_json FROM run_revisions
+             WHERE run_id = ?1 ORDER BY revision_no DESC LIMIT 1",
+            rusqlite::params![run_id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    serde_json::from_str(&raw).unwrap()
+}
+
+#[test]
+fn empty_as_zero_requires_explicit_confirmation_and_snapshots_coverage() {
+    let env = Env::new("hard-f3");
+
+    // 选项非法：empty_as_zero=true 但缺 coverage_confirmed_by（默认缺失≠0）
+    let (out, code) = env.analyze(Some(r#"{"empty_as_zero":true}"#));
+    assert_ne!(code, 0, "{out}");
+    assert_eq!(out["error"]["code"], "DATA_VALIDATION_FAILED");
+    assert_eq!(out["error"]["field"], "coverage_confirmed_by");
+
+    // 命令行不带选项：行为不变（空格=缺失）
+    let (out, code) = env.analyze(None);
+    assert_eq!(code, 0, "{out}");
+    let data = &out["data"];
+    assert_eq!(actual(data, "invoice_amount"), None);
+    assert_eq!(
+        target(data, "labor_cost").as_deref(),
+        Some("20000"),
+        "目标来自有值的预定列；E 列（年度分解）为空不产生目标"
+    );
+
+    // 显式确认：空 actual 格按 0 计；coverage 快照记录 empty_days_are_zero=true
+    // 与 confirmed_by；目标列空格仍不补 0；stock 指标空格不补 0
+    let confirmed = r#"{"empty_as_zero":true,"coverage_confirmed_by":"硬化验证"}"#;
+    let (out, code) = env.analyze(Some(confirmed));
+    assert_eq!(code, 0, "{out}");
+    let data = &out["data"];
+    assert_eq!(
+        actual(data, "invoice_amount").as_deref(),
+        Some("0"),
+        "确认后空实绩格按 0 计"
+    );
+    assert_eq!(
+        target(data, "payments_amount"),
+        None,
+        "plan 空格=未设定，不补 0"
+    );
+    assert_eq!(
+        actual(data, "inventory_balance"),
+        None,
+        "stock 空格需期末余额，不因确认补 0"
+    );
+    let snapshot = policy_snapshot(&env, data["run_id"].as_str().unwrap());
+    let coverage = &snapshot["coverage"];
+    assert_eq!(coverage["status"], "complete");
+    assert_eq!(coverage["confirmed_by"], "硬化验证");
+    assert_eq!(coverage["empty_days_are_zero"], true);
+    assert_eq!(coverage["from"], "2026-10-01");
+    assert_eq!(coverage["to"], "2026-10-31");
+    assert_eq!(coverage["granularity"], "month");
+    let filled: Vec<&str> = coverage["zero_filled_evidence_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert_eq!(
+        filled,
+        vec![format!("cell:{FILE_LABEL}:核算表:H38")],
+        "补 0 证据坐标留档（可审计）"
+    );
+
+    // 未确认的 revision 快照保持 unknown / false
+    let (out2, code) = env.analyze(None);
+    assert_eq!(code, 0, "{out2}");
+    let snapshot2 = policy_snapshot(&env, out2["data"]["run_id"].as_str().unwrap());
+    assert_eq!(snapshot2["coverage"]["status"], "unknown");
+    assert_eq!(snapshot2["coverage"]["empty_days_are_zero"], false);
+    assert_eq!(
+        snapshot2["coverage"]["zero_filled_evidence_ids"]
+            .as_array()
+            .map(Vec::len),
+        Some(0)
+    );
+    // 指纹不同：输入集合不同 → 不同 revision（不覆盖历史）
+    assert_ne!(
+        out["data"]["analysis_input_fingerprint"],
+        out2["data"]["analysis_input_fingerprint"]
+    );
     std::fs::remove_dir_all(&env.dir).ok();
 }

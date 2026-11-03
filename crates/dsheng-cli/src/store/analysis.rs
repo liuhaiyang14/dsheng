@@ -55,6 +55,77 @@ pub struct AnalyzeExtraInput {
     pub scope: Option<String>,
     #[serde(default)]
     pub target_period: Option<serde_json::Value>,
+    /// 用户显式决策：分析窗口内 flow 指标的空实绩格按 0 计（映射合同
+    /// coverage.empty_days_are_zero=true）。必须同时给出 `coverage_confirmed_by`；
+    /// 缺省 false：缺失≠0（§1.1）。
+    #[serde(default)]
+    pub empty_as_zero: bool,
+    /// 覆盖确认人（映射 coverage.confirmed_by；给出即 coverage.status=complete）。
+    #[serde(default)]
+    pub coverage_confirmed_by: Option<String>,
+}
+
+/// 本次 analyze 的覆盖决策（data-period-import.md §2 coverage）。
+#[derive(Debug, Clone, Default)]
+struct CoverageDecision {
+    confirmed_by: Option<String>,
+    empty_days_are_zero: bool,
+}
+
+impl CoverageDecision {
+    /// 校验 analyze 选项：empty_as_zero 须有非空 coverage_confirmed_by。
+    fn from_extra(extra: Option<&AnalyzeExtraInput>) -> CliResult<Self> {
+        let Some(extra) = extra else {
+            return Ok(Self::default());
+        };
+        let confirmed_by = extra
+            .coverage_confirmed_by
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+        if extra.empty_as_zero && confirmed_by.is_none() {
+            return Err(CliError::new(
+                CliErrorCode::DataValidationFailed,
+                "empty_as_zero=true 须同时给出非空 coverage_confirmed_by（显式确认后空值才按 0 计；默认缺失≠0）",
+            )
+            .with_field("coverage_confirmed_by"));
+        }
+        Ok(Self {
+            empty_days_are_zero: extra.empty_as_zero,
+            confirmed_by,
+        })
+    }
+
+    /// 空格补 0 仅在显式确认后启用。
+    fn zero_fill(&self) -> Option<&str> {
+        if self.empty_days_are_zero {
+            self.confirmed_by.as_deref()
+        } else {
+            None
+        }
+    }
+
+    /// coverage 快照（合同字段 + 补 0 的证据坐标审计）。
+    fn snapshot(&self, window: DateRange, grain: Granularity, zero_filled: &[String]) -> Value {
+        let coverage = dsheng_core::contracts::domain::Coverage {
+            from: window.from,
+            to: window.to,
+            granularity: grain,
+            status: if self.confirmed_by.is_some() {
+                dsheng_core::contracts::domain::CoverageStatus::Complete
+            } else {
+                dsheng_core::contracts::domain::CoverageStatus::Unknown
+            },
+            confirmed_by: self.confirmed_by.clone(),
+            empty_days_are_zero: self.empty_days_are_zero,
+        };
+        let mut value = serde_json::to_value(coverage).expect("coverage json");
+        let mut cells = zero_filled.to_vec();
+        cells.sort();
+        value["zero_filled_evidence_ids"] = json!(cells);
+        value
+    }
 }
 
 fn parse_date(text: &str, flag: &str) -> CliResult<NaiveDate> {
@@ -82,6 +153,7 @@ struct MetricDefRow {
     semantic_hash: String,
     label: String,
     label_aliases: Vec<String>,
+    semantic_type: String,
     direction: String,
     target_constraint_scope: String,
     revenue_semantics: bool,
@@ -93,7 +165,7 @@ fn load_metric_defs(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<Metr
     let mut stmt = conn.prepare(
         "SELECT m.stable_metric_id, m.metric_key, m.version, m.semantic_hash, m.label,
                 m.label_aliases_json, m.direction, m.target_constraint_scope, m.revenue_semantics,
-                m.unit_signature_json
+                m.unit_signature_json, m.semantic_type
          FROM metric_definitions m
          WHERE m.workspace_id = ?1 AND m.version =
                (SELECT MAX(version) FROM metric_definitions m2
@@ -112,6 +184,7 @@ fn load_metric_defs(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<Metr
             target_constraint_scope: r.get(7)?,
             revenue_semantics: r.get::<_, i64>(8)? == 1,
             unit_json: r.get(9)?,
+            semantic_type: r.get(10)?,
             scope: "全公司".into(),
         })
     })?;
@@ -161,8 +234,53 @@ fn cell_value(cell: Option<&CellValue>) -> Option<Decimal> {
     }
 }
 
+/// 空白单元格（§1.1 missing 且无 missing_token：无值或仅空白文本）。
+/// `待补`、`NA/N/A/-`、`—` 等占位不是空白。
+fn cell_is_blank(cell: Option<&CellValue>) -> bool {
+    match cell {
+        None | Some(CellValue::Empty) => true,
+        Some(CellValue::Text(t)) => t.trim().is_empty(),
+        Some(_) => false,
+    }
+}
+
+/// 显式覆盖确认后的空格补 0（§2 coverage.empty_days_are_zero）：仅 actual、
+/// flow 指标、观察期间落在分析窗口内的空白格；目标/年度分解的空格是“未设定”
+/// 而非 0（§1.2 explicit_target_only），stock/ratio 空格不可当 0（需期末/底数）。
+fn zero_fill_applies(
+    coverage: &CoverageDecision,
+    role: MeasureRole,
+    def: &MetricDefRow,
+    cell: Option<&CellValue>,
+    period: DateRange,
+    window: DateRange,
+) -> bool {
+    coverage.zero_fill().is_some()
+        && role == MeasureRole::Actual
+        && def.semantic_type == "flow"
+        && cell_is_blank(cell)
+        && period.from >= window.from
+        && period.to <= window.to
+}
+
+fn zero_fill_label(file_label: &str, coverage: &CoverageDecision) -> String {
+    format!(
+        "{file_label}（空格按0计·覆盖确认：{}）",
+        coverage.zero_fill().unwrap_or_default()
+    )
+}
+
+/// 观察提取结果：观察、冲突草稿、来源选择、映射行、待确认指标数、补 0 证据坐标。
+type Extracted = (
+    Vec<Obs>,
+    Vec<ConflictDraft>,
+    Vec<SourceSelection>,
+    Vec<Value>,
+    usize,
+    Vec<String>,
+);
+
 /// 提取观察（核算表/推移表/手工输入）＋冲突草稿（同键不同值）。
-#[allow(clippy::type_complexity)]
 fn extract_observations(
     conn: &Connection,
     workspace_id: Uuid,
@@ -170,17 +288,13 @@ fn extract_observations(
     files: &[ScannedFile],
     window: DateRange,
     scope: &str,
-) -> CliResult<(
-    Vec<Obs>,
-    Vec<ConflictDraft>,
-    Vec<SourceSelection>,
-    Vec<Value>,
-    usize,
-)> {
+    coverage: &CoverageDecision,
+) -> CliResult<Extracted> {
     let mut obs: Vec<Obs> = Vec::new();
     let mut pending_metrics: Vec<String> = Vec::new();
     let mut mapping_rows: Vec<Value> = Vec::new();
     let mut sources: Vec<SourceSelection> = Vec::new();
+    let mut zero_filled: Vec<String> = Vec::new();
     for file in files {
         for (sheet_data, sheet) in file.sheets.iter() {
             let Some(header) = &sheet.header else {
@@ -261,9 +375,6 @@ fn extract_observations(
                         }
                         continue;
                     };
-                    let Some(value) = cell_value(row.get(col)) else {
-                        continue;
-                    };
                     let period = if let Some(pc) = period_col {
                         let text = row.get(pc).map(|c| c.raw_text()).unwrap_or_default();
                         match dsheng_core::analysis::periods::parse_calendar_date(&text) {
@@ -277,20 +388,31 @@ fn extract_observations(
                             .map(|(_, r)| *r)
                             .unwrap_or(window)
                     };
+                    let evidence_id = format!(
+                        "cell:{}:{}:{}{}",
+                        file.file_label,
+                        sheet.sheet.clone().unwrap_or_default(),
+                        dsheng_core::import::headers::column_letter(col),
+                        row_idx + 1
+                    );
+                    let cell = row.get(col);
+                    let (value, source_label) = match cell_value(cell) {
+                        Some(v) => (v, file.file_label.clone()),
+                        None if zero_fill_applies(coverage, role, def, cell, period, window) => {
+                            zero_filled.push(evidence_id.clone());
+                            (Decimal::ZERO, zero_fill_label(&file.file_label, coverage))
+                        }
+                        // 空格=missing（缺失≠0）；占位/无效文本同样不产生观察
+                        None => continue,
+                    };
                     obs.push(Obs {
                         metric_id: def.metric_id.clone(),
                         unit: unit_display(&def.unit_json),
                         role,
                         value,
                         period,
-                        evidence_id: format!(
-                            "cell:{}:{}:{}{}",
-                            file.file_label,
-                            sheet.sheet.clone().unwrap_or_default(),
-                            dsheng_core::import::headers::column_letter(col),
-                            row_idx + 1
-                        ),
-                        source_label: file.file_label.clone(),
+                        evidence_id,
+                        source_label,
                         scope: scope.to_string(),
                     });
                 }
@@ -305,8 +427,29 @@ fn extract_observations(
                         let Some(def) = match_metric(defs, &label) else {
                             continue;
                         };
-                        let Some(value) = cell_value(row.get(*col)) else {
-                            continue;
+                        let evidence_id = format!(
+                            "cell:{}:{}:{}{}",
+                            file.file_label,
+                            sheet.sheet.clone().unwrap_or_default(),
+                            dsheng_core::import::headers::column_letter(*col),
+                            row_idx + 1
+                        );
+                        let cell = row.get(*col);
+                        let (value, source_label) = match cell_value(cell) {
+                            Some(v) => (v, file.file_label.clone()),
+                            None if zero_fill_applies(
+                                coverage,
+                                MeasureRole::Actual,
+                                def,
+                                cell,
+                                *period,
+                                window,
+                            ) =>
+                            {
+                                zero_filled.push(evidence_id.clone());
+                                (Decimal::ZERO, zero_fill_label(&file.file_label, coverage))
+                            }
+                            None => continue,
                         };
                         obs.push(Obs {
                             metric_id: def.metric_id.clone(),
@@ -314,14 +457,8 @@ fn extract_observations(
                             role: MeasureRole::Actual,
                             value,
                             period: *period,
-                            evidence_id: format!(
-                                "cell:{}:{}:{}{}",
-                                file.file_label,
-                                sheet.sheet.clone().unwrap_or_default(),
-                                dsheng_core::import::headers::column_letter(*col),
-                                row_idx + 1
-                            ),
-                            source_label: file.file_label.clone(),
+                            evidence_id,
+                            source_label,
                             scope: scope.to_string(),
                         });
                     }
@@ -422,6 +559,7 @@ fn extract_observations(
         sources,
         mapping_rows,
         pending_metrics.len(),
+        zero_filled,
     ))
 }
 
@@ -571,6 +709,8 @@ pub fn run_analyze(
     let t = parse_date(to, "--to")?;
     let window =
         DateRange::new(f, t).map_err(|e| CliError::new(CliErrorCode::DataValidationFailed, e))?;
+    // 覆盖决策先校验（不合法时不扫描、不落库）
+    let coverage = CoverageDecision::from_extra(extra.as_ref())?;
     // 策略：跨界且未显式选择 → POLICY_SELECTION_REQUIRED（core 规则）
     let (policy_version, _override) =
         dsheng_core::repository::analysis_runs::resolve_policy_for_range(
@@ -625,8 +765,8 @@ pub fn run_analyze(
     let (files, _pending_files) = scan_directory(dir)?;
     let registered = crate::store::sources::register_sources(conn, workspace_id, &files)?;
     let defs = load_metric_defs(conn, workspace_id)?;
-    let (obs, conflicts, mut sources, mapping_rows, pending_count) =
-        extract_observations(conn, workspace_id, &defs, &files, window, &scope)?;
+    let (obs, conflicts, mut sources, mapping_rows, pending_count, zero_filled) =
+        extract_observations(conn, workspace_id, &defs, &files, window, &scope, &coverage)?;
     // source_id 回填（注册视图含真实 source_id）
     for sel in sources.iter_mut() {
         if let Some(view) = registered
@@ -854,6 +994,8 @@ pub fn run_analyze(
             "week_start_day": week_start,
             "fiscal_year_start_month": fiscal,
             "timezone_id": tz,
+            // §2 coverage 快照（默认 unknown/empty_days_are_zero=false：缺失≠0）
+            "coverage": coverage.snapshot(window, grain, &zero_filled),
         }),
         scope,
         current_period: window,
