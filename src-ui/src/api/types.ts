@@ -733,18 +733,36 @@ export type FieldMappingRow = FieldMappingView;
 
 export type ComparisonAvailability = 'available' | 'partial' | 'unavailable';
 
+/** 比较对象（read-views comparisonView：§1.4 全字段；change_rate 为 ratio 口径）。 */
+export interface ComparisonView {
+  comparison_type: 'mom' | 'yoy';
+  label: string;
+  base_from: IsoDate | null;
+  base_to: IsoDate | null;
+  base_value: DecimalString | null;
+  absolute_change: DecimalString | null;
+  /** ratio 口径：0.153 = 15.3%，展示层自行 ×100（字符串移位）。 */
+  change_rate: DecimalString | null;
+  availability_status: ComparisonAvailability;
+  reason: string | null;
+  base_refs: { run_id: string; revision_no: number }[];
+  evidence_ids: string[];
+}
+
 /** 指标行：目标/实绩/差异等数值全部为 DecimalString。 */
 export interface MetricRowView {
   metric_id: string;
   metric_key: string;
   metric_label: string;
   unit: string;
+  direction: 'up' | 'down' | 'neutral';
   target_value: DecimalString | null;
   actual_value: DecimalString | null;
-  diff_value: DecimalString | null;
-  diff_direction: 'up' | 'down' | 'neutral' | null;
-  mom: { value: DecimalString | null; availability: ComparisonAvailability; reason: string | null };
-  yoy: { value: DecimalString | null; availability: ComparisonAvailability; reason: string | null };
+  /** actual - target；缺任一操作数为 null。 */
+  delta: DecimalString | null;
+  mom: ComparisonView | null;
+  yoy: ComparisonView | null;
+  /** 展示层本地分类（合同外字段，UI 自行推导）。 */
   status_tag: 'focus' | 'watch' | 'ok' | 'incomplete';
 }
 
@@ -770,7 +788,7 @@ export interface MetricSeriesView {
   /** 计划/目标线；无则 null。 */
   plan: (DecimalString | null)[];
   /** 逐桶差异（核心计算返回）；无则 null。 */
-  diff: (DecimalString | null)[] | null;
+  delta: (DecimalString | null)[] | null;
   /** 构成分析用的分类构成（如回款构成）。 */
   composition: { name: string; value: DecimalString }[] | null;
 }
@@ -859,6 +877,8 @@ export interface TaskCandidateView {
   run_id: string;
   analysis_revision_no: number;
   state: 'candidate' | 'applied' | 'discarded';
+  /** C 方案兜底包装时为 true（根信封由本地重建）。 */
+  envelope_locally_reconstructed: boolean;
   /** 候选任务（模型 task_key 仅在候选内唯一）。 */
   tasks: {
     task_key: string;

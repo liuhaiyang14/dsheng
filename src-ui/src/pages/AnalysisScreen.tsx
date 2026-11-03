@@ -11,6 +11,7 @@ import {
 import {
   FIXTURE_DEMO_ANNOTATION,
   formatMetricValue,
+  formatRatioPercent,
   formatSigned,
   groupDecimal,
   diffTone,
@@ -39,9 +40,12 @@ function CompareCell({
 }: {
   compare: MetricRowView['mom'] | MetricRowView['yoy'];
 }) {
-  if (compare.availability === 'available' && compare.value != null) {
-    const tone = compare.value.startsWith('-') ? 'bad' : 'good';
-    return <td className={tone}>{formatSigned(compare.value)}%</td>;
+  if (compare == null) {
+    return <td className="muted">不可比：无可比基期</td>;
+  }
+  if (compare.availability_status === 'available' && compare.change_rate != null) {
+    const tone = compare.change_rate.startsWith('-') ? 'bad' : 'good';
+    return <td className={tone}>{formatRatioPercent(compare.change_rate)}</td>;
   }
   return (
     <td className="muted" title={compare.reason ?? undefined}>
@@ -95,7 +99,7 @@ export function AnalysisScreen() {
   const chartUnavailable =
     series != null &&
     ((chartType === 'composition' && series.composition == null) ||
-      (chartType === 'variance' && series.diff == null));
+      (chartType === 'variance' && series.delta == null));
 
   if (!hasData || !detail) {
     return (
@@ -132,22 +136,22 @@ export function AnalysisScreen() {
               {m.actual_value == null ? '—' : groupDecimal(m.actual_value)}
               {m.unit === '%' && m.actual_value != null ? '%' : ''}
             </div>
-            <div className={`delta ${diffTone(m.diff_direction)}`}>
-              {m.diff_value != null && m.target_value != null
-                ? `${m.diff_value.startsWith('-') ? '↓ 低于' : '↑ 高于'}目标 ${groupDecimal(m.diff_value.replace('-', ''))}${m.unit === '%' ? 'pp' : ` ${m.unit}`}`
+            <div className={`delta ${diffTone(m.direction)}`}>
+              {m.delta != null && m.target_value != null
+                ? `${m.delta.startsWith('-') ? '↓ 低于' : '↑ 高于'}目标 ${groupDecimal(m.delta.replace('-', ''))}${m.unit === '%' ? 'pp' : ` ${m.unit}`}`
                 : '未设目标'}
             </div>
             <div className="metric-sub">
               <span>
                 环比{' '}
-                {m.mom.availability === 'available' && m.mom.value != null
-                  ? `${formatSigned(m.mom.value)}%`
+                {m.mom?.availability_status === 'available' && m.mom.change_rate != null
+                  ? `${formatRatioPercent(m.mom.change_rate)}`
                   : '不可比'}
               </span>
               <span>
                 同比{' '}
-                {m.yoy.availability === 'available' && m.yoy.value != null
-                  ? `${formatSigned(m.yoy.value)}%`
+                {m.yoy?.availability_status === 'available' && m.yoy.change_rate != null
+                  ? `${formatRatioPercent(m.yoy.change_rate)}`
                   : '不可比'}
               </span>
             </div>
@@ -187,8 +191,8 @@ export function AnalysisScreen() {
                       </td>
                       <td>{formatMetricValue(m.target_value, null)}</td>
                       <td>{formatMetricValue(m.actual_value, null)}</td>
-                      <td className={diffTone(m.diff_direction)}>
-                        {m.diff_value != null ? formatSigned(m.diff_value) : '—'}
+                      <td className={diffTone(m.direction)}>
+                        {m.delta != null ? formatSigned(m.delta) : '—'}
                       </td>
                       <CompareCell compare={m.mom} />
                       <CompareCell compare={m.yoy} />
@@ -212,17 +216,17 @@ export function AnalysisScreen() {
             <span className="panel-note">按差异贡献排序（核心返回）</span>
           </div>
           {detail.metrics
-            .filter((m) => m.diff_value != null)
+            .filter((m) => m.delta != null)
             .slice(0, 3)
             .map((m) => (
               <div className="bar-row compact" key={m.metric_id}>
                 <div className="bar-label">
                   <span>
                     {m.metric_label}
-                    {m.diff_direction === 'down' ? '未达目标' : '高于目标'}
+                    {m.direction === 'down' ? '未达目标' : '高于目标'}
                   </span>
-                  <b className={diffTone(m.diff_direction)}>
-                    {formatSigned(m.diff_value)}
+                  <b className={diffTone(m.direction)}>
+                    {formatSigned(m.delta)}
                     {m.unit === '%' ? 'pp' : ''}
                   </b>
                 </div>
@@ -239,9 +243,9 @@ export function AnalysisScreen() {
             <p>
               {detail.metrics
                 .filter(
-                  (m) => m.mom.availability !== 'available' || m.yoy.availability !== 'available',
+                  (m) => m.mom?.availability_status !== 'available' || m.yoy?.availability_status !== 'available',
                 )
-                .map((m) => `${m.metric_label}：${m.mom.reason ?? m.yoy.reason ?? '无可比基期'}`)
+                .map((m) => `${m.metric_label}：${m.mom?.reason ?? m.yoy?.reason ?? '无可比基期'}`)
                 .join('；') || '本期全部指标可比。'}
             </p>
           </div>
@@ -333,7 +337,7 @@ export function AnalysisScreen() {
                     <td>{b}</td>
                     <td>{series.actual[i] ?? '缺桶'}</td>
                     <td>{series.plan[i] ?? '—'}</td>
-                    <td>{series.diff ? (series.diff[i] ?? '缺桶') : '—'}</td>
+                    <td>{series.delta ? (series.delta[i] ?? '缺桶') : '—'}</td>
                   </tr>
                 ))}
               </tbody>

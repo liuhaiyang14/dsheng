@@ -119,7 +119,7 @@ describe('S4 图表 option：decimal 字符串与缺桶', () => {
     const option = buildChartOption(settlement, 'variance') as {
       series: { data: unknown }[];
     };
-    expect(option.series[0].data).toBe(settlement.diff);
+    expect(option.series[0].data).toBe(settlement.delta);
     expect(option.series[0].data).toContain(null);
   });
 });

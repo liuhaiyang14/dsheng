@@ -165,7 +165,7 @@ export function HistoryScreen() {
                     <td>{m.metric_label}</td>
                     <td>{m.target_value != null ? groupDecimal(m.target_value) : '—'}</td>
                     <td>{m.actual_value != null ? groupDecimal(m.actual_value) : '—'}</td>
-                    <td>{m.diff_value != null ? groupDecimal(m.diff_value) : '—'}</td>
+                    <td>{m.delta != null ? groupDecimal(m.delta) : '—'}</td>
                   </tr>
                 ))}
               </tbody>

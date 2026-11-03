@@ -104,7 +104,7 @@ export function buildPlanActualOption(series: MetricSeriesView) {
 
 /** 逐桶差异柱状（正负不同色）；diff 序列缺失时不可用。 */
 export function buildVarianceOption(series: MetricSeriesView) {
-  const diff = series.diff ?? [];
+  const diff = series.delta ?? [];
   return {
     grid: { left: 56, right: 18, top: 18, bottom: 46 },
     tooltip: { trigger: 'axis' },

@@ -659,6 +659,7 @@ export class FixtureClient implements DshengClient {
       run_id: RUN_2026_10,
       analysis_revision_no: fixtureAnalysisRun.current_revision_no,
       state: 'candidate',
+      envelope_locally_reconstructed: false, // 演示层：C 方案兜底标记（真实核心在裸任务包装时为 true）
       tasks: [
         {
           task_key: 'ct-1',

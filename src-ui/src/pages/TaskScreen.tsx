@@ -366,7 +366,7 @@ export function TaskScreen() {
           </div>
           <div className="mapping">
             {(detail?.metrics ?? [])
-              .filter((m) => m.diff_value != null)
+              .filter((m) => m.delta != null)
               .slice(0, 3)
               .map((m) => (
                 <div className="mapping-row" key={m.metric_id}>

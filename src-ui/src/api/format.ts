@@ -41,6 +41,37 @@ export function formatPercent(value: string | null): string | null {
   return `${groupDecimal(value)}%`;
 }
 
+/**
+ * 小数字符串 ×10^n（纯字符串小数点移位，n 为正右移）。
+ * 用于把合同 ratio 口径（0.15 = 15%）转为百分数展示，不经 Number。
+ */
+export function shiftDecimal(value: string, places: number): string {
+  if (places === 0 || value === '0') return value;
+  const negative = isNegativeDecimal(value);
+  const body = negative ? value.slice(1) : value;
+  const [intPart, fracPart = ''] = body.split('.');
+  let digits = intPart + fracPart;
+  let point = intPart.length + places;
+  while (point < 1) {
+    digits = `0${digits}`;
+    point += 1;
+  }
+  if (point >= digits.length) {
+    digits = `${digits}${'0'.repeat(point - digits.length)}`;
+  }
+  const newInt = digits.slice(0, point);
+  let newFrac = digits.slice(point).replace(/0+$/, '');
+  const out = newFrac ? `${newInt}.${newFrac}` : newInt;
+  const zeroed = out === '' || /^0+$/.test(out) ? '0' : out;
+  return negative && !/^0+$/.test(zeroed) ? `-${zeroed}` : zeroed;
+}
+
+/** ratio（如 0.153）→ 百分数展示（15.3%）。 */
+export function formatRatioPercent(value: string | null): string | null {
+  if (value == null) return null;
+  return `${groupDecimal(shiftDecimal(value, 2))}%`;
+}
+
 /** 差异展示：down=低于目标（红），up=高于目标（绿），neutral=中性。 */
 export function diffTone(direction: 'up' | 'down' | 'neutral' | null): 'bad' | 'good' | 'warn' | 'muted' {
   switch (direction) {
