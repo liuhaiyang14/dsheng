@@ -788,9 +788,12 @@ fn load_definition_projections(
     workspace_id: Uuid,
 ) -> CliResult<Vec<MetricDefinitionProjection>> {
     let mut stmt = conn.prepare(
-        "SELECT metric_id, metric_key, version, semantic_hash, label, semantic_type,
-                unit_signature_json, direction, target_constraint_scope, revenue_semantics,
-                aggregation, formula_json, required_inputs_json, effective_from
+        // §1.4：metric_id 投影 stable_metric_id（定义身份，版本变化保留身份）；
+        // version/semantic_hash 仍为当前具体版本行值（revision 冻结语义）
+        "SELECT m.stable_metric_id, m.metric_key, m.version, m.semantic_hash, m.label,
+                m.semantic_type, m.unit_signature_json, m.direction, m.target_constraint_scope,
+                m.revenue_semantics, m.aggregation, m.formula_json, m.required_inputs_json,
+                m.effective_from
          FROM metric_definitions m
          WHERE m.workspace_id = ?1 AND m.version =
                (SELECT MAX(version) FROM metric_definitions m2
@@ -962,9 +965,13 @@ fn manual_projections(
     workspace_id: Uuid,
 ) -> CliResult<Vec<ManualInputProjection>> {
     let mut stmt = conn.prepare(
-        "SELECT input_id, metric_id, measure_role, scope_key, value, unit, confirmed,
-                source_note, input_revision, raw_text
-         FROM manual_inputs WHERE workspace_id = ?1",
+        // manualInput.metric_id 同样投影定义身份（manual_inputs 行存写入时的
+        // 具体版本行 id，JOIN 归并为 stable_metric_id）
+        "SELECT mi.input_id, md.stable_metric_id, mi.measure_role, mi.scope_key, mi.value,
+                mi.unit, mi.confirmed, mi.source_note, mi.input_revision, mi.raw_text
+         FROM manual_inputs mi
+         JOIN metric_definitions md ON md.metric_id = mi.metric_id
+         WHERE mi.workspace_id = ?1",
     )?;
     let rows = stmt.query_map(params![workspace_id.to_string()], |r| {
         Ok((
@@ -1428,6 +1435,16 @@ pub fn send_confirmed(
     let output = extraction.object.clone();
     match output {
         Some(obj) => {
+            // TS-22 提交门禁：发送期间分析被重做 → 迟到响应不提交，
+            // attempt 置 failed(INPUT_REVISION_CHANGED)（不覆盖上一有效结果）
+            commit_gate_before_save(
+                &mut *store.conn,
+                workspace_id,
+                material.run_id,
+                attempt.attempt_id,
+                material.analysis_revision_no,
+                &material.analysis_input_fingerprint,
+            )?;
             gate.finish(
                 &mut store,
                 attempt.attempt_id,
@@ -1467,6 +1484,77 @@ impl dsheng_core::provider::extract::ExtractionChecks for SchemaChecksImpl {
         )
         .is_empty()
     }
+}
+
+// ---------------------------------------------------------------------------
+// 生成提交门禁（TS-22 / 用例 60；集成轮 1 复审 P2-4 接线）
+// ---------------------------------------------------------------------------
+
+/// attempt 置 failed 并落 error_code=INPUT_REVISION_CHANGED（TS-22 迟到终态）。
+///
+/// 经 core `ConfirmationGate::finish` 推进（终态不可回退；已是终态则
+/// IDEMPOTENCY_CONFLICT）；error_code/error_details 单独落列（gate 不携带）。
+/// 不写候选/报告——失败不覆盖上一有效结果。
+pub fn finish_attempt_input_revision_changed(
+    store: &mut SqliteGenerationStore<'_>,
+    attempt_id: Uuid,
+) -> CliResult<()> {
+    ConfirmationGate
+        .finish(store, attempt_id, TerminalState::Failed, Utc::now())
+        .map_err(|(code, msg)| CliError::new(code, msg))?;
+    store
+        .conn
+        .execute(
+            "UPDATE generation_attempts SET error_code = 'INPUT_REVISION_CHANGED',
+                    error_details_json = ?2
+             WHERE attempt_id = ?1 AND terminal_state = 'failed'",
+            params![
+                attempt_id.to_string(),
+                serde_json::to_string(&json!({
+                    "stage": "commit_gate",
+                    "reason": "analysis revision changed while request in flight"
+                }))
+                .expect("json")
+            ],
+        )
+        .map_err(CliError::from)?;
+    Ok(())
+}
+
+/// 生成提交门禁（TS-22）：响应返回后、提交前核对当前分析 revision/指纹。
+///
+/// 迟到（任一不一致）→ attempt 置 failed(INPUT_REVISION_CHANGED) 并返回
+/// `Err(INPUT_REVISION_CHANGED)`——不提交输出、不覆盖上一有效结果，
+/// 重试须基于新 revision 重新预览确认。
+pub fn commit_gate_before_save(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    run_id: Uuid,
+    attempt_id: Uuid,
+    attempt_revision_no: u32,
+    attempt_fingerprint: &str,
+) -> CliResult<()> {
+    let (current_rev, current_fp) = dsheng_core::repository::analysis_runs::current_revision(
+        conn,
+        &workspace_id.to_string(),
+        &run_id.to_string(),
+    )
+    .map_err(CliError::from)?;
+    let gate_ok = dsheng_core::repository::tasks::check_generation_commit_gate(
+        current_rev,
+        &current_fp,
+        attempt_revision_no,
+        attempt_fingerprint,
+    );
+    if gate_ok.is_err() {
+        let mut store = SqliteGenerationStore { conn };
+        finish_attempt_input_revision_changed(&mut store, attempt_id)?;
+        return Err(CliError::new(
+            CliErrorCode::InputRevisionChanged,
+            "迟到响应：分析 revision 已变化，不提交（须基于新 revision 重新预览确认）",
+        ));
+    }
+    Ok(())
 }
 
 /// generation status（attempt 状态对象）。

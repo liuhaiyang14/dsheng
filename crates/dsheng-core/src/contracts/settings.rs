@@ -82,13 +82,44 @@ pub struct ProviderPublic {
     pub budget: Budget,
 }
 
-/// protocol 固定 chat_completions。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// protocol 固定 chat_completions（settings.schema.json const）。
+///
+/// serde const 校验：仅接受字符串 `"chat_completions"`（其他值拒绝），
+/// 序列化恒输出 `"chat_completions"`（unit 形态不出现在 JSON 边界）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChatCompletionsMarker;
 
 impl Default for ChatCompletionsMarker {
     fn default() -> Self {
         Self
+    }
+}
+
+impl Serialize for ChatCompletionsMarker {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str("chat_completions")
+    }
+}
+
+impl<'de> Deserialize<'de> for ChatCompletionsMarker {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct Visitor;
+        impl serde::de::Visitor<'_> for Visitor {
+            type Value = ChatCompletionsMarker;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, r#"const 字符串 "chat_completions""#)
+            }
+            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+                if v == "chat_completions" {
+                    Ok(ChatCompletionsMarker)
+                } else {
+                    Err(E::custom(
+                        r#"protocol 必须为 "chat_completions"（settings.schema const）"#,
+                    ))
+                }
+            }
+        }
+        deserializer.deserialize_str(Visitor)
     }
 }
 
@@ -267,6 +298,7 @@ pub struct PeriodPolicyView {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn budget_timeout_constraints() {
@@ -309,5 +341,48 @@ mod tests {
         assert_eq!(p.week_start_day, 1);
         assert_eq!(p.timezone_id, "Asia/Shanghai");
         assert!(PeriodPolicyInputDefaults::default().materialize().is_err());
+    }
+
+    #[test]
+    fn chat_completions_marker_serde_const() {
+        // 反序列化：仅 const 字符串
+        assert!(serde_json::from_value::<ChatCompletionsMarker>(json!("chat_completions")).is_ok());
+        for bad in [
+            json!("openai"),
+            json!(""),
+            json!(null),
+            json!(1),
+            json!(true),
+        ] {
+            assert!(
+                serde_json::from_value::<ChatCompletionsMarker>(bad).is_err(),
+                "非 const 值必须拒绝"
+            );
+        }
+        // 序列化：恒输出 const（unit 形态不出现在 JSON 边界）
+        assert_eq!(
+            serde_json::to_value(ChatCompletionsMarker).unwrap(),
+            json!("chat_completions")
+        );
+        // ProviderPublic 往返（settings.schema protocol const）
+        let config = json!({
+            "name": "p", "protocol": "chat_completions",
+            "base_url": "https://api.example.com/v1", "model": "m", "stream": false,
+            "timeouts": DEFAULT_TIMEOUTS, "budget": DEFAULT_BUDGET
+        });
+        let parsed: ProviderPublic = serde_json::from_value(config).unwrap();
+        assert_eq!(parsed.protocol, ChatCompletionsMarker);
+        assert_eq!(
+            serde_json::to_value(&parsed).unwrap()["protocol"],
+            json!("chat_completions")
+        );
+        // 非 const 在 ProviderPublic 边界即被拒
+        let bad = json!({
+            "name": "p", "protocol": "openai",
+            "base_url": "https://api.example.com/v1", "model": "m", "stream": false,
+            "timeouts": DEFAULT_TIMEOUTS, "budget": DEFAULT_BUDGET
+        });
+        let err = serde_json::from_value::<ProviderPublic>(bad).unwrap_err();
+        assert!(err.to_string().contains("chat_completions"), "{err}");
     }
 }
