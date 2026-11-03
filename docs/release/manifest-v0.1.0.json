@@ -3,11 +3,11 @@
   "product": "dsheng",
   "identifier": "com.dsheng.desktop",
   "version": "0.1.0",
-  "generated_at": "2026-11-03T10:05:47+00:00",
+  "generated_at": "2026-11-03T11:47:08+00:00",
   "git": {
-    "commit": "a5a20728bc473f8faed5287250df5481f8a1bfde",
+    "commit": "92564ee68ca72f03334c5ece98bc6e9ebfb63d60",
     "branch": "main",
-    "dirty": true
+    "dirty": false
   },
   "versions": {
     "cargo_workspace": "0.1.0",
@@ -71,8 +71,8 @@
       "platform": "macos",
       "arch": "arm64",
       "file": "dsheng_0.1.0_macos_arm64.dmg",
-      "size_bytes": 11049906,
-      "sha256": "b68d17b14abd1ab39da016cd8714f4bd1254773653de6f89d2d9ed8d3f6ed537"
+      "size_bytes": 11126874,
+      "sha256": "0fac96bebe96b96bef6d0c98e57af2983e0f35540b97fcd6eee695a65cd93d93"
     },
     {
       "category": "desktop",
@@ -80,8 +80,8 @@
       "platform": "macos",
       "arch": "arm64",
       "file": "dsheng_0.1.0_macos_arm64_portable.zip",
-      "size_bytes": 17070037,
-      "sha256": "1fc3b7890bb5c192e05f9540e2b4eb396cf0e9142b13ce3f0d8210c24703ffd4",
+      "size_bytes": 17175380,
+      "sha256": "767c9747c67ca64ad2cd57c837c5204d0eec198b3622564311110db061b63194",
       "zip": {
         "entries": 31,
         "top_level": [
