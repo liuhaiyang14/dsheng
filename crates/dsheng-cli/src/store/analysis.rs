@@ -71,6 +71,10 @@ fn cadence_of_grain(g: &str) -> Cadence {
 }
 
 /// 从 DB 读当前指标定义（最新版本；按 metric_key 去重）。
+///
+/// `metric_id` 装载 stable_metric_id（§1.4 定义身份：版本变化保留身份）：
+/// 观察归属、冲突草稿、normalized metrics 投影全部以稳定身份为键；
+/// 具体版本行的 metric_id/semantic_hash 仍冻结在 run_revisions 快照。
 struct MetricDefRow {
     metric_id: String,
     metric_key: String,
@@ -87,7 +91,7 @@ struct MetricDefRow {
 
 fn load_metric_defs(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<MetricDefRow>> {
     let mut stmt = conn.prepare(
-        "SELECT m.metric_id, m.metric_key, m.version, m.semantic_hash, m.label,
+        "SELECT m.stable_metric_id, m.metric_key, m.version, m.semantic_hash, m.label,
                 m.label_aliases_json, m.direction, m.target_constraint_scope, m.revenue_semantics,
                 m.unit_signature_json
          FROM metric_definitions m
@@ -324,11 +328,16 @@ fn extract_observations(
             }
         }
     }
-    // 手工输入（confirmed 的 actual/plan；period_key 匹配窗口）
+    // 手工输入（confirmed 的 actual/plan；period_key 匹配窗口）。
+    // manual_inputs.metric_id 指向写入时的具体版本行；按 stable_metric_id
+    // 归并到当前定义身份（指标升版本后旧输入仍参与计算，§1.4）。
     {
         let mut stmt = conn.prepare(
-            "SELECT input_id, metric_id, measure_role, scope_key, value, input_revision
-             FROM manual_inputs WHERE workspace_id = ?1 AND confirmed = 1",
+            "SELECT mi.input_id, md.stable_metric_id, mi.measure_role, mi.scope_key,
+                    mi.value, mi.input_revision
+             FROM manual_inputs mi
+             JOIN metric_definitions md ON md.metric_id = mi.metric_id
+             WHERE mi.workspace_id = ?1 AND mi.confirmed = 1",
         )?;
         let rows: Vec<(String, String, String, String, Option<String>, i64)> = stmt
             .query_map(params![workspace_id.to_string()], |r| {

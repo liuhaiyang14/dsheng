@@ -728,6 +728,27 @@ pub fn metric_set(
             cur + 1
         }
     };
+    // 定义身份（§1.4）：同 metric_key 升版本保留同一 stable_metric_id（首版行 id）
+    let inherited_stable_id: Option<String> = tx
+        .query_row(
+            "SELECT stable_metric_id FROM metric_definitions
+             WHERE workspace_id = ?1 AND metric_key = ?2
+             ORDER BY version DESC LIMIT 1",
+            params![workspace_id.to_string(), input.metric_key],
+            |r| r.get(0),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(CliError::from)?;
+    if (next_version == 1) != inherited_stable_id.is_none() {
+        return Err(CliError::new(
+            CliErrorCode::LocalSaveFailed,
+            "stable_metric_id 身份读取与版本推进不一致（库状态异常）",
+        ));
+    }
     // 公式引用：AST 结构 + 引用键（自身/required_inputs/已注册 key）
     if let Some(node) = &formula_node {
         let mut known: std::collections::HashSet<String> =
@@ -822,19 +843,21 @@ pub fn metric_set(
         &dependencies,
     );
     let metric_id = Uuid::new_v4().to_string();
+    let stable_metric_id = inherited_stable_id.unwrap_or_else(|| metric_id.clone());
     tx.execute(
         "INSERT INTO metric_definitions (metric_id, workspace_id, metric_key, version,
-                semantic_hash, label, label_aliases_json, semantic_type, unit_signature_json,
-                direction, target_constraint_scope, revenue_semantics, aggregation, formula_json,
-                required_inputs_json, denominator_policy, comparison_policy_json,
-                labor_treatment, effective_from, effective_to, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, '[]', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 'positive_only',
-                 ?15, ?16, ?17, NULL, ?18)",
+                stable_metric_id, semantic_hash, label, label_aliases_json, semantic_type,
+                unit_signature_json, direction, target_constraint_scope, revenue_semantics,
+                aggregation, formula_json, required_inputs_json, denominator_policy,
+                comparison_policy_json, labor_treatment, effective_from, effective_to, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '[]', ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+                 'positive_only', ?16, ?17, ?18, NULL, ?19)",
         params![
             metric_id,
             workspace_id.to_string(),
             input.metric_key,
             next_version,
+            stable_metric_id,
             semantic_hash,
             input.label,
             input.semantic_type,
@@ -874,34 +897,36 @@ fn parse_labor(text: &str) -> Option<dsheng_core::contracts::metrics::LaborTreat
 
 pub fn metric_view(conn: &Connection, workspace_id: Uuid, metric_id: &str) -> CliResult<Value> {
     conn.query_row(
-        "SELECT metric_id, metric_key, version, semantic_hash, label, semantic_type,
-                unit_signature_json, direction, target_constraint_scope, revenue_semantics,
-                aggregation, formula_json, required_inputs_json, denominator_policy,
-                comparison_policy_json, labor_treatment, effective_from, effective_to, created_at
+        "SELECT metric_id, stable_metric_id, metric_key, version, semantic_hash, label,
+                semantic_type, unit_signature_json, direction, target_constraint_scope,
+                revenue_semantics, aggregation, formula_json, required_inputs_json,
+                denominator_policy, comparison_policy_json, labor_treatment, effective_from,
+                effective_to, created_at
          FROM metric_definitions WHERE metric_id = ?1 AND workspace_id = ?2",
         params![metric_id, workspace_id.to_string()],
         |r| {
             Ok(json!({
                 "metric_id": r.get::<_, String>(0)?,
+                "stable_metric_id": r.get::<_, String>(1)?,
                 "workspace_id": workspace_id.to_string(),
-                "metric_key": r.get::<_, String>(1)?,
-                "version": r.get::<_, i64>(2)?,
-                "semantic_hash": r.get::<_, String>(3)?,
-                "label": r.get::<_, String>(4)?,
-                "semantic_type": r.get::<_, String>(5)?,
-                "unit_signature": serde_json::from_str::<Value>(&r.get::<_, String>(6)?).unwrap_or(json!(null)),
-                "direction": r.get::<_, String>(7)?,
-                "target_constraint_scope": r.get::<_, String>(8)?,
-                "revenue_semantics": r.get::<_, i64>(9)? == 1,
-                "aggregation": r.get::<_, String>(10)?,
-                "formula": r.get::<_, Option<String>>(11)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()),
-                "required_inputs": serde_json::from_str::<Value>(&r.get::<_, String>(12)?).unwrap_or(json!([])),
-                "denominator_policy": r.get::<_, String>(13)?,
-                "comparison_policy": serde_json::from_str::<Value>(&r.get::<_, String>(14)?).unwrap_or(json!({})),
-                "labor_treatment": r.get::<_, Option<String>>(15)?,
-                "effective_from": r.get::<_, String>(16)?,
-                "effective_to": r.get::<_, Option<String>>(17)?,
-                "created_at": r.get::<_, String>(18)?,
+                "metric_key": r.get::<_, String>(2)?,
+                "version": r.get::<_, i64>(3)?,
+                "semantic_hash": r.get::<_, String>(4)?,
+                "label": r.get::<_, String>(5)?,
+                "semantic_type": r.get::<_, String>(6)?,
+                "unit_signature": serde_json::from_str::<Value>(&r.get::<_, String>(7)?).unwrap_or(json!(null)),
+                "direction": r.get::<_, String>(8)?,
+                "target_constraint_scope": r.get::<_, String>(9)?,
+                "revenue_semantics": r.get::<_, i64>(10)? == 1,
+                "aggregation": r.get::<_, String>(11)?,
+                "formula": r.get::<_, Option<String>>(12)?.and_then(|s| serde_json::from_str::<Value>(&s).ok()),
+                "required_inputs": serde_json::from_str::<Value>(&r.get::<_, String>(13)?).unwrap_or(json!([])),
+                "denominator_policy": r.get::<_, String>(14)?,
+                "comparison_policy": serde_json::from_str::<Value>(&r.get::<_, String>(15)?).unwrap_or(json!({})),
+                "labor_treatment": r.get::<_, Option<String>>(16)?,
+                "effective_from": r.get::<_, String>(17)?,
+                "effective_to": r.get::<_, Option<String>>(18)?,
+                "created_at": r.get::<_, String>(19)?,
             }))
         },
     )

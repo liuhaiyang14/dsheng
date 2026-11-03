@@ -612,8 +612,9 @@ export class FixtureClient implements DshengClient {
     format: 'md' | 'json',
     outPath: string,
   ): Promise<ExportResult> {
+    void format;
     await this.diagnosisShow(workspaceId, reportId);
-    return { out_path: outPath, format };
+    return { written: true, out: outPath, bytes: 4096 };
   }
 
   // ---- 任务生成（显式 preview → confirm） ----
@@ -874,7 +875,7 @@ export class FixtureClient implements DshengClient {
     return structuredClone(task);
   }
 
-  async taskUpdate(input: TaskEditInput): Promise<TaskView> {
+  async taskUpdate(input: TaskEditInput): Promise<import('./client').TaskUpdateSummary> {
     this.requireWorkspace(input.workspace_id);
     const task = this.tasks.find(
       (t) =>
@@ -911,7 +912,13 @@ export class FixtureClient implements DshengClient {
       actor_source: 'ui',
       occurred_at: DEMO_NOW,
     });
-    return structuredClone(task);
+    return {
+      task_id: task.task_id,
+      task_revision_no: task.task_revision_no,
+      status: task.status,
+      progress: task.progress,
+      replayed: false, // 演示层：重放语义由核心返回
+    };
   }
 
   private applyTaskEdit(task: TaskView, operation: TaskEditOperation): void {

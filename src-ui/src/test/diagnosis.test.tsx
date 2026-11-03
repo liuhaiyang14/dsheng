@@ -140,7 +140,7 @@ describe('S5 报告详情展示', () => {
     const client = new FixtureClient();
     const exportSpy = vi
       .spyOn(client, 'diagnosisExport')
-      .mockResolvedValue({ out_path: 'x.md', format: 'md' });
+      .mockResolvedValue({ written: true, out: 'x.md', bytes: 1024 });
     await openDiagnosis(client);
     screen.getByText('下载 MD').click();
     await waitFor(() => {

@@ -72,8 +72,13 @@ pub fn ensure_workspace(
 }
 
 /// 嵌入 migration 清单（顺序即版本；发布包含同一清单）。
-pub const MIGRATIONS: &[(&str, &str)] =
-    &[("0001_init", include_str!("../../migrations/0001_init.sql"))];
+pub const MIGRATIONS: &[(&str, &str)] = &[
+    ("0001_init", include_str!("../../migrations/0001_init.sql")),
+    (
+        "0002_stable_metric_identity",
+        include_str!("../../migrations/0002_stable_metric_identity.sql"),
+    ),
+];
 
 /// 当前 schema 版本（= MIGRATIONS 长度）。
 pub const CURRENT_SCHEMA_VERSION: i64 = MIGRATIONS.len() as i64;

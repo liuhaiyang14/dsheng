@@ -82,6 +82,7 @@ describe('S2 FixtureClient：合同行为模拟', () => {
   it('诊断生成必须显式 preview→confirm，confirm 一次后不可重复消费', async () => {
     const preview = await client.diagnosisGeneratePreview({
       workspace_id: WS_DEMO_ID,
+      evidence_ids: ['cell:demo:核算表:C7'],
       run_id: RUN_2026_10,
       framework: '5w',
       problem: '结算收益差异如何界定？',
@@ -102,6 +103,7 @@ describe('S2 FixtureClient：合同行为模拟', () => {
     await expect(
       client.diagnosisGeneratePreview({
         workspace_id: WS_EMPTY_ID,
+      evidence_ids: ['cell:demo:核算表:C7'],
         run_id: RUN_2026_10,
         framework: '5why',
         problem: 'x',
@@ -148,7 +150,7 @@ describe('S2 FixtureClient：合同行为模拟', () => {
   it('步骤全部勾选后 auto 进度为 100 且状态 completed；重开写 reopened', async () => {
     const source = fixtureTasks.find((t) => t.progress === '33.33')!;
     const view = await client.taskShow(WS_DEMO_ID, source.task_id);
-    const updated = await client.taskUpdate(
+    await client.taskUpdate(
       editInput(view.task_id, view.task_revision_no, {
         kind: 'content',
         step_operations: view.steps.map((s) => ({
@@ -158,6 +160,7 @@ describe('S2 FixtureClient：合同行为模拟', () => {
         })),
       }),
     );
+    const updated = await client.taskShow(WS_DEMO_ID, view.task_id);
     expect(updated.progress).toBe('100');
     expect(updated.status).toBe('completed');
     expect(updated.completed_at).not.toBeNull();
@@ -177,7 +180,7 @@ describe('S2 FixtureClient：合同行为模拟', () => {
     ).rejects.toMatchObject({ code: 'STATE_PROGRESS_MISMATCH' });
 
     // 取消勾选一步：completed → in_progress 自动重开并写 reopened 事件
-    const afterUncheck = await client.taskUpdate(
+    await client.taskUpdate(
       editInput(updated.task_id, updated.task_revision_no, {
         kind: 'content',
         step_operations: [
@@ -185,6 +188,7 @@ describe('S2 FixtureClient：合同行为模拟', () => {
         ],
       }),
     );
+    const afterUncheck = await client.taskShow(WS_DEMO_ID, view.task_id);
     expect(afterUncheck.progress).toBe('66.67');
     expect(afterUncheck.status).toBe('in_progress');
     expect(afterUncheck.completed_at).toBeNull();
@@ -197,12 +201,13 @@ describe('S2 FixtureClient：合同行为模拟', () => {
     let current = view;
     for (const step of [...view.steps]) {
       if (current.steps.length > 1) {
-        current = await client.taskUpdate(
+        await client.taskUpdate(
           editInput(current.task_id, current.task_revision_no, {
             kind: 'content',
             step_operations: [{ op: 'delete', step_id: step.step_id }],
           }),
         );
+        current = await client.taskShow(WS_DEMO_ID, view.task_id);
       }
     }
     await expect(
@@ -237,6 +242,7 @@ describe('S2 FixtureClient：合同行为模拟', () => {
     await expect(
       client.diagnosisGeneratePreview({
         workspace_id: WS_DEMO_ID,
+      evidence_ids: ['cell:demo:核算表:C7'],
         run_id: RUN_2026_10,
         framework: '5why',
         problem: 'x',

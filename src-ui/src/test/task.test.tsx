@@ -223,7 +223,7 @@ describe('S6 详情抽屉', () => {
     const source = fixtureTasks.find((t) => t.progress === '33.33')!;
     const task = structuredClone(source);
     // 先构造已完成任务
-    const completed = await client.taskUpdate({
+    await client.taskUpdate({
       schema_version: '1',
       workspace_id: workspace.workspace_id,
       task_id: task.task_id,
@@ -238,6 +238,7 @@ describe('S6 详情抽屉', () => {
         })),
       },
     });
+    const completed = await client.taskShow(workspace.workspace_id, task.task_id);
     render(
       <TaskDrawer task={completed} workspace={workspace} client={client} onClose={() => {}} onSaved={() => {}} />,
     );

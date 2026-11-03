@@ -128,6 +128,8 @@ export function DiagnosisScreen() {
         framework,
         problem: problemText,
         focus_metric_id: activeMetric?.metric_id,
+        // CLI 合同必填：当前 run 的来源证据（演示取指标关联单元格）
+        evidence_ids: [`cell:demo:${activeMetric?.metric_key ?? '核算表'}:C7`],
       });
       setPending({ preview, kind: 'generate', label: '确认生成诊断报告（发送 1 次请求）' });
     } catch (err) {
@@ -198,7 +200,7 @@ export function DiagnosisScreen() {
         format,
         `诊断报告-${selected.report_id.slice(0, 8)}.${format}`,
       );
-      setNotice(`已请求核心导出 ${format.toUpperCase()}：${result.out_path}`);
+      setNotice(`已请求核心导出 ${format.toUpperCase()}：${result.out}`);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     }
