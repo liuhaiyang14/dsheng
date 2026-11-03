@@ -18,12 +18,25 @@ tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 dsheng-core = { path = "../crates/dsheng-core" }
+# 服务层：桌面 command 与 CLI 复用同一实现（ctx::open_db_at / cmd::dispatch / store/**）
+dsheng-cli = { path = "../crates/dsheng-cli" }
+# 数据目录解析用系统 API（Known Folder/XDG；不依赖 cwd）
+dirs = "7"
+# 桌面 command 层把 UI 传入的 JSON 对象经临时文件交给 CLI 命令层
+# （--input-json 通道；不复制解析实现）
+tempfile = "3"
 # 导出库（src-tauri/src/export）依赖——CLI 工作包加入（导出实现所有权；
 # 与 CLI 侧 crates/dsheng-cli/Cargo.toml 保持同一版本）
 rust_xlsxwriter = "0.102"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 png = "0.18"
-rust_decimal = "1" 
+rust_decimal = "1"
+
+[dev-dependencies]
+# 集成测试合成数据注入（候选/provider 种子行；与 dsheng-cli 测试同版本）
+rusqlite = { version = "0.32", features = ["bundled"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
 
 [features]
 default = []
