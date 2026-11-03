@@ -3,9 +3,9 @@
   "product": "dsheng",
   "identifier": "com.dsheng.desktop",
   "version": "0.1.0",
-  "generated_at": "2026-11-03T06:32:02+00:00",
+  "generated_at": "2026-11-03T06:43:41+00:00",
   "git": {
-    "commit": "d5400972cabf97f855e6dc4645481acef11a04f9",
+    "commit": "ad70bbdea3a07bc9ee45d85bcc63234be2355b43",
     "branch": "main",
     "dirty": true
   },

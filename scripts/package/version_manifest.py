@@ -141,7 +141,7 @@ def read_json_version(path: Path) -> str:
     return version
 
 
-def git_info(repo: Path) -> dict:
+def git_info(repo: Path, exclude_manifest: Path | None = None) -> dict:
     def run(*args: str) -> str:
         try:
             return subprocess.run(
@@ -150,11 +150,20 @@ def git_info(repo: Path) -> dict:
         except subprocess.CalledProcessError:
             return ""
 
+    excluded = set()
+    if exclude_manifest is not None:
+        excluded = {
+            str(exclude_manifest),
+            exclude_manifest.name,
+            f"docs/release/{exclude_manifest.name}",
+        }
+
     return {
         "commit": run("rev-parse", "HEAD"),
         "branch": run("rev-parse", "--abbrev-ref", "HEAD"),
+        # 清单自身属预期写出产物，不计入 dirty
         "dirty": any(
-            line[3:].strip() not in (f"docs/release/{out.name}", str(out))
+            line[3:].strip() not in excluded
             for line in run("status", "--porcelain").splitlines()
             if line.strip()
         ),
@@ -312,13 +321,14 @@ def build_manifest(repo: Path, dist_dirs: list[Path], versions: dict, version: s
             }
         )
 
+    out_default = repo / "docs" / "release" / f"manifest-v{version}.json"
     return {
         "schema_version": SCHEMA_VERSION,
         "product": PRODUCT,
         "identifier": tauri_conf.get("identifier", ""),
         "version": version,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "git": git_info(repo),
+        "git": git_info(repo, exclude_manifest=out_default),
         "versions": versions,
         "signing": {"signed": False, "note": "unsigned：不签名、不绕过 Gatekeeper/SmartScreen；见 docs/release/UNSIGNED.md"},
         "artifacts": artifacts,
