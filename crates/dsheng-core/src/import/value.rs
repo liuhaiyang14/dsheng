@@ -6,7 +6,7 @@
 //!   金额单位元/千元/万元按 1/1000/10000 归一到元。
 
 use crate::contracts::decimal::{
-    check_significant_digits, parse_input_decimal, INPUT_MAX_FRACTION_DIGITS,
+    check_significant_digits, parse_input_decimal, DecimalPolicyError, INPUT_MAX_FRACTION_DIGITS,
 };
 use crate::contracts::domain::ValueState;
 use regex::Regex;
@@ -69,19 +69,23 @@ pub fn classify_cell(raw: Option<&str>) -> CellClass {
 /// 数值文本解析：规范十进制或三位分组千分位（§1.1）。
 ///
 /// 千分位仅接受 `1,234.56` 形态；`1,23` / `12,34.5` 等逗号小数点猜测一律拒绝。
-/// 原始文本允许多余尾零，值按规范形式校验（≤6 位小数、28 位有效数字）。
+/// 原始文本允许多余尾零（`100.50`），值按规范形式校验（≤6 位小数、28 位有效数字）；
+/// 前导零（`007`）、指数、正号不接受（不猜编码/科学计数文本）。
 pub fn parse_amount_text(text: &str) -> Option<Decimal> {
     if let Ok(d) = parse_input_decimal(text) {
         return Some(d);
     }
+    static PLAIN: OnceLock<Regex> = OnceLock::new();
     static THOUSANDS: OnceLock<Regex> = OnceLock::new();
+    let plain =
+        PLAIN.get_or_init(|| Regex::new(r"^-?(0|[1-9][0-9]*)\.[0-9]+$").expect("静态尾零小数正则"));
     let re = THOUSANDS.get_or_init(|| {
         Regex::new(
             r"^-?[1-9][0-9]{0,2}(,[0-9]{3})+(\.[0-9]{1,6})?$|^-?[1-9][0-9]{0,2}(,[0-9]{3})+$",
         )
         .expect("静态千分位正则")
     });
-    if !re.is_match(text) {
+    if !plain.is_match(text) && !re.is_match(text) {
         return None;
     }
     let stripped = text.replace(',', "");
@@ -92,6 +96,65 @@ pub fn parse_amount_text(text: &str) -> Option<Decimal> {
     }
     check_significant_digits(&d).ok()?;
     Some(if d.is_zero() { Decimal::ZERO } else { d })
+}
+
+/// XLSX 数值单元格 XML 原始字面量 → Decimal（§1.1：优先读取原始字面量，不经 f64）。
+///
+/// 接受 XML Schema 数值词法 `-?digits[.digits][(e|E)[+-]digits]`（含尾零/指数，
+/// 按精确十进制换算）；规范化后按输入精度校验：超过 6 位小数
+/// → `PrecisionExceeded`，超过 28 位有效数字 → `Overflow`，不静默截断。
+pub fn parse_numeric_literal(literal: &str) -> Result<Decimal, DecimalPolicyError> {
+    static LITERAL: OnceLock<Regex> = OnceLock::new();
+    let re = LITERAL.get_or_init(|| {
+        Regex::new(r"^-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$").expect("静态数值字面量正则")
+    });
+    let text = literal.trim();
+    if !re.is_match(text) {
+        return Err(DecimalPolicyError::InvalidCanonical);
+    }
+    let (mantissa, exponent) = match text.find(['e', 'E']) {
+        Some(i) => (
+            &text[..i],
+            text[i + 1..]
+                .parse::<i32>()
+                .map_err(|_| DecimalPolicyError::Overflow)?,
+        ),
+        None => (text, 0),
+    };
+    let mut d = Decimal::from_str_exact(mantissa).map_err(|_| DecimalPolicyError::Overflow)?;
+    if exponent < 0 {
+        let scale = d.scale() + exponent.unsigned_abs();
+        if scale > 28 {
+            return Err(DecimalPolicyError::PrecisionExceeded {
+                max: INPUT_MAX_FRACTION_DIGITS,
+            });
+        }
+        d.set_scale(scale)
+            .map_err(|_| DecimalPolicyError::Overflow)?;
+    } else if exponent > 0 {
+        let up = exponent.unsigned_abs();
+        if up <= d.scale() {
+            let scale = d.scale() - up;
+            d.set_scale(scale)
+                .map_err(|_| DecimalPolicyError::Overflow)?;
+        } else {
+            let times = up - d.scale();
+            d.set_scale(0).map_err(|_| DecimalPolicyError::Overflow)?;
+            for _ in 0..times {
+                d = d
+                    .checked_mul(Decimal::TEN)
+                    .ok_or(DecimalPolicyError::Overflow)?;
+            }
+        }
+    }
+    let d = d.normalize();
+    if d.scale() > INPUT_MAX_FRACTION_DIGITS {
+        return Err(DecimalPolicyError::PrecisionExceeded {
+            max: INPUT_MAX_FRACTION_DIGITS,
+        });
+    }
+    check_significant_digits(&d)?;
+    Ok(if d.is_zero() { Decimal::ZERO } else { d })
 }
 
 /// % 文本换算：仅在明确声明（表头/格式含 %）时把 `50%` 解析为底值 0.5。
@@ -215,6 +278,46 @@ mod tests {
         assert_eq!(parse_amount_text("12,34.5"), None, "逗号小数点不猜");
         assert_eq!(parse_amount_text("1,234"), Some(Decimal::from(1234)));
         assert_eq!(parse_amount_text("1,2345"), None);
+    }
+
+    #[test]
+    fn plain_text_trailing_zeros_allowed() {
+        // 原始文本允许多余尾零，值按规范形式校验
+        assert_eq!(
+            parse_amount_text("100.50").map(|d| d.to_string()),
+            Some("100.5".into())
+        );
+        assert_eq!(parse_amount_text("-0.0"), Some(Decimal::ZERO));
+        assert_eq!(
+            parse_amount_text("1.5000000").map(|d| d.to_string()),
+            Some("1.5".into())
+        );
+        assert_eq!(parse_amount_text("1.0000001"), None, "超 6 位小数不截断");
+        assert_eq!(parse_amount_text("007"), None, "前导零不猜");
+        assert_eq!(parse_amount_text("1e3"), None, "文本指数不猜");
+    }
+
+    #[test]
+    fn numeric_literal_exact_without_f64() {
+        let d = |s: &str| parse_numeric_literal(s).map(|v| v.to_string());
+        assert_eq!(d("123456.78"), Ok("123456.78".into()));
+        assert_eq!(d("-4321.05"), Ok("-4321.05".into()));
+        assert_eq!(d("0"), Ok("0".into()));
+        assert_eq!(d("-0"), Ok("0".into()), "负零规范为 0");
+        assert_eq!(d("12.50"), Ok("12.5".into()));
+        assert_eq!(d("1E+3"), Ok("1000".into()));
+        assert_eq!(d("2.5e-3"), Ok("0.0025".into()));
+        assert_eq!(d("1.25E1"), Ok("12.5".into()));
+        assert_eq!(
+            d("0.12345678"),
+            Err(DecimalPolicyError::PrecisionExceeded { max: 6 }),
+            "超输入精度报 decimal_precision_exceeded，不截断"
+        );
+        assert_eq!(
+            d("1.0000000000000001E-3"),
+            Err(DecimalPolicyError::PrecisionExceeded { max: 6 })
+        );
+        assert!(d("NaN").is_err() && d("1,234").is_err() && d("").is_err());
     }
 
     #[test]

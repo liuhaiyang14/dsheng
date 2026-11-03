@@ -9,6 +9,7 @@ pub mod headers;
 pub mod scan;
 pub mod template;
 pub mod value;
+pub mod xlsx_literal;
 
 pub use fileio::{
     decode_utf8, parse_csv_text, read_csv, read_workbook, CellValue, ImportError, SheetData,

@@ -145,7 +145,8 @@ fn unit_display(unit_json: &str) -> String {
 fn cell_value(cell: Option<&CellValue>) -> Option<Decimal> {
     let cell = cell?;
     match cell {
-        CellValue::Int(i) => Some(Decimal::from(*i)),
+        // 精确整数与 XLSX 数值 XML 原始字面量（§1.1；超输入精度为 invalid → None）
+        CellValue::Int(_) | CellValue::Number(_) => cell.exact_decimal(),
         CellValue::Text(t) => dsheng_core::import::value::parse_amount_text(t.trim()),
         CellValue::FloatUnverified(text) => {
             // 词法保留的 f64 文本：仅当无小数精度损失（整数值）才采用，

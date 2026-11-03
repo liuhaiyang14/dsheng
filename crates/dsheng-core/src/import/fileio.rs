@@ -3,10 +3,14 @@
 //! - 仅 xlsx/xls/csv；PPTX 等标 unsupported，不外发。
 //! - CSV 接受 UTF-8/BOM；解码失败要求用户显式选择 GB18030（`csv_gb18030_required`），
 //!   不猜乱码。
-//! - XLSX 数字只给 float 且不能恢复原始字面量时标 `precision_unverified`
+//! - XLSX 数值优先读取 XML 原始字面量（[`super::xlsx_literal`]，与读取库 float 交叉
+//!   核验一致才采用）；只有 float 且不能恢复原始字面量时标 `precision_unverified`
 //!   （§1.1：禁止以 f64 中转精确金额；整数为精确值）。
 //! - 不执行宏、外链或未知公式；公式原文保留，缓存值仅人工对照。
+//! - 行列按绝对坐标展开：`rows[r][c]` 恒为 Excel 第 r+1 行、第 c+1 列
+//!   （首个已用单元格不在 A1 时也不截断末行/末列）。
 
+use super::xlsx_literal::{read_numeric_literals, SheetLiterals};
 use calamine::{Data, Range, Reader, Xls, Xlsx};
 use std::io::Read;
 use std::path::Path;
@@ -31,6 +35,9 @@ pub enum CellValue {
     Text(String),
     /// 精确整数。
     Int(i64),
+    /// XLSX 数值单元格的 XML 原始字面量（已与读取库 float 交叉核验一致；§1.1）。
+    /// 精确十进制换算见 [`super::value::parse_numeric_literal`]。
+    Number(String),
     /// 浮点词法（calamine 仅给 f64）：原文审计用，值状态 precision_unverified。
     FloatUnverified(String),
     Bool(bool),
@@ -47,7 +54,7 @@ impl CellValue {
     pub fn raw_text(&self) -> String {
         match self {
             Self::Empty => String::new(),
-            Self::Text(t) | Self::FloatUnverified(t) => t.clone(),
+            Self::Text(t) | Self::Number(t) | Self::FloatUnverified(t) => t.clone(),
             Self::Int(i) => i.to_string(),
             Self::Bool(b) => b.to_string(),
             Self::Formula { source, .. } => source.clone(),
@@ -56,21 +63,28 @@ impl CellValue {
     }
 
     /// 值状态映射（§1.1；公式缓存不写入业务值）。
+    ///
+    /// `Number` 超输入精度（>6 位小数 / >28 位有效数字）为 invalid
+    /// （decimal_precision_exceeded / decimal_overflow），不截断。
     pub fn value_state(&self) -> crate::contracts::domain::ValueState {
+        use crate::contracts::domain::ValueState;
         match self {
-            Self::Empty | Self::Text(_) | Self::Bool(_) | Self::Error(_) => {
-                crate::contracts::domain::ValueState::Missing
-            }
-            Self::Int(_) => crate::contracts::domain::ValueState::Valid,
-            Self::FloatUnverified(_) => crate::contracts::domain::ValueState::PrecisionUnverified,
-            Self::Formula { .. } => crate::contracts::domain::ValueState::UnsupportedFormula,
+            Self::Empty | Self::Text(_) | Self::Bool(_) | Self::Error(_) => ValueState::Missing,
+            Self::Int(_) => ValueState::Valid,
+            Self::Number(lit) => match super::value::parse_numeric_literal(lit) {
+                Ok(_) => ValueState::Valid,
+                Err(_) => ValueState::Invalid,
+            },
+            Self::FloatUnverified(_) => ValueState::PrecisionUnverified,
+            Self::Formula { .. } => ValueState::UnsupportedFormula,
         }
     }
 
-    /// 精确值（仅 Int）；float 不经 f64 转业务值。
+    /// 精确值（Int 与可换算的 XML 数值字面量）；float 不经 f64 转业务值。
     pub fn exact_decimal(&self) -> Option<rust_decimal::Decimal> {
         match self {
             Self::Int(i) => Some(rust_decimal::Decimal::from(*i)),
+            Self::Number(lit) => super::value::parse_numeric_literal(lit).ok(),
             _ => None,
         }
     }
@@ -94,25 +108,30 @@ pub fn read_workbook(path: &Path) -> Result<Vec<SheetData>, ImportError> {
     }
 }
 
-fn convert_range(range: &Range<Data>) -> Vec<Vec<CellValue>> {
-    let (max_row, max_col) = range.get_size();
-    let mut rows = Vec::with_capacity(max_row);
-    for r in 0..max_row {
-        let mut row = Vec::with_capacity(max_col);
-        for c in 0..max_col {
-            row.push(convert_cell(range.get_value((r as u32, c as u32))));
+/// 按绝对坐标（A1=(0,0)）展开到已用区域右下角；`literals` 为该 sheet 的
+/// XML 数值字面量（xls 或包结构不可解析时为 None）。
+fn convert_range(range: &Range<Data>, literals: Option<&SheetLiterals>) -> Vec<Vec<CellValue>> {
+    let Some((end_row, end_col)) = range.end() else {
+        return Vec::new();
+    };
+    let mut rows = Vec::with_capacity(end_row as usize + 1);
+    for r in 0..=end_row {
+        let mut row = Vec::with_capacity(end_col as usize + 1);
+        for c in 0..=end_col {
+            let literal = literals.and_then(|m| m.get(&(r, c))).map(String::as_str);
+            row.push(convert_cell(range.get_value((r, c)), literal));
         }
         rows.push(row);
     }
     rows
 }
 
-fn convert_cell(d: Option<&Data>) -> CellValue {
+fn convert_cell(d: Option<&Data>, literal: Option<&str>) -> CellValue {
     match d {
         None | Some(Data::Empty) => CellValue::Empty,
         Some(Data::String(s)) => CellValue::Text(s.clone()),
         Some(Data::Int(i)) => CellValue::Int(*i),
-        Some(Data::Float(f)) => CellValue::FloatUnverified(format!("{f}")),
+        Some(Data::Float(f)) => number_cell(*f, literal),
         Some(Data::Bool(b)) => CellValue::Bool(*b),
         Some(Data::DateTime(dt)) => CellValue::Text(dt.to_string()),
         Some(Data::Error(e)) => CellValue::Error(format!("{e}")),
@@ -121,10 +140,26 @@ fn convert_cell(d: Option<&Data>) -> CellValue {
     }
 }
 
+/// 数值单元格（§1.1）：XML 原始字面量存在且与读取库 f64 一致时采用字面量
+/// （纯整数 → `Int`，其余 → `Number(原文)`）；否则 `FloatUnverified`。
+fn number_cell(value: f64, literal: Option<&str>) -> CellValue {
+    if let Some(lit) = literal {
+        if lit.parse::<f64>().ok() == Some(value) {
+            if let Ok(i) = lit.parse::<i64>() {
+                return CellValue::Int(i);
+            }
+            return CellValue::Number(lit.to_string());
+        }
+    }
+    CellValue::FloatUnverified(format!("{value}"))
+}
+
 fn read_xlsx(path: &Path) -> Result<Vec<SheetData>, ImportError> {
     let file =
         std::fs::File::open(path).map_err(|e| ImportError::WorkbookReadFailed(e.to_string()))?;
     let mut book = Xlsx::new(file).map_err(|e| ImportError::WorkbookReadFailed(e.to_string()))?;
+    // §1.1 数值优先 XML 原始字面量；包结构不可解析 → 无字面量，回退 precision_unverified
+    let literals = read_numeric_literals(path).unwrap_or_default();
     let sheet_names = book.sheet_names().to_vec();
     let mut out = Vec::new();
     for name in sheet_names {
@@ -146,9 +181,10 @@ fn read_xlsx(path: &Path) -> Result<Vec<SheetData>, ImportError> {
                 )
             })
             .collect();
+        let rows = convert_range(&range, literals.get(&name));
         out.push(SheetData {
             name,
-            rows: convert_range(&range),
+            rows,
             merged_ranges: merged,
         });
     }
@@ -167,7 +203,7 @@ fn read_xls(path: &Path) -> Result<Vec<SheetData>, ImportError> {
         };
         out.push(SheetData {
             name,
-            rows: convert_range(&range),
+            rows: convert_range(&range, None),
             merged_ranges: Vec::new(),
         });
     }
