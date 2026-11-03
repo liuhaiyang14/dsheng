@@ -59,7 +59,7 @@ EXPECTED_ARTIFACTS = [
     ("cli", "cli-zip", "macos", "x64"),
     ("cli", "cli-zip", "windows", "x64"),
     ("skill", "skill-zip", None, None),
-    ("manual", "manual-zip", None, None),
+    ("manual", "manual-pdf", None, None),
 ]
 
 # dist 目录里允许存在但不计入产物清单的辅助文件。

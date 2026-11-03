@@ -3,11 +3,11 @@
   "product": "dsheng",
   "identifier": "com.dsheng.desktop",
   "version": "0.1.0",
-  "generated_at": "2026-11-03T06:44:21+00:00",
+  "generated_at": "2026-11-03T07:24:37+00:00",
   "git": {
-    "commit": "bb3c54fa1e8a915aa695fc2e7932ba6dc8092953",
+    "commit": "78e55fc3ba87c2d2e95d365343fe5aea0b377c74",
     "branch": "main",
-    "dirty": false
+    "dirty": true
   },
   "versions": {
     "cargo_workspace": "0.1.0",
@@ -165,10 +165,10 @@
     },
     {
       "category": "manual",
-      "kind": "manual-zip",
+      "kind": "manual-pdf",
       "platform": null,
       "arch": null,
-      "status": "missing"
+      "status": "present"
     }
   ],
   "components": {
