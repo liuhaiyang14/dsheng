@@ -107,15 +107,21 @@ UI=UI 工作包；CLI=CLI/导出工作包；DOC=Skill 与手册工作包；REL=�
 集成待办（UI 字段对齐）：src-ui 的 `diff_value`→`delta`、mom/yoy 简化对象→完整 comparisonView、
 taskCandidateView 增 `envelope_locally_reconstructed`——**已完成（f0b645d＋status_tag 本地派生）**。
 
-## 集成轮 1 独立复审记录（2026-11-03，区间 d505df5..3d7d097）
+## 集成轮 1 独立复审记录（2026-11-03，区间 d505df5..720dad7）
 
-结论：P0=0；P1=1（src-ui 类型漂移）——已由 f0b645d 修复（build 干净＋54/54 绿），
-另 status_tag 改为 UI 本地派生可选字段。P2 处置：
+**最终结论：集成轮 1 复审通过（P0/P1=0）**（主审 3d7d097＋增量 f0b645d/1412ab5/720dad7 逐项复核清零）。
+
+过程记录：主审 P0=0、P1=1（src-ui 类型漂移）＋P2×5；修复与复核链：
+- f0b645d：类型对齐 read-views（delta/direction/完整 comparisonView/envelope 标记）
+- 1412ab5：status_tag 本地派生＋extract 注释＋台账
+- 720dad7：favorable 语义（§1.1）修复复审发现的 P1-NEW（direction 误用）＋
+  comparisonView 形状（P2-NEW）
+P2 处置：
 - P2-1 extract.rs 注释措辞已修正（平局差异不影响阶段判定）。
 - P2-2 `generation_attempts` 三指纹列经 confirmations 关联保留语义；口径已记录，
   如后续需要直列再以新 migration 增列（不改 0001）。
-- P2-3 history delete 的报告/证据结构化引用检查：随报告/证据结构化引用实现补检（跟进项）。
-- P2-4 attempt-failed 落库服务函数：归入生成提交接线（主 Agent 集成阶段，跟进项）。
+- P2-3 history delete 的报告/证据结构化引用检查：随报告/证据结构化引用实现补检（跟进项，归属数据包后续）。
+- P2-4 attempt-failed 落库服务函数：归入生成提交接线（主 Agent 集成轮 2，跟进项）。
 - P2-5 docs 中 ~/.zshrc 为环境说明文档行，保留。
 
 （未列出的用例均为 `待工程`；每轮合并后由主 Agent 把达成项从上表更新并链接到
