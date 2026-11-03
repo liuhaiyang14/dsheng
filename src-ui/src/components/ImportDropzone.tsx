@@ -24,6 +24,8 @@ interface TauriDialogApi {
   open(options: { directory: boolean; title?: string }): Promise<string | string[] | null>;
 }
 
+type EnvCheck = { tauri: boolean; dialog: boolean; dragDrop: boolean };
+
 function tauriWindow(): TauriWindowApi | null {
   const w = window as unknown as { __TAURI__?: { window?: { getCurrentWindow?: () => TauriWindowApi } } };
   try {
@@ -33,9 +35,26 @@ function tauriWindow(): TauriWindowApi | null {
   }
 }
 
+function tauriEvent(): { listen(name: string, handler: (e: { payload: TauriDragDropEvent }) => void): Promise<() => void> } | null {
+  const w = window as unknown as { __TAURI__?: { event?: { listen?: unknown } } };
+  type ListenFn = (n: string, h: (e: { payload: TauriDragDropEvent }) => void) => Promise<() => void>;
+  const listen = w.__TAURI__?.event?.listen as ListenFn | undefined;
+  return typeof listen === 'function' ? { listen } : null;
+}
+
 function tauriDialog(): TauriDialogApi | null {
   const w = window as unknown as { __TAURI__?: { dialog?: TauriDialogApi } };
-  return w.__TAURI__?.dialog ?? null;
+  const d = w.__TAURI__?.dialog;
+  return d && typeof d.open === 'function' ? d : null;
+}
+
+function envCheck(): EnvCheck {
+  const w = window as unknown as { __TAURI__?: unknown };
+  return {
+    tauri: w.__TAURI__ != null,
+    dialog: tauriDialog() != null,
+    dragDrop: tauriWindow() != null || tauriEvent() != null,
+  };
 }
 
 export function ImportDropzone(props: {
@@ -44,6 +63,7 @@ export function ImportDropzone(props: {
 }) {
   const [hover, setHover] = useState(false);
   const [manual, setManual] = useState('');
+  const [manualMode, setManualMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dropRef = useRef<HTMLDivElement | null>(null);
 
@@ -61,26 +81,41 @@ export function ImportDropzone(props: {
     props.onPath(guessDir, note);
   };
 
-  // Tauri 桌面：窗口级拖放事件（真实路径）
+  // Tauri 桌面：窗口级拖放事件（真实路径）——onDragDropEvent 与 event.listen 双通道
   useEffect(() => {
-    const w = tauriWindow();
-    if (!w) return;
-    let unlisten: (() => void) | null = null;
+    let unlisteners: Array<() => void> = [];
     let alive = true;
-    void w.onDragDropEvent((event) => {
+    const onEvent = (event: TauriDragDropEvent) => {
       if (event.type === 'enter' || event.type === 'over') setHover(true);
       if (event.type === 'leave') setHover(false);
       if (event.type === 'drop') {
         setHover(false);
         handlePaths(event.paths ?? []);
       }
-    }).then((fn) => {
-      if (alive) unlisten = fn;
-      else fn();
-    }).catch(() => undefined);
+    };
+    const w = tauriWindow();
+    if (w) {
+      void w.onDragDropEvent(onEvent)
+        .then((fn) => {
+          if (alive) unlisteners.push(fn);
+          else fn();
+        })
+        .catch(() => undefined);
+    }
+    const ev = tauriEvent();
+    if (ev) {
+      void ev
+        .listen('tauri://drag-drop', (e) => onEvent(e.payload))
+        .then((fn) => {
+          if (alive) unlisteners.push(fn);
+          else fn();
+        })
+        .catch(() => undefined);
+    }
     return () => {
       alive = false;
-      unlisten?.();
+      unlisteners.forEach((fn) => fn());
+      unlisteners = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -97,19 +132,20 @@ export function ImportDropzone(props: {
       }
       return;
     }
-    // 浏览器/测试退路：手动填路径
-    const input = window.prompt('输入数据目录的绝对路径（演示/测试通道）', manual || '');
-    if (input && input.trim()) {
-      setManual(input.trim());
-      props.onPath(input.trim());
-    }
+    // 退路提示：WKWebView 不支持 window.prompt，请用下方手动路径输入
+    setManualMode(true);
+    setError('系统目录选择器不可用（见环境自检），请在下方手动输入目录路径。');
   };
+
+  const env = envCheck();
 
   return (
     <div className="panel import-panel" data-testid="import-panel">
       <div className="panel-head">
         <span className="panel-title">导入经营数据</span>
-        <span className="panel-note">两种方式任选 · 文件保留在原位置，不复制进数据库</span>
+        <span className="panel-note" data-testid="import-env">
+          环境：__TAURI__ {env.tauri ? '✓' : '✗'} · 目录选择器 {env.dialog ? '✓' : '✗'} · 拖放 {env.dragDrop ? '✓' : '✗'}
+        </span>
       </div>
       <div className="import-row">
         <div
@@ -163,6 +199,26 @@ export function ImportDropzone(props: {
           </p>
         </div>
       </div>
+      {manualMode || !env.dialog ? (
+        <div className="manual-path" data-testid="manual-path-row">
+          <input
+            className="select"
+            value={manual}
+            placeholder="输入数据目录绝对路径，例如 /Users/你/Documents/经营复盘/2026-10"
+            onChange={(e) => setManual(e.target.value)}
+            data-testid="manual-path-input"
+          />
+          <button
+            type="button"
+            className="primary"
+            disabled={props.busy || !manual.trim()}
+            onClick={() => manual.trim() && props.onPath(manual.trim())}
+            data-testid="manual-path-scan"
+          >
+            {props.busy ? '解析中…' : '解析此目录'}
+          </button>
+        </div>
+      ) : null}
       {error ? <div className="onboarding-error">{error}</div> : null}
     </div>
   );
