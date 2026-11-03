@@ -3,11 +3,11 @@
   "product": "dsheng",
   "identifier": "com.dsheng.desktop",
   "version": "0.1.0",
-  "generated_at": "2026-11-03T06:12:55+00:00",
+  "generated_at": "2026-11-03T06:32:02+00:00",
   "git": {
-    "commit": "26db41da2b799f51f43f448764cad28d376bbd69",
-    "branch": "wp/release",
-    "dirty": false
+    "commit": "d5400972cabf97f855e6dc4645481acef11a04f9",
+    "branch": "main",
+    "dirty": true
   },
   "versions": {
     "cargo_workspace": "0.1.0",
@@ -20,6 +20,25 @@
     "note": "unsigned：不签名、不绕过 Gatekeeper/SmartScreen；见 docs/release/UNSIGNED.md"
   },
   "artifacts": [
+    {
+      "category": "skill",
+      "kind": "skill-zip",
+      "platform": null,
+      "arch": null,
+      "file": "dsheng-agent-skill_0.1.0.zip",
+      "size_bytes": 28511,
+      "sha256": "09eb030173b01abe62b24d5c1caed6583f270ef9fc00a4bac61de94f7b881398",
+      "zip": {
+        "entries": 8,
+        "top_level": [
+          "SKILL.md",
+          "reference",
+          "scripts"
+        ],
+        "includes_migrations": false,
+        "includes_cli_binary": false
+      }
+    },
     {
       "category": "cli",
       "kind": "cli-zip",
@@ -36,6 +55,15 @@
         "includes_migrations": false,
         "includes_cli_binary": true
       }
+    },
+    {
+      "category": "manual",
+      "kind": "manual-pdf",
+      "platform": null,
+      "arch": null,
+      "file": "dsheng-manual_0.1.0.pdf",
+      "size_bytes": 1854365,
+      "sha256": "03e0c3aadbe59bbdbb2664577e7cdf3e7c78a2fce942f71519a243723f2fd0a1"
     },
     {
       "category": "desktop",
@@ -133,7 +161,7 @@
       "kind": "skill-zip",
       "platform": null,
       "arch": null,
-      "status": "missing"
+      "status": "present"
     },
     {
       "category": "manual",
