@@ -55,11 +55,12 @@ describe('S4 经营分析屏', () => {
     );
   });
 
-  it('不可比指标显示原因，不把缺失当 0', async () => {
+  it('无基期比较对象为 null 时显示不可比，不把缺失当 0', async () => {
     await openAnalysis();
     const table = screen.getByTestId('metric-table');
+    // 合同语义（§1.4）：无合法基期 → mom/yoy 整体为 null；单元显示不可比提示
     expect(
-      within(table).getAllByText(/不可比：上期未保存该指标，无可比基期；不把缺失当 0/).length,
+      within(table).getAllByText(/不可比：无可比基期/).length,
     ).toBeGreaterThan(0);
     expect(within(table).getAllByText(/不可比/).length).toBeGreaterThanOrEqual(3);
   });

@@ -72,13 +72,32 @@ export function formatRatioPercent(value: string | null): string | null {
   return `${groupDecimal(shiftDecimal(value, 2))}%`;
 }
 
-/** 差异展示：down=低于目标（红），up=高于目标（绿），neutral=中性。 */
-export function diffTone(direction: 'up' | 'down' | 'neutral' | null): 'bad' | 'good' | 'warn' | 'muted' {
-  switch (direction) {
-    case 'down':
-      return 'bad';
-    case 'up':
+/**
+ * favorable 判定（data-period-import §1.1）：
+ * favorable = (direction=up ∧ delta>0) ∨ (direction=down ∧ delta<0)；
+ * neutral 不判；delta 缺失（任一操作数缺）时为 null。
+ * 纯字符串符号判断，不经 Number。
+ */
+export type Favorable = 'favorable' | 'unfavorable' | 'neutral' | null;
+
+export function favorableOf(
+  direction: 'up' | 'down' | 'neutral',
+  delta: string | null,
+): Favorable {
+  if (delta == null) return null;
+  const negative = isNegativeDecimal(delta);
+  if (direction === 'neutral') return 'neutral';
+  if (direction === 'up') return negative ? 'unfavorable' : 'favorable';
+  return negative ? 'favorable' : 'unfavorable';
+}
+
+/** 差异展示配色：按 favorable（有利绿/不利红/中性黄/缺值灰）。 */
+export function diffTone(favorable: Favorable): 'bad' | 'good' | 'warn' | 'muted' {
+  switch (favorable) {
+    case 'favorable':
       return 'good';
+    case 'unfavorable':
+      return 'bad';
     case 'neutral':
       return 'warn';
     default:

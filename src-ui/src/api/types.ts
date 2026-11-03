@@ -737,8 +737,8 @@ export type ComparisonAvailability = 'available' | 'partial' | 'unavailable';
 export interface ComparisonView {
   comparison_type: 'mom' | 'yoy';
   label: string;
-  base_from: IsoDate | null;
-  base_to: IsoDate | null;
+  base_from: IsoDate;
+  base_to: IsoDate;
   base_value: DecimalString | null;
   absolute_change: DecimalString | null;
   /** ratio 口径：0.153 = 15.3%，展示层自行 ×100（字符串移位）。 */

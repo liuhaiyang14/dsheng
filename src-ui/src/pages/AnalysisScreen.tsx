@@ -15,6 +15,7 @@ import {
   formatSigned,
   groupDecimal,
   diffTone,
+  favorableOf,
   type AnalysisRunView,
   type Cadence,
   type MetricRowView,
@@ -27,12 +28,12 @@ const GRAIN_LABELS: Record<Cadence, string> = {
   quarter: '季度',
 };
 
-/** 核心不返回 status_tag；按 delta/可比性本地推导。 */
+/** 核心不返回 status_tag；按 favorable/可比性本地推导（§1.1 语义）。 */
 function deriveStatusTag(m: MetricRowView): NonNullable<MetricRowView['status_tag']> {
   if (m.mom == null && m.yoy == null) return 'incomplete';
-  if (m.delta != null && m.target_value != null && m.delta.startsWith('-')) {
-    return m.direction === 'down' ? 'watch' : 'focus';
-  }
+  const favorable = favorableOf(m.direction, m.delta);
+  if (favorable === 'unfavorable') return 'focus';
+  if (m.delta == null || m.target_value == null) return 'watch';
   return 'ok';
 }
 
@@ -145,7 +146,7 @@ export function AnalysisScreen() {
               {m.actual_value == null ? '—' : groupDecimal(m.actual_value)}
               {m.unit === '%' && m.actual_value != null ? '%' : ''}
             </div>
-            <div className={`delta ${diffTone(m.direction)}`}>
+            <div className={`delta ${diffTone(favorableOf(m.direction, m.delta))}`}>
               {m.delta != null && m.target_value != null
                 ? `${m.delta.startsWith('-') ? '↓ 低于' : '↑ 高于'}目标 ${groupDecimal(m.delta.replace('-', ''))}${m.unit === '%' ? 'pp' : ` ${m.unit}`}`
                 : '未设目标'}
@@ -200,7 +201,7 @@ export function AnalysisScreen() {
                       </td>
                       <td>{formatMetricValue(m.target_value, null)}</td>
                       <td>{formatMetricValue(m.actual_value, null)}</td>
-                      <td className={diffTone(m.direction)}>
+                      <td className={diffTone(favorableOf(m.direction, m.delta))}>
                         {m.delta != null ? formatSigned(m.delta) : '—'}
                       </td>
                       <CompareCell compare={m.mom} />
@@ -232,9 +233,9 @@ export function AnalysisScreen() {
                 <div className="bar-label">
                   <span>
                     {m.metric_label}
-                    {m.direction === 'down' ? '未达目标' : '高于目标'}
+                    {m.delta != null && m.delta.startsWith('-') ? '低于目标' : '高于目标'}
                   </span>
-                  <b className={diffTone(m.direction)}>
+                  <b className={diffTone(favorableOf(m.direction, m.delta))}>
                     {formatSigned(m.delta)}
                     {m.unit === '%' ? 'pp' : ''}
                   </b>
