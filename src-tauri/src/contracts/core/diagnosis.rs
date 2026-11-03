@@ -3,8 +3,9 @@
 //! generate/continue 走服务层双门禁：preview*=无 flag 预览（本地，不派发），
 //! confirm*=以 preview 记录的原始请求重建 + `--confirmation-id/--confirm-send`
 //! → 服务层逐项重验快照后原子消费并派发（不新增任何 Provider 直连路径；
-//! HttpDispatch 与 CLI 同一实现）。UI 请求缺 evidence 字段——服务层按合同
-//! 拒绝空证据（INPUT_CONTRACT_INVALID；合同缺口见工作包报告）。
+//! HttpDispatch 与 CLI 同一实现）。UI 请求证据键为 `evidence_ids`
+//! （DiagnosisGenerateRequest，与 diagnosis-input 合同一致）；空证据按合同
+//! 拒绝（INPUT_CONTRACT_INVALID）。
 
 use super::{
     diagnosis_cmd, dispatch, envelope, export_doc_format_of, framework_of, opt_str, req_str,
@@ -28,7 +29,8 @@ fn diagnosis_generate_call(
     let framework = framework_of(&req_str(request, "framework")?)?;
     let problem = req_str(request, "problem")?;
     let focus_metric = opt_str(request, "focus_metric_id");
-    let evidence = str_array(request, "evidence")?;
+    // UI/合同键名 evidence_ids（复审轮 2 P1-1 修复；仅 UI 请求路径使用本函数）
+    let evidence = str_array(request, "evidence_ids")?;
     let provider = opt_str(request, "provider_id");
     dispatch(
         env,

@@ -755,7 +755,24 @@ fn uc40_generation_preview_local_and_rejections() {
     );
     assert_eq!(code, "INVALID_ARGUMENT");
 
-    // diagnosis generate：UI 请求缺 evidence → 服务层按合同拒绝（INPUT_CONTRACT_INVALID）
+    // diagnosis generate：evidence_ids 键对齐 UI 合同——带证据的预览可发起（本地确认，不派发）
+    let preview = cmd::diagnosis::diagnosis_generate_preview(
+        &env,
+        json!({
+            "workspace_id": f.workspace,
+            "run_id": f.run_id,
+            "framework": "5why",
+            "problem": "销售额未达标",
+            "evidence_ids": ["cell:demo:核算表:C7"],
+        }),
+    );
+    assert_eq!(preview["ok"], json!(true), "带证据的诊断预览应成功（本地）");
+    assert!(
+        preview["data"]["confirmation_id"].is_string(),
+        "预览必须返回 confirmation_id"
+    );
+
+    // evidence_ids 缺失/为空 → 服务层按合同拒绝（INPUT_CONTRACT_INVALID）
     let code = err_code(
         cmd::diagnosis::diagnosis_generate_preview(
             &env,
