@@ -589,6 +589,9 @@ pub fn manual_input_set(
 pub struct MetricDefinitionSet {
     pub metric_key: String,
     pub label: String,
+    /// 显示别名（行名识别用）。缺省=继承上一版本别名；显式给 [] 表示清空。
+    #[serde(default)]
+    pub label_aliases: Option<Vec<String>>,
     pub semantic_type: String,
     pub unit_signature: Value,
     pub direction: String,
@@ -728,6 +731,29 @@ pub fn metric_set(
             cur + 1
         }
     };
+    // 别名继承：未提供 label_aliases 时沿用上一版（指标行名识别连续性）
+    let effective_aliases: Vec<String> = match &input.label_aliases {
+        Some(list) => list.clone(),
+        None => {
+            let prev: Option<String> = tx
+                .query_row(
+                    "SELECT label_aliases_json FROM metric_definitions
+                     WHERE workspace_id = ?1 AND metric_key = ?2
+                     ORDER BY version DESC LIMIT 1",
+                    params![workspace_id.to_string(), input.metric_key],
+                    |r| r.get(0),
+                )
+                .map(Some)
+                .or_else(|e| match e {
+                    rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                    other => Err(other),
+                })
+                .map_err(CliError::from)?;
+            prev.and_then(|raw| serde_json::from_str::<Vec<String>>(&raw).ok())
+                .unwrap_or_default()
+        }
+    };
+
     // 定义身份（§1.4）：同 metric_key 升版本保留同一 stable_metric_id（首版行 id）
     let inherited_stable_id: Option<String> = tx
         .query_row(
@@ -850,7 +876,7 @@ pub fn metric_set(
                 unit_signature_json, direction, target_constraint_scope, revenue_semantics,
                 aggregation, formula_json, required_inputs_json, denominator_policy,
                 comparison_policy_json, labor_treatment, effective_from, effective_to, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, '[]', ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?20, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
                  'positive_only', ?16, ?17, ?18, NULL, ?19)",
         params![
             metric_id,
@@ -874,7 +900,8 @@ pub fn metric_set(
             serde_json::to_string(&input.comparison_policy).unwrap(),
             input.labor_treatment,
             input.effective_from,
-            now_iso()
+            now_iso(),
+            serde_json::to_string(&effective_aliases).unwrap(),
         ],
     )
     .map_err(CliError::from)?;
