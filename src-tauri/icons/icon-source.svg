@@ -12,22 +12,19 @@
   <rect width="1024" height="1024" rx="226" fill="url(#bg)"/>
   <rect x="8" y="8" width="1008" height="1008" rx="220" fill="none" stroke="#3B4A3E" stroke-width="5"/>
 
-  <!-- 角落表格纹样（弱化装饰，不与文字交叠） -->
-  <g stroke="#D7B46E" fill="none" stroke-width="10" opacity="0.20" stroke-linecap="round">
-    <rect x="128" y="128" width="252" height="170" rx="26"/>
-    <line x1="128" y1="196" x2="380" y2="196"/>
-    <line x1="128" y1="264" x2="380" y2="264"/>
-    <line x1="254" y1="128" x2="254" y2="298"/>
-    <rect x="700" y="774" width="222" height="148" rx="24"/>
-    <line x1="700" y1="832" x2="922" y2="832"/>
-    <line x1="700" y1="890" x2="922" y2="890"/>
-    <line x1="811" y1="774" x2="811" y2="922"/>
+  <!-- 角落双表纹样（弱化装饰） -->
+  <g stroke="#D7B46E" fill="none" stroke-width="10" opacity="0.18" stroke-linecap="round">
+    <rect x="118" y="118" width="252" height="170" rx="26"/>
+    <line x1="118" y1="186" x2="370" y2="186"/>
+    <line x1="118" y1="254" x2="370" y2="254"/>
+    <line x1="244" y1="118" x2="244" y2="288"/>
+    <rect x="654" y="736" width="252" height="170" rx="26"/>
+    <line x1="654" y1="804" x2="906" y2="804"/>
+    <line x1="654" y1="872" x2="906" y2="872"/>
+    <line x1="780" y1="736" x2="780" y2="906"/>
   </g>
 
-  <!-- 主字：两（真·居中，基线 693 ≈ 视觉中心 512） -->
-  <text x="512" y="693" font-family="Songti SC, PingFang SC, STSong, serif" font-size="420"
-        font-weight="700" fill="url(#gold)" text-anchor="middle">两</text>
-
-  <!-- 一单：中轴对齐金杠 -->
-  <rect x="332" y="806" width="360" height="26" rx="13" fill="url(#gold)" opacity="0.92"/>
+  <!-- 主字：盛（视觉居中，基线 ≈ 700） -->
+  <text x="512" y="700" font-family="Songti SC, PingFang SC, STSong, serif" font-size="440"
+        font-weight="700" fill="url(#gold)" text-anchor="middle">盛</text>
 </svg>
