@@ -354,68 +354,91 @@ pub fn parse_period_header(
 ) -> Option<crate::contracts::domain::DateRange> {
     use crate::contracts::domain::DateRange;
     let t = normalize_header(text);
-    let chars: Vec<char> = t.chars().collect();
-    if chars.len() >= 7 && chars[..4].iter().all(|c| c.is_ascii_digit()) && chars[4] == '-' {
+    // 年月闭区间构造（自然月）
+    fn month_range(year: i32, month: u32) -> Option<DateRange> {
+        let from = chrono::NaiveDate::from_ymd_opt(year, month, 1)?;
+        let to = {
+            let (ny, nm) = if month == 12 {
+                (year + 1, 1)
+            } else {
+                (year, month + 1)
+            };
+            chrono::NaiveDate::from_ymd_opt(ny, nm, 1)? - chrono::Duration::days(1)
+        };
+        DateRange::new(from, to).ok()
+    }
+    // YYYY- 前缀：YYYY-MM-DD（单日）或 YYYY-MM（自然月）
+    let digits = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+    let bytes = t.as_bytes();
+    if bytes.len() >= 7 && bytes[..4].iter().all(u8::is_ascii_digit) && bytes[4] == b'-' {
         let year: i32 = t[..4].parse().ok()?;
         let rest = &t[5..];
-        if let Some(day) = rest.strip_suffix(|c: char| !c.is_ascii_digit() && c != '-') {
-            let _ = day;
-        }
-        if rest.len() == 7 && rest.as_bytes()[2] == b'-' {
+        if rest.len() == 5 && rest.as_bytes()[2] == b'-' && digits(&rest[..2]) && digits(&rest[3..])
+        {
             // YYYY-MM-DD
             let month: u32 = rest[..2].parse().ok()?;
-            let day: u32 = rest[3..5].parse().ok()?;
+            let day: u32 = rest[3..].parse().ok()?;
             let from = chrono::NaiveDate::from_ymd_opt(year, month, day)?;
             return DateRange::new(from, from).ok();
         }
-        if rest.len() == 2 {
+        if rest.len() == 2 && digits(rest) {
+            // YYYY-MM
             let month: u32 = rest.parse().ok()?;
-            let from = chrono::NaiveDate::from_ymd_opt(year, month, 1)?;
-            let to = {
-                let (ny, nm) = if month == 12 {
-                    (year + 1, 1)
-                } else {
-                    (year, month + 1)
-                };
-                chrono::NaiveDate::from_ymd_opt(ny, nm, 1)? - chrono::Duration::days(1)
-            };
-            return DateRange::new(from, to).ok();
+            return month_range(year, month);
         }
         return None;
     }
-    // YYYY年M月
+    // YYYY年M月（年必须显式）
     if let Some(stripped) = t.strip_suffix('月') {
         if let Some((year_s, month_s)) = stripped.split_once('年') {
-            let year: i32 = year_s.parse().ok()?;
-            let month: u32 = month_s.parse().ok()?;
-            let from = chrono::NaiveDate::from_ymd_opt(year, month, 1)?;
-            let to = {
-                let (ny, nm) = if month == 12 {
-                    (year + 1, 1)
-                } else {
-                    (year, month + 1)
-                };
-                chrono::NaiveDate::from_ymd_opt(ny, nm, 1)? - chrono::Duration::days(1)
-            };
-            return DateRange::new(from, to).ok();
+            if !year_s.is_empty() && !month_s.is_empty() {
+                let year: i32 = year_s.parse().ok()?;
+                let month: u32 = month_s.parse().ok()?;
+                return month_range(year, month);
+            }
         }
-    }
-    // “1月”：须明确年元数据
-    if let Some(month_s) = t.strip_suffix('月') {
-        if !month_s.contains('年') {
+        // “1月”：须明确年元数据
+        if !stripped.contains('年') && !stripped.is_empty() {
             let year = year_context?;
-            let month: u32 = month_s.parse().ok()?;
-            let from = chrono::NaiveDate::from_ymd_opt(year, month, 1)?;
-            let to = {
-                let (ny, nm) = if month == 12 {
-                    (year + 1, 1)
-                } else {
-                    (year, month + 1)
-                };
-                chrono::NaiveDate::from_ymd_opt(ny, nm, 1)? - chrono::Duration::days(1)
-            };
-            return DateRange::new(from, to).ok();
+            let month: u32 = stripped.parse().ok()?;
+            return month_range(year, month);
         }
     }
     None
+}
+
+#[cfg(test)]
+mod period_tests {
+    use super::parse_period_header;
+    use chrono::NaiveDate;
+
+    fn d(s: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    #[test]
+    fn contract_period_formats() {
+        // YYYY-MM：自然月闭区间
+        let m = parse_period_header("2026-10", None).unwrap();
+        assert_eq!(m.from, d("2026-10-01"));
+        assert_eq!(m.to, d("2026-10-31"));
+        // YYYY年M月
+        let cm = parse_period_header("2025年7月", None).unwrap();
+        assert_eq!(cm.from, d("2025-07-01"));
+        assert_eq!(cm.to, d("2025-07-31"));
+        // YYYY-MM-DD：单日（§4.3 接受；此前实现拒绝）
+        let day = parse_period_header("2026-10-31", None).unwrap();
+        assert_eq!(day.from, d("2026-10-31"));
+        assert_eq!(day.to, d("2026-10-31"));
+        // “1月”须明确年元数据
+        assert!(parse_period_header("1月", None).is_none());
+        let with_year = parse_period_header("1月", Some(2027)).unwrap();
+        assert_eq!(with_year.from, d("2027-01-01"));
+        assert_eq!(with_year.to, d("2027-01-31"));
+        // 非期间文本
+        assert!(parse_period_header("月份", None).is_none());
+        assert!(parse_period_header("2026年1-10月累计", None).is_none());
+        assert!(parse_period_header("累计", None).is_none());
+        assert!(parse_period_header("26-10", None).is_none());
+    }
 }
