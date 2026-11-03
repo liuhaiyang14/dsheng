@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#253129"/>
+      <stop offset="1" stop-color="#141A15"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ECD08A"/>
+      <stop offset="1" stop-color="#C09749"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="226" fill="url(#bg)"/>
+  <rect x="8" y="8" width="1008" height="1008" rx="220" fill="none" stroke="#3B4A3E" stroke-width="5"/>
+
+  <!-- 角落表格纹样（弱化装饰，不与文字交叠） -->
+  <g stroke="#D7B46E" fill="none" stroke-width="10" opacity="0.20" stroke-linecap="round">
+    <rect x="128" y="128" width="252" height="170" rx="26"/>
+    <line x1="128" y1="196" x2="380" y2="196"/>
+    <line x1="128" y1="264" x2="380" y2="264"/>
+    <line x1="254" y1="128" x2="254" y2="298"/>
+    <rect x="700" y="774" width="222" height="148" rx="24"/>
+    <line x1="700" y1="832" x2="922" y2="832"/>
+    <line x1="700" y1="890" x2="922" y2="890"/>
+    <line x1="811" y1="774" x2="811" y2="922"/>
+  </g>
+
+  <!-- 主字：两（真·居中，基线 693 ≈ 视觉中心 512） -->
+  <text x="512" y="693" font-family="Songti SC, PingFang SC, STSong, serif" font-size="420"
+        font-weight="700" fill="url(#gold)" text-anchor="middle">两</text>
+
+  <!-- 一单：中轴对齐金杠 -->
+  <rect x="332" y="806" width="360" height="26" rx="13" fill="url(#gold)" opacity="0.92"/>
+</svg>
