@@ -580,7 +580,7 @@ pub enum HistoryAction {
         run: String,
         #[arg(long)]
         revision: Option<u32>,
-        #[arg(long)]
+        #[arg(long = "type")]
         compare_type: CompareType,
     },
     Delete {

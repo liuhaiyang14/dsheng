@@ -184,7 +184,7 @@ impl CliError {
             ),
         ];
         for (lex, code, msg) in known {
-            if text.starts_with(lex) {
+            if text.contains(lex) {
                 return CliError::new(*code, *msg).with_details(serde_json::json!({"lex": lex}));
             }
         }
