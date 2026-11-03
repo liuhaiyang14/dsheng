@@ -278,6 +278,14 @@ fn parse_period_json(s: &str) -> Option<DateRange> {
 }
 
 /// 写回任务当前态（不改 revision——由调用方统一 +1）。
+///
+/// `steps` 必须是该任务的完整步骤集（`load_task` 载入后原地修改），含 tombstone。
+///
+/// 两阶段重排：`idx_task_steps_live_order` 对存活行 (task_id, step_order) 唯一，
+/// 逐行 upsert 写非恒等重排（如 1,2,3→3,1,2）会在中途撞唯一键；因此先在
+/// 同一事务内把该任务全部存活行的 step_order 平移出最终序区间（平移量 ≥
+/// 最终序最大值，中间序永不与最终序重叠），再逐行写最终序。恒等/局部修改
+/// 同样安全；失败随整个事务回滚，不残留中间序。
 pub(crate) fn save_task_state(
     conn: &Connection,
     task: &TaskRow,
@@ -338,6 +346,26 @@ pub(crate) fn save_task_state(
         ],
     )
     .map_err(TaskServiceError::from)?;
+    // 阶段 1：存活行 step_order 整体平移出最终序区间（唯一索引中间态安全）
+    let max_db_order: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(step_order), 0) FROM task_steps
+             WHERE task_id = ?1 AND deleted_at IS NULL",
+            params![task.task_id.to_string()],
+            |r| r.get(0),
+        )
+        .map_err(TaskServiceError::from)?;
+    let max_final_order: i64 = steps.iter().map(|s| s.step_order as i64).max().unwrap_or(0);
+    let offset = max_final_order.max(max_db_order);
+    if offset > 0 {
+        conn.execute(
+            "UPDATE task_steps SET step_order = step_order + ?2, updated_at = ?3
+             WHERE task_id = ?1 AND deleted_at IS NULL",
+            params![task.task_id.to_string(), offset, utc_iso(now)],
+        )
+        .map_err(TaskServiceError::from)?;
+    }
+    // 阶段 2：逐行写最终序（含新增/删除标记），最终序严格小于任一平移序
     for step in steps {
         let st = serde_json::to_value(step.status).expect("json");
         let st = st.as_str().expect("snake_case");

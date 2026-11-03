@@ -458,9 +458,8 @@ fn s5_task_step_move_positive() {
     ]);
     assert_eq!(code, 2);
     assert_eq!(err_of(&stdout), "WORKSPACE_MISMATCH");
-    // 实际重排：core save_task_state 顺序 upsert 与 idx_task_steps_live_order
-    // 唯一索引冲突（任何非恒等重排都会中途撞唯一键）——服务层缺口报告主 Agent
-    // （需两阶段重排：先写负偏移序再写最终序）。此处固定当前行为，防静默。
+    // 实际重排：两阶段落库修复后非恒等重排成功（曾因顺序 upsert 撞
+    // idx_task_steps_live_order 唯一键固定为 LOCAL_SAVE_FAILED；见 corefix F1）
     let (stdout, code) = run(&[
         "task",
         "step",
@@ -477,8 +476,49 @@ fn s5_task_step_move_positive() {
         &revision.to_string(),
         "--json",
     ]);
-    assert_eq!(code, 3, "core move 重排缺口（见完成报告）: {stdout}");
-    assert_eq!(err_of(&stdout), "LOCAL_SAVE_FAILED");
+    assert_eq!(code, 0, "move 重排成功: {stdout}");
+    let moved = data_of(&stdout);
+    assert_eq!(
+        moved["task_revision_no"].as_u64().unwrap(),
+        revision + 1,
+        "单事务 revision 只 +1"
+    );
+    // 重读任务：步骤一移到末尾，最终序 1..N
+    let (stdout, _) = run(&[
+        "task",
+        "show",
+        "--db",
+        &f.db,
+        "--workspace",
+        &ws,
+        "--task",
+        &task_id,
+        "--json",
+    ]);
+    let after = data_of(&stdout);
+    let steps_after = after["steps"].as_array().unwrap().clone();
+    assert_eq!(steps_after.len(), 2);
+    assert_eq!(steps_after[0]["action"], "步骤二");
+    assert_eq!(steps_after[1]["action"], "步骤一");
+    // 过期 revision 再次 move 仍拒绝
+    let (stdout, code) = run(&[
+        "task",
+        "step",
+        "move",
+        "--db",
+        &f.db,
+        "--workspace",
+        &ws,
+        "--step",
+        steps[0]["step_id"].as_str().unwrap(),
+        "--before",
+        "end",
+        "--expected-revision",
+        &revision.to_string(),
+        "--json",
+    ]);
+    assert_eq!(code, 2, "{stdout}");
+    assert_eq!(err_of(&stdout), "REVISION_CONFLICT");
 }
 
 #[test]
