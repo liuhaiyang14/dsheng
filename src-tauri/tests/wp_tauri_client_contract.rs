@@ -252,3 +252,15 @@ fn camel_to_snake(key: &str) -> String {
     }
     out
 }
+
+/// 回归守卫：打包应用曾因缺 withGlobalTauri 导致 UI“未连接核心”
+/// （window.__TAURI__ 仅在该配置开启时注入）。见提交 627f28c。
+#[test]
+fn s5_with_global_tauri_enabled() {
+    let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+        .expect("tauri.conf.json 可解析");
+    assert_eq!(
+        conf["app"]["withGlobalTauri"], serde_json::json!(true),
+        "withGlobalTauri 必须开启，否则打包后 window.__TAURI__ 不可用（UI 无法调用核心）"
+    );
+}
