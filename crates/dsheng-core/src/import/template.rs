@@ -134,14 +134,23 @@ fn column_a_is_account(rows: &[Vec<String>]) -> bool {
 }
 
 fn count_period_columns(rows: &[Vec<String>], block: Option<&HeaderBlock>) -> usize {
-    let mut count = 0;
+    // §4.1/§4.3：期间列只在表头块行内识别（数据行里的日期文本不是期间列锚点）
+    let Some(block) = block else {
+        return 0;
+    };
+    let header_rows: Vec<&Vec<String>> = (block.row - 1..block.row - 1 + block.row_count)
+        .filter_map(|r| rows.get(r))
+        .collect();
+    if header_rows.is_empty() {
+        return 0;
+    }
     let width = rows.iter().map(Vec::len).max().unwrap_or(0);
+    let mut count = 0;
     for col in 0..width {
-        // 表头块之外或未映射的列按期间列尝试
-        if block.is_some_and(|b| b.columns.iter().any(|(c, _)| *c == col)) {
+        if block.columns.iter().any(|(c, _)| *c == col) {
             continue;
         }
-        let hit = rows.iter().take(10).any(|r| {
+        let hit = header_rows.iter().any(|r| {
             r.get(col)
                 .map(|t| parse_period_header(t, None).is_some())
                 .unwrap_or(false)
@@ -235,5 +244,64 @@ mod tests {
     fn generic_fallback() {
         let m = detect_sheet_role("明细", &rows(vec![vec!["甲", "乙"]])).unwrap();
         assert_eq!(m.role, SheetRole::GenericTable);
+    }
+}
+
+#[cfg(test)]
+mod hardening_tests {
+    use super::*;
+    use crate::import::SheetRole;
+
+    fn rows(v: Vec<Vec<&str>>) -> Vec<Vec<String>> {
+        v.into_iter()
+            .map(|r| r.into_iter().map(str::to_string).collect())
+            .collect()
+    }
+
+    #[test]
+    fn trend_period_anchor_only_from_header_rows() {
+        // 表头行含期间列 → trend
+        let hit = detect_sheet_role(
+            "推移表",
+            &rows(vec![
+                vec!["科目", "单位", "2026-09", "2026-10"],
+                vec!["不含税销售额", "元", "100", "200"],
+            ]),
+        )
+        .unwrap();
+        assert_eq!(hit.role, SheetRole::Trend);
+        // 期间文本只出现在数据行（非表头）→ 不是期间列锚点 → generic_table
+        let data_only = detect_sheet_role(
+            "推移表",
+            &rows(vec![
+                vec!["科目", "单位", "备注"],
+                vec!["2025-07", "2025-08", "数据起点"],
+                vec!["不含税销售额", "元", "100"],
+            ]),
+        )
+        .unwrap();
+        assert_eq!(data_only.role, SheetRole::GenericTable);
+        // YYYY-MM-DD 表头期间列（§4.3 接受格式；表头块须≥2 已知字段）
+        let day_header = detect_sheet_role(
+            "推移表",
+            &rows(vec![
+                vec!["科目", "单位", "2026-10-31"],
+                vec!["甲", "元", "1"],
+            ]),
+        )
+        .unwrap();
+        assert_eq!(day_header.role, SheetRole::Trend);
+        // 真实企业形态（转置）：A 列是期间值、B 列起是指标名 → 不满足合同 trend
+        // 锚点，generic_table（用户确认范围/映射后读取；不改合同）
+        let transposed = detect_sheet_role(
+            "推移表",
+            &rows(vec![
+                vec!["月份", "总销售额(元)", "结算收益(元)"],
+                vec!["2025-07", "100", "20"],
+                vec!["2026-10", "300", "-5"],
+            ]),
+        )
+        .unwrap();
+        assert_eq!(transposed.role, SheetRole::GenericTable);
     }
 }

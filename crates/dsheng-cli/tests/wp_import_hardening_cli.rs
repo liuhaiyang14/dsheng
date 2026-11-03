@@ -7,7 +7,7 @@
 //! 显式 0、负数与两位小数金额（XML 数值字面量）、`合计` 行、`待补` 行。
 //! 全部数值为合成值；真实业务文件绝不入库。
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -337,10 +337,17 @@ struct Env {
 impl Env {
     /// workspace（month 策略）+ 合成指标（别名覆盖真实行名形态）+ 合成核算表。
     fn new(tag: &str) -> Self {
+        Self::with_files(tag, &[(FILE_LABEL, vec![("核算表", accounting_sheet())])])
+    }
+
+    /// 同上，但扫描目录中的文件/sheet 由调用方给定。
+    fn with_files(tag: &str, files: &[(&str, Vec<(&str, String)>)]) -> Self {
         let dir = tempfile::tempdir().expect("临时目录").keep();
         let scan = dir.join("scan");
         std::fs::create_dir_all(&scan).unwrap();
-        write_xlsx(&scan.join(FILE_LABEL), &[("核算表", accounting_sheet())]);
+        for (label, sheets) in files {
+            write_xlsx(&scan.join(label), sheets);
+        }
         let db = dir
             .join(format!("{tag}.sqlite3"))
             .to_string_lossy()
@@ -348,7 +355,7 @@ impl Env {
         let ws_json = dir.join("ws.json");
         std::fs::write(
             &ws_json,
-            r#"{"schema_version":"1","operation":"workspace_create","name":"硬化合成","initial_period_policy":{"cadence":"month","week_start_day":1,"fiscal_year_start_month":1,"timezone_id":"Asia/Shanghai","effective_from":"2026-10-01"}}"#,
+            r#"{"schema_version":"1","operation":"workspace_create","name":"硬化合成","initial_period_policy":{"cadence":"month","week_start_day":1,"fiscal_year_start_month":1,"timezone_id":"Asia/Shanghai","effective_from":"2026-01-01"}}"#,
         )
         .unwrap();
         let (env, code) = run(&[
@@ -730,5 +737,201 @@ fn empty_as_zero_requires_explicit_confirmation_and_snapshots_coverage() {
         out["data"]["analysis_input_fingerprint"],
         out2["data"]["analysis_input_fingerprint"]
     );
+    std::fs::remove_dir_all(&env.dir).ok();
+}
+
+// ---- F4：推移表（合同方向）期间列命中；真实转置形态按 generic 处理 ----
+
+/// 合同 §4.3 方向的推移表：科目行 × 期间列（YYYY-MM / YYYY-MM-DD）。
+fn trend_sheet() -> String {
+    use C::*;
+    let rows = vec![
+        (
+            1,
+            vec![
+                T("A1", "科目"),
+                T("B1", "单位"),
+                T("C1", "2026-09"),
+                T("D1", "2026-10-31"),
+            ],
+        ),
+        (
+            2,
+            vec![
+                T("A2", "总销售额"),
+                T("B2", "元"),
+                N("C2", "111"),
+                N("D2", "222.5"),
+            ],
+        ),
+        (
+            3,
+            vec![T("A3", "人工费"), T("B3", "元"), Blank("C3"), N("D3", "55")],
+        ),
+    ];
+    sheet_xml(&rows, &[])
+}
+
+/// 真实企业形态（转置）：A 列期间值（YYYY-MM 数据行）、B 列起为指标名。
+fn transposed_trend_sheet() -> String {
+    use C::*;
+    let rows = vec![
+        (
+            1,
+            vec![
+                T("A1", "月份"),
+                T("B1", "总销售额(元)"),
+                T("C1", "结算收益(元)"),
+                T("D1", "人工费(元)"),
+            ],
+        ),
+        (
+            2,
+            vec![
+                T("A2", "2025-07"),
+                N("B2", "20"),
+                N("C2", "3.5"),
+                N("D2", "9"),
+            ],
+        ),
+        (
+            3,
+            vec![
+                T("A3", "2025-08"),
+                N("B3", "30"),
+                N("C3", "4.5"),
+                N("D3", "9"),
+            ],
+        ),
+        (
+            4,
+            vec![
+                T("A4", "2026-09"),
+                N("B4", "40"),
+                N("C4", "5.5"),
+                N("D4", "9"),
+            ],
+        ),
+        (
+            5,
+            vec![
+                T("A5", "2026-10"),
+                N("B5", "50"),
+                N("C5", "-6.5"),
+                N("D5", "9"),
+            ],
+        ),
+    ];
+    sheet_xml(&rows, &[])
+}
+
+#[test]
+fn contract_orientation_trend_sheet_observed_by_period_columns() {
+    let env = Env::with_files(
+        "hard-f4-trend",
+        &[("合成推移表.xlsx", vec![("推移表", trend_sheet())])],
+    );
+    let scan = env.scan.to_string_lossy().to_string();
+    // 适配器命中 trend（scan note 记录角色）
+    let (out, code) = run(&[
+        "scan",
+        "--db",
+        &env.db,
+        "--workspace",
+        &env.workspace,
+        "--dir",
+        &scan,
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out["data"]["files"][0]["note"]
+            .as_str()
+            .unwrap()
+            .contains("推移表:trend"),
+        "scan note: {}",
+        out["data"]["files"][0]["note"]
+    );
+    // 观察按列头期间归位：9 月/10 月各一桶；YYYY-MM-DD 列头为单日观察
+    let (out, code) = run(&[
+        "analyze",
+        "--db",
+        &env.db,
+        "--workspace",
+        &env.workspace,
+        "--dir",
+        &scan,
+        "--from",
+        "2026-09-01",
+        "--to",
+        "2026-10-31",
+        "--grain",
+        "month",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let data = &out["data"];
+    assert_eq!(actual(data, "sales_net").as_deref(), Some("333.5"));
+    let series = data["series"].as_array().unwrap();
+    let sales_series = series
+        .iter()
+        .find(|s| s["metric_key"] == "sales_net")
+        .unwrap();
+    assert_eq!(
+        sales_series["buckets"],
+        json!(["2026-09-01/2026-09-30", "2026-10-31/2026-10-31"])
+    );
+    assert_eq!(sales_series["actual"], json!(["111", "222.5"]));
+    std::fs::remove_dir_all(&env.dir).ok();
+}
+
+#[test]
+fn real_transposed_trend_layout_stays_generic_table() {
+    let env = Env::with_files(
+        "hard-f4-generic",
+        &[(
+            "合成转置推移表.xlsx",
+            vec![("推移表", transposed_trend_sheet())],
+        )],
+    );
+    let scan = env.scan.to_string_lossy().to_string();
+    let (out, code) = run(&[
+        "scan",
+        "--db",
+        &env.db,
+        "--workspace",
+        &env.workspace,
+        "--dir",
+        &scan,
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out["data"]["files"][0]["note"]
+            .as_str()
+            .unwrap()
+            .contains("推移表:generic_table"),
+        "转置形态不满足合同 trend 锚点（科目行×期间列），按 generic：{}",
+        out["data"]["files"][0]["note"]
+    );
+    // 不产生观察（不猜转置语义）
+    let (out, code) = run(&[
+        "analyze",
+        "--db",
+        &env.db,
+        "--workspace",
+        &env.workspace,
+        "--dir",
+        &scan,
+        "--from",
+        "2026-09-01",
+        "--to",
+        "2026-10-31",
+        "--grain",
+        "month",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(out["data"]["metrics"].as_array().unwrap().is_empty());
     std::fs::remove_dir_all(&env.dir).ok();
 }

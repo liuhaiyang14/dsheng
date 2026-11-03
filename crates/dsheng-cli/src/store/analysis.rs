@@ -327,15 +327,23 @@ fn extract_observations(
                 continue;
             };
             let period_col = col_of("period");
-            // 推移表：无 period 列时，未映射列中可解析为期间的列即期间列。
+            // 推移表：无 period 列时，表头块行内可解析为期间的未映射列即期间列
+            //（数据行里的日期文本不作期间锚点，§4.1/§4.3）。
             let trend_period_cols: Vec<(usize, DateRange)> = if period_col.is_none() {
                 let width = sheet_data.rows.iter().map(|r| r.len()).max().unwrap_or(0);
+                let header_rows: Vec<&Vec<CellValue>> = (header.row.saturating_sub(1)
+                    ..header.row.saturating_sub(1) + header.row_count)
+                    .filter_map(|r| sheet_data.rows.get(r))
+                    .collect();
                 (0..width)
                     .filter_map(|c| {
-                        let text = sheet_data
-                            .rows
-                            .get(header.row.saturating_sub(1))
-                            .and_then(|r| r.get(c))
+                        if header.columns.iter().any(|(hc, _)| *hc == c) {
+                            return None;
+                        }
+                        // 合并表头：列内首个非空表头（左上标签投影）
+                        let text = header_rows
+                            .iter()
+                            .find_map(|r| r.get(c).filter(|v| !v.raw_text().trim().is_empty()))
                             .map(|cell| cell.raw_text())?;
                         let range = parse_period_header(&text, None)?;
                         Some((c, range))
