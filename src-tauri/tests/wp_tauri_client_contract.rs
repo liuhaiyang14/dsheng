@@ -16,15 +16,16 @@ fn repo_path(relative: &str) -> PathBuf {
 }
 
 /// 从 tauriClient.ts 提取 invoke 清单：cmd → 参数键集（按出现顺序）。
-/// 兼容 `this.invoke('cmd')` 与 `this.invoke<{...}>('cmd')`（返回类型泛型）。
+/// 兼容三种形式：`this.invoke('c')`、`this.invoke<{...}>('c')`、
+/// `this\n  .invoke<{...}>('c')`（链式换行＋返回类型泛型）。
 fn extract_invokes(source: &str) -> BTreeMap<String, Vec<String>> {
     let mut found = BTreeMap::new();
     let bytes = source.as_bytes();
     let mut i = 0;
-    while let Some(pos) = source[i..].find("this.invoke") {
-        let mut start = i + pos + "this.invoke".len();
+    while let Some(pos) = source[i..].find(".invoke") {
+        let mut start = i + pos + ".invoke".len();
         i = start;
-        // 可选泛型参数 <{...}>：跨过到 '>' 结束（不含嵌套泛型的简单形式用括号深度）
+        // 可选泛型参数 <...>：括号深度跨越（含嵌套）
         if bytes.get(start) == Some(&b'<') {
             let mut depth = 0usize;
             while start < bytes.len() {
@@ -43,11 +44,19 @@ fn extract_invokes(source: &str) -> BTreeMap<String, Vec<String>> {
             }
             i = start;
         }
-        // 跳过 '('
-        if bytes.get(start) != Some(&b'(') {
+        // '(' 前允许空白/换行
+        let mut p = start;
+        while p < bytes.len() && (bytes[p] as char).is_whitespace() {
+            p += 1;
+        }
+        if bytes.get(p) != Some(&b'(') {
             continue;
         }
-        start += 1;
+        p += 1;
+        while p < bytes.len() && (bytes[p] as char).is_whitespace() {
+            p += 1;
+        }
+        start = p;
         i = start;
         // 命令名（单引号字符串）
         let Some(name) = bytes.get(start).filter(|b| **b == b'\'').map(|_| {
