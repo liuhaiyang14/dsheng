@@ -4,7 +4,7 @@
 E2E=产品端到端（命令层/同库往返/真实产物）。手工跨平台步骤以可复现清单＋脚本归档
 （主计划 §12.2 基线 #8 允许）；目标机未执行项如实标注"待目标机"，不冒充已执行。
 
-测试套件规模（终态）：core+cli 306、src-tauri 20、src-ui 54；preflight PASS；
+测试套件规模（终态）：core+cli 306、src-tauri 20、src-ui 57（含首启引导套件）；preflight PASS；
 validate_contracts PASS；manifest-v0.1.0 四类产物 5 项＋安装辅助 2 项（SHA-256 在档）。
 
 | 用例 | 层级 | 状态 | 证据 |
