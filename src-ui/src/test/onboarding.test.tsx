@@ -1,7 +1,7 @@
 // 测试层次：UI 纯组件/状态测试（注入客户端；无网络、无 Tauri、非 Provider 调用）。
 // 首启引导（无档案→向导→创建→切换为当前档案）与静默守卫可见化。
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
 

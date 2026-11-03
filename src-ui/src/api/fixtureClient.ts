@@ -415,6 +415,11 @@ export class FixtureClient implements DshengClient {
 
   // ---- 数据源 ----
 
+  async templateDownload(outPath: string): Promise<import('./client').ExportResult> {
+    // 演示层：不产生真实文件，仅回执合同形状
+    return { written: true, out: outPath, bytes: 2048 };
+  }
+
   async scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView> {
     this.requireWorkspace(workspaceId);
     if (!this.hasData(workspaceId)) {

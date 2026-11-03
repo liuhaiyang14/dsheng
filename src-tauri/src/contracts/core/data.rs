@@ -54,3 +54,16 @@ pub fn analyze(env: &DesktopEnv, input: Value) -> Value {
         )
     })())
 }
+
+/// dsheng template download（--package import；空白三工作簿＋字段说明）。
+pub fn template_download(env: &DesktopEnv, out_path: String) -> Value {
+    envelope(dispatch(
+        env,
+        args::Command::Template {
+            action: args::TemplateAction::Download {
+                package: "import".into(),
+                out: out_path,
+            },
+        },
+    ))
+}

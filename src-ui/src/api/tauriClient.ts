@@ -145,6 +145,9 @@ export class TauriClient implements DshengClient {
   scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView> {
     return this.invoke('scan', { workspaceId, directoryLabel });
   }
+  templateDownload(outPath: string): Promise<ExportResult> {
+    return this.invoke('template_download', { outPath });
+  }
   fieldMappings(workspaceId: string, runId: string): Promise<FieldMappingRow[]> {
     return this
       .invoke<{ mappings: FieldMappingRow[] }>('mapping_show', { workspaceId, runId })

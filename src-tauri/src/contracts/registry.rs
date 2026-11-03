@@ -65,6 +65,10 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     // ---- 数据源 / 经营分析 ----
     CommandSpec {
+        name: "template_download",
+        args: &["out_path"],
+    },
+    CommandSpec {
         name: "scan",
         args: &["workspaceId", "directoryLabel"],
     },

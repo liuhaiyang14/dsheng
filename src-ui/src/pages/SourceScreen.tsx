@@ -56,6 +56,35 @@ export function SourceScreen() {
     }
   };
 
+  /** 下载空白导入模板包（本地生成，无网络）。 */
+  const downloadTemplate = async () => {
+    if (!app.client) {
+      setScanError('未连接核心，无法生成模板。');
+      return;
+    }
+    let out: string | null = null;
+    const w = window as unknown as {
+      __TAURI__?: { dialog?: { save?: (o: { title?: string; defaultPath?: string }) => Promise<string | null> } };
+    };
+    const save = w.__TAURI__?.dialog?.save;
+    if (typeof save === 'function') {
+      out = await save({ title: '保存导入模板包', defaultPath: 'import-template-v1.zip' });
+    } else {
+      out = window.prompt('保存模板包的路径（演示/测试通道）', '/tmp/import-template-v1.zip');
+    }
+    if (!out) return;
+    setScanBusy(true);
+    setScanError(null);
+    try {
+      const r = await app.client.templateDownload(out);
+      setScanNote(`模板包已写入 ${r.out}（${r.bytes} 字节）；含核算表/推移表/任务单三份空白工作簿与字段说明。`);
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="screen-head">
@@ -73,11 +102,8 @@ export function SourceScreen() {
             <button
               type="button"
               className="outline"
-              onClick={() => {
-                window.alert(
-                  '演示下载占位：空白模板包由本地核心导出（template download）；当前未连接核心时不产生文件。',
-                );
-              }}
+              onClick={() => void downloadTemplate()}
+              disabled={scanBusy}
             >
               下载导入模板
             </button>

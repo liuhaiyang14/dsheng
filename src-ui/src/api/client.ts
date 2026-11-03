@@ -138,6 +138,8 @@ export interface DshengClient {
 
   // ---- 数据源 ----
   scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView>;
+  /** 空白导入模板包（三工作簿＋字段说明）落盘到指定路径。 */
+  templateDownload(outPath: string): Promise<ExportResult>;
   fieldMappings(workspaceId: string, runId: string): Promise<
     { tool_field: string; source_label: string; recognized: string; usage: string }[]
   >;

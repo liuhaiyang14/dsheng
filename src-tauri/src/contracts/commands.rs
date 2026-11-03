@@ -232,3 +232,8 @@ pub fn history_show(
 ) -> Value {
     core::history::history_show(&state, workspace_id, run_id, revision)
 }
+
+#[tauri::command(async)]
+pub fn template_download(state: tauri::State<'_, DesktopEnv>, out_path: String) -> Value {
+    core::data::template_download(&state, out_path)
+}
