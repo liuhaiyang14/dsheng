@@ -17,8 +17,10 @@
 //! - "largest" 度量使用紧凑序列化的 UTF-8 字节数，而不是
 //!   `len(json.dumps(...))`（Python 默认带分隔符空格且 ensure_ascii 转义）；
 //!   近似平局时两者可能选出不同候选，但 `contract_matched`/
-//!   `root_shape_but_invalid` 的强标记计数与 `wrapped_bare_task` 的唯一性
-//!   判定与 Python 完全一致。
+//!   `root_shape_but_invalid` 的强标记判定与 `wrapped_bare_task` 的唯一性
+//!   判定与 Python 一致。已知无害差异（复审 P2-1）：Python 在多个根形状候选
+//!   平局时按含 summary 的键计数取首项，本实现仅计 schema_version/tasks 并在
+//!   平局取末项——只影响失败阶段的报告对象选择，不影响任何阶段判定。
 //! - Python `json` 接受 `NaN`/`Infinity` 字面量，serde_json 拒绝；
 //!   此类候选在两边都无法通过 dsheng 输出合同，最终同样整份拒绝。
 //!

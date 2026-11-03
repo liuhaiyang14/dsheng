@@ -27,7 +27,16 @@ const GRAIN_LABELS: Record<Cadence, string> = {
   quarter: '季度',
 };
 
-const STATUS_TAGS: Record<MetricRowView['status_tag'], { tone: 'red' | 'gold' | 'green' | 'gray'; label: string }> = {
+/** 核心不返回 status_tag；按 delta/可比性本地推导。 */
+function deriveStatusTag(m: MetricRowView): NonNullable<MetricRowView['status_tag']> {
+  if (m.mom == null && m.yoy == null) return 'incomplete';
+  if (m.delta != null && m.target_value != null && m.delta.startsWith('-')) {
+    return m.direction === 'down' ? 'watch' : 'focus';
+  }
+  return 'ok';
+}
+
+const STATUS_TAGS: Record<NonNullable<MetricRowView['status_tag']>, { tone: 'red' | 'gold' | 'green' | 'gray'; label: string }> = {
   focus: { tone: 'red', label: '重点' },
   watch: { tone: 'gold', label: '关注' },
   ok: { tone: 'green', label: '达标' },
@@ -182,7 +191,7 @@ export function AnalysisScreen() {
               </thead>
               <tbody>
                 {detail.metrics.map((m) => {
-                  const tag = STATUS_TAGS[m.status_tag];
+                  const tag = STATUS_TAGS[m.status_tag ?? deriveStatusTag(m)];
                   return (
                     <tr key={m.metric_id}>
                       <td>
@@ -232,8 +241,8 @@ export function AnalysisScreen() {
                 </div>
                 <div className="bar-track">
                   <div
-                    className={`bar-fill ${m.status_tag === 'watch' ? 'gold' : ''}`}
-                    style={{ width: m.status_tag === 'focus' ? '72%' : '40%' }}
+                    className={`bar-fill ${(m.status_tag ?? deriveStatusTag(m)) === 'watch' ? 'gold' : ''}`}
+                    style={{ width: (m.status_tag ?? deriveStatusTag(m)) === 'focus' ? '72%' : '40%' }}
                   />
                 </div>
               </div>

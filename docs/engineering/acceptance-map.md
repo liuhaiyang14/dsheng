@@ -105,7 +105,18 @@ UI=UI 工作包；CLI=CLI/导出工作包；DOC=Skill 与手册工作包；REL=�
 | 合同扩展 | PT | 已归档 | 2026-11-02 用户批准：read-views.schema.json＋analysis show（9e405e6） |
 
 集成待办（UI 字段对齐）：src-ui 的 `diff_value`→`delta`、mom/yoy 简化对象→完整 comparisonView、
-taskCandidateView 增 `envelope_locally_reconstructed`——UI 包合并后由主 Agent 安排适配轮。
+taskCandidateView 增 `envelope_locally_reconstructed`——**已完成（f0b645d＋status_tag 本地派生）**。
+
+## 集成轮 1 独立复审记录（2026-11-03，区间 d505df5..3d7d097）
+
+结论：P0=0；P1=1（src-ui 类型漂移）——已由 f0b645d 修复（build 干净＋54/54 绿），
+另 status_tag 改为 UI 本地派生可选字段。P2 处置：
+- P2-1 extract.rs 注释措辞已修正（平局差异不影响阶段判定）。
+- P2-2 `generation_attempts` 三指纹列经 confirmations 关联保留语义；口径已记录，
+  如后续需要直列再以新 migration 增列（不改 0001）。
+- P2-3 history delete 的报告/证据结构化引用检查：随报告/证据结构化引用实现补检（跟进项）。
+- P2-4 attempt-failed 落库服务函数：归入生成提交接线（主 Agent 集成阶段，跟进项）。
+- P2-5 docs 中 ~/.zshrc 为环境说明文档行，保留。
 
 （未列出的用例均为 `待工程`；每轮合并后由主 Agent 把达成项从上表更新并链接到
 具体测试名/提交哈希/复审报告。）

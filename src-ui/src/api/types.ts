@@ -762,8 +762,11 @@ export interface MetricRowView {
   delta: DecimalString | null;
   mom: ComparisonView | null;
   yoy: ComparisonView | null;
-  /** 展示层本地分类（合同外字段，UI 自行推导）。 */
-  status_tag: 'focus' | 'watch' | 'ok' | 'incomplete';
+  /**
+   * 展示层本地分类（read-views 合同外字段，核心不返回）：
+   * 由 UI 依据 delta/mom/yoy/availability 自行推导；Fixture 演示数据会预填。
+   */
+  status_tag?: 'focus' | 'watch' | 'ok' | 'incomplete';
 }
 
 export interface AnalysisRunView {
