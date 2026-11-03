@@ -71,7 +71,7 @@ describe('数据导入双入口（fixture 通道）', () => {
 
     const promptSpy = vi
       .spyOn(window, 'prompt')
-      .mockReturnValue('/Users/demo/经营复盘/2026-10');
+      .mockReturnValue('/tmp/dsheng-demo/经营复盘/2026-10');
     fireEvent.click(screen.getByTestId('pick-directory-button'));
     expect(promptSpy).toHaveBeenCalled();
 
