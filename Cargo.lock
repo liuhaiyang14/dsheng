@@ -485,6 +485,7 @@ dependencies = [
 name = "dsheng-cli"
 version = "0.1.0"
 dependencies = [
+ "calamine",
  "chrono",
  "clap",
  "dsheng-core",

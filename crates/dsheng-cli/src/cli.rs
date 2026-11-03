@@ -605,23 +605,23 @@ pub enum CompareType {
 #[derive(clap::Args, Debug)]
 pub struct ExportArgs {
     #[arg(long)]
-    workspace: Option<String>,
+    pub workspace: Option<String>,
     #[arg(long)]
-    run: String,
+    pub run: String,
     #[arg(long)]
-    revision: Option<u32>,
+    pub revision: Option<u32>,
     #[arg(long)]
-    bundle: Option<String>,
+    pub bundle: Option<String>,
     #[arg(long)]
-    workbook: Option<WorkbookKind>,
+    pub workbook: Option<WorkbookKind>,
     #[arg(long, default_value_t = false)]
-    meeting: bool,
+    pub meeting: bool,
     #[arg(long)]
-    chart: Option<String>,
+    pub chart: Option<String>,
     #[arg(long)]
-    format: Option<ExportFormat>,
+    pub format: Option<ExportFormat>,
     #[arg(long)]
-    out: String,
+    pub out: String,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]

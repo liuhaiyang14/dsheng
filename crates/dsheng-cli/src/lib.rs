@@ -12,6 +12,11 @@ pub mod jsonio;
 pub mod out;
 pub mod store;
 
+/// 共享导出库：与桌面壳挂载**同一源文件**（src-tauri/src/export/**），
+/// 桌面与 CLI 不分别实现导出逻辑。
+#[path = "../../../src-tauri/src/export/mod.rs"]
+pub mod export;
+
 use clap::Parser;
 use dsheng_core::contracts::cli::{OkEnvelope, RESPONSE_SCHEMA_VERSION};
 use error::{CliError, CliResult};
