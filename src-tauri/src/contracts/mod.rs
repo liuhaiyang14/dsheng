@@ -1,8 +1,23 @@
-//! UI/CLI 共用命令 DTO 与 Tauri command 接线（主 Agent 所有权）。
+//! UI/CLI 共用命令接线（集成轮 2：用例 40——桌面 UI 与 CLI 共享同一 SQLite）。
 //!
-//! 命令名/参数/返回与 contracts/v1/cli-surface.json 及 read-views.schema.json
-//! 逐一对齐；实现调 dsheng-core 服务层。Phase：壳骨架（仅 ping），
-//! 数据/Provider 服务接线随集成轮 2 完成（用例 40）。
+//! 分层：
+//! - [`paths`]：S1 桌面数据目录解析（`com.dsheng.desktop`；系统 API，不依赖 cwd）。
+//! - [`env`]：执行环境（库路径解析结果 + 生成确认备忘；tauri State 管理）。
+//! - [`core`]：31 条 command 的进程内实现（直调 dsheng-cli 服务层，测试可
+//!   不经 tauri 运行时调用）。
+//! - [`commands`]：#[tauri::command] 薄封装（参数名 ↔ UI camelCase 键）。
+//! - [`registry`]：S5 联调冒烟基准（COMMANDS 清单与 tauriClient.ts 比对）。
+//!
+//! 服务层=dsheng-cli lib（cmd::dispatch / store::** / ctx::open_db_at）：
+//! 桌面与 CLI 复用同一实现，本壳不写业务逻辑；返回 CliEnvelope JSON 原样。
+
+pub mod commands;
+pub mod core;
+pub mod env;
+pub mod paths;
+pub mod registry;
+
+pub use registry::COMMANDS;
 
 /// 连通性探测（无业务语义）。
 #[tauri::command]
