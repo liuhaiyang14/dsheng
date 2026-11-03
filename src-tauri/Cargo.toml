@@ -1,0 +1,23 @@
+[package]
+name = "dsheng-app"
+description = "dsheng 桌面应用（Tauri 2 壳；业务逻辑全部在 dsheng-core）"
+version = "0.1.0"
+edition = "2021"
+publish = false
+default-run = "dsheng-app"
+
+# 本 crate 由根 workspace 显式 exclude（见根 Cargo.toml）：桌面壳独立解析，
+# 避免要求 src-ui/dist 在纯 cargo 检查时存在。发布构建时先 npm build 再
+# cargo build --manifest-path src-tauri/Cargo.toml。
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["arbitrary_precision"] }
+dsheng-core = { path = "../crates/dsheng-core" }
+
+[features]
+default = []

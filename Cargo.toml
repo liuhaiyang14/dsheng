@@ -4,6 +4,8 @@ members = [
     "crates/dsheng-core",
     "crates/dsheng-cli",
 ]
+# 桌面壳独立解析（frontendDist 需前端先构建）；发布时单独构建
+exclude = ["src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

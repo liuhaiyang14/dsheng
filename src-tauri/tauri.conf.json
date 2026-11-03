@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "dsheng",
+  "version": "0.1.0",
+  "identifier": "com.dsheng.desktop",
+  "build": {
+    "frontendDist": "./placeholder-dist",
+    "beforeDevCommand": "npm --prefix ../src-ui run dev",
+    "beforeBuildCommand": "npm --prefix ../src-ui run build",
+    "devUrl": "http://localhost:5173"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "dsheng 两表一单",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 1080,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg", "msi"],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    },
+    "windows": {
+      "webviewInstallMode": { "type": "skip" }
+    }
+  }
+}
