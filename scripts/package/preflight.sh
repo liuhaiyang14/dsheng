@@ -112,7 +112,7 @@ else
     "manifest-v${VER_NOW}.json") ok "清单文件名与当前版本一致：$(basename "$MANIFEST")" ;;
     *) fail "最新清单 $MANIFEST 与当前版本 $VER_NOW 不符（需重新生成）" ;;
   esac
-  if python3 scripts/package/version_manifest.py --verify "$MANIFEST" "${DIST_ARGS[@]}" >/tmp/preflight-manifest.log 2>&1; then
+  if python3 scripts/package/version_manifest.py --verify "$MANIFEST" ${DIST_ARGS+"${DIST_ARGS[@]}"} >/tmp/preflight-manifest.log 2>&1; then
     ok "清单哈希核对通过（$(grep -c '^OK' /tmp/preflight-manifest.log) 项）"
   else
     fail "清单哈希核对失败："; sed 's/^/    /' /tmp/preflight-manifest.log >&2

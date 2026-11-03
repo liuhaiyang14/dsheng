@@ -153,7 +153,11 @@ def git_info(repo: Path) -> dict:
     return {
         "commit": run("rev-parse", "HEAD"),
         "branch": run("rev-parse", "--abbrev-ref", "HEAD"),
-        "dirty": bool(run("status", "--porcelain")),
+        "dirty": any(
+            line[3:].strip() not in (f"docs/release/{out.name}", str(out))
+            for line in run("status", "--porcelain").splitlines()
+            if line.strip()
+        ),
     }
 
 
