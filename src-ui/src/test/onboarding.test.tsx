@@ -63,22 +63,18 @@ describe('静默守卫可见化', () => {
 });
 
 describe('数据导入双入口（fixture 通道）', () => {
-  it('数据源屏显示拖拽区与选择目录按钮；prompt 选目录后触发扫描并呈现结果', async () => {
+  it('无 Tauri 时显示手动路径输入；填路径解析后呈现已识别文件', async () => {
     render(<App runtime={{ mode: 'fixture', client: new FixtureClient() }} />);
     await screen.findByTestId('import-dropzone');
     expect(screen.getByTestId('import-dropzone')).toBeTruthy();
     expect(screen.getByTestId('pick-directory-button')).toBeTruthy();
-
-    const promptSpy = vi
-      .spyOn(window, 'prompt')
-      .mockReturnValue('/tmp/dsheng-demo/经营复盘/2026-10');
-    fireEvent.click(screen.getByTestId('pick-directory-button'));
-    expect(promptSpy).toHaveBeenCalled();
-
+    // fixture 通道无 __TAURI__.dialog → 手动路径输入常驻
+    const input = await screen.findByTestId('manual-path-input');
+    fireEvent.change(input, { target: { value: '/tmp/dsheng-demo/经营复盘/2026-10' } });
+    fireEvent.click(screen.getByTestId('manual-path-scan'));
     await waitFor(() => {
       expect(screen.getByText('已识别文件')).toBeTruthy();
     });
-    promptSpy.mockRestore();
   });
 
   it('HTML5 拖入文件（测试通道）触发扫描并显示导入说明', async () => {
