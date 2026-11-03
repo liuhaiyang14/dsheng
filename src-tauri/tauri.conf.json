@@ -5,8 +5,8 @@
   "identifier": "com.dsheng.desktop",
   "build": {
     "frontendDist": "./placeholder-dist",
-    "beforeDevCommand": "npm --prefix ../src-ui run dev",
-    "beforeBuildCommand": "npm --prefix ../src-ui run build",
+    "beforeDevCommand": "npm --prefix src-ui run dev",
+    "beforeBuildCommand": "npm --prefix src-ui run build",
     "devUrl": "http://localhost:5173"
   },
   "app": {
@@ -25,12 +25,21 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "msi"],
+    "targets": [
+      "app",
+      "dmg",
+      "msi"
+    ],
     "macOS": {
       "minimumSystemVersion": "13.0"
     },
     "windows": {
-      "webviewInstallMode": { "type": "skip" }
-    }
+      "webviewInstallMode": {
+        "type": "skip"
+      }
+    },
+    "icon": [
+      "icons/icon.png"
+    ]
   }
 }
