@@ -1,7 +1,7 @@
 // 测试层次：UI 纯组件/状态测试（注入客户端；无网络、无 Tauri、非 Provider 调用）。
 // 首启引导（无档案→向导→创建→切换为当前档案）与静默守卫可见化。
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
 
@@ -59,5 +59,37 @@ describe('静默守卫可见化', () => {
     // 未创建档案前，向导是企业操作的前置；向导内空名提交给出错误提示
     fireEvent.click(screen.getByTestId('onboarding-create'));
     expect(await screen.findByTestId('onboarding-error')).toBeTruthy();
+  });
+});
+
+describe('数据导入双入口（fixture 通道）', () => {
+  it('数据源屏显示拖拽区与选择目录按钮；prompt 选目录后触发扫描并呈现结果', async () => {
+    render(<App runtime={{ mode: 'fixture', client: new FixtureClient() }} />);
+    await screen.findByTestId('import-dropzone');
+    expect(screen.getByTestId('import-dropzone')).toBeTruthy();
+    expect(screen.getByTestId('pick-directory-button')).toBeTruthy();
+
+    const promptSpy = vi
+      .spyOn(window, 'prompt')
+      .mockReturnValue('/Users/demo/经营复盘/2026-10');
+    fireEvent.click(screen.getByTestId('pick-directory-button'));
+    expect(promptSpy).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(screen.getByText('已识别文件')).toBeTruthy();
+    });
+    promptSpy.mockRestore();
+  });
+
+  it('HTML5 拖入文件（测试通道）触发扫描并显示导入说明', async () => {
+    render(<App runtime={{ mode: 'fixture', client: new FixtureClient() }} />);
+    await screen.findByTestId('import-dropzone');
+    const file = new File(['x'], '两表一单.xlsx', { type: 'application/vnd.ms-excel' });
+    fireEvent.drop(screen.getByTestId('import-dropzone'), {
+      dataTransfer: { files: [file] },
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('scan-note')).toBeTruthy();
+    });
   });
 });

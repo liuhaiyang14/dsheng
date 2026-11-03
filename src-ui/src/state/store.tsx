@@ -253,6 +253,7 @@ export function AppProvider({
         const loaded = await loadWorkspaceData(client, view.workspace_id);
         setActiveWorkspaceId(view.workspace_id);
         setDataMap((prev) => ({ ...prev, [view.workspace_id]: loaded }));
+        setScreen('source');
         return view;
       } catch (err) {
         setError(toUiError(err));

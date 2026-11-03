@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
+import { ImportDropzone } from '../components/ImportDropzone';
 import { Tag } from '../components/bits';
 import { FIXTURE_DEMO_ANNOTATION, type FieldMappingRow } from '../api';
 
@@ -8,6 +9,9 @@ import { FIXTURE_DEMO_ANNOTATION, type FieldMappingRow } from '../api';
 export function SourceScreen() {
   const app = useApp();
   const [mappings, setMappings] = useState<FieldMappingRow[]>([]);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanNote, setScanNote] = useState<string | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
   const hasData = workspaceHasData(app.data);
   const workspaceName = app.activeWorkspace?.name ?? '当前企业';
 
@@ -32,6 +36,25 @@ export function SourceScreen() {
   }, [app.client, app.activeWorkspaceId, app.data.currentDetail]);
 
   const scan = app.data.scan;
+
+  /** 解析目录（本地扫描，无 Provider 调用）。 */
+  const runScan = async (path: string, note?: string) => {
+    if (!app.client || !app.activeWorkspaceId) {
+      setScanError('请先创建企业档案（右上角「＋ 新建档案」）。');
+      return;
+    }
+    setScanBusy(true);
+    setScanError(null);
+    setScanNote(note ?? null);
+    try {
+      await app.client.scan(app.activeWorkspaceId, path);
+      await app.reloadWorkspaceData();
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setScanBusy(false);
+    }
+  };
 
   return (
     <div>
@@ -79,10 +102,28 @@ export function SourceScreen() {
         </div>
       ) : null}
 
+      {app.activeWorkspace ? (
+        <>
+          <ImportDropzone busy={scanBusy} onPath={(path, note) => void runScan(path, note)} />
+          {scanNote ? (
+            <div className="notice" data-testid="scan-note" style={{ marginTop: 12 }}>
+              <b>导入说明</b>
+              <span>{scanNote}</span>
+            </div>
+          ) : null}
+          {scanError ? (
+            <div className="notice" data-testid="scan-error" style={{ marginTop: 12 }}>
+              <b>扫描失败</b>
+              <span>{scanError}</span>
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
       {!hasData ? (
         <EmptyState
           title="此档案尚未导入数据"
-          hint="请先为该企业指定本地目录，再完成字段映射。其他企业的本地数据不会复制到这里。"
+          hint="用上方任一方式导入后，这里会显示识别到的文件与字段映射。其他企业的本地数据不会复制到这里。"
         />
       ) : (
         <>
@@ -106,7 +147,9 @@ export function SourceScreen() {
                 </div>
               </div>
               <div className="path">
-                示例路径：~/Documents/经营复盘/{workspaceName}/2026-10（演示值）
+                {app.mode === 'fixture'
+                  ? `示例路径：~/Documents/经营复盘/${workspaceName}/2026-10（演示值）`
+                  : '文件保留在原位置，不复制进数据库；重扫使用当前目录内容。'}
               </div>
             </div>
             <div className="panel">

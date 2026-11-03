@@ -11,6 +11,7 @@ use contracts::env::DesktopEnv;
 /// src-ui/src/api/tauriClient.ts；清单见 contracts::COMMANDS）。
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .manage(DesktopEnv::resolve())
         .invoke_handler(tauri::generate_handler![
             contracts::ping,
