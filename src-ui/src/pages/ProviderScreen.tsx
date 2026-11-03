@@ -49,7 +49,10 @@ export function ProviderScreen() {
   }, [selected?.provider_id, selected == null]);
 
   const save = async () => {
-    if (!app.client || !app.activeWorkspace) return;
+    if (!app.client || !app.activeWorkspace) {
+      setNotice('请先创建企业档案（右上角「＋ 新建档案」）。');
+      return;
+    }
     setNotice(null);
     if (!name.trim() || !baseUrl.trim() || !model.trim()) {
       setNotice('名称、Base URL 和模型都需要填写。');

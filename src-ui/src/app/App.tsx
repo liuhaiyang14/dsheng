@@ -1,5 +1,7 @@
 import { AppProvider, useApp, SCREEN_LABELS, workspaceHasData, type ScreenId } from '../state/store';
+import { useState } from 'react';
 import { CoreMissingState } from '../components/EmptyState';
+import { Onboarding } from '../components/Onboarding';
 import { ErrorBanner } from '../components/bits';
 import { SourceScreen } from '../pages/SourceScreen';
 import { AnalysisScreen } from '../pages/AnalysisScreen';
@@ -23,6 +25,7 @@ const NAV_SETTINGS: { id: ScreenId; icon: string }[] = [
 ];
 
 function Shell() {
+  const [showCreate, setShowCreate] = useState(false);
   const app = useApp();
 
   if (!app.connected) {
@@ -102,6 +105,13 @@ function Shell() {
             / <strong data-testid="crumb-screen">{SCREEN_LABELS[app.screen]}</strong>
           </div>
           <div className="top-actions">
+            <button
+              className="outline"
+              onClick={() => setShowCreate(true)}
+              data-testid="create-workspace-button"
+            >
+              ＋ 新建档案
+            </button>
             {app.mode === 'fixture' ? (
               <span className="demo-stamp" data-testid="demo-stamp">
                 虚构演示数据
@@ -129,6 +139,12 @@ function Shell() {
           {app.screen === 'provider' ? <ProviderScreen /> : null}
           {app.screen === 'system-settings' ? <SystemSettingsScreen /> : null}
         </section>
+        <Onboarding
+          open={
+            showCreate || (app.connected && app.bootstrapped && app.workspaces.length === 0)
+          }
+          onClose={() => setShowCreate(false)}
+        />
       </main>
     </div>
   );

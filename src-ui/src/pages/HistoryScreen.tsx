@@ -30,11 +30,14 @@ export function HistoryScreen() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const view = async (runId: string, revision?: number) => {
-    if (!app.client || !app.activeWorkspaceId) return;
+    if (!app.client || !app.activeWorkspace) {
+      setNotice('请先创建企业档案（右上角「＋ 新建档案」）。');
+      return;
+    }
     setBusy(true);
     setNotice(null);
     try {
-      const d = await app.client.historyShow(app.activeWorkspaceId, runId, revision);
+      const d = await app.client.historyShow(app.activeWorkspace!.workspace_id, runId, revision);
       setDetail(d);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));

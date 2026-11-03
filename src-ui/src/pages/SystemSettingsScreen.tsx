@@ -25,7 +25,10 @@ export function SystemSettingsScreen() {
 
   const [name, setName] = useState('');
   const [cadence, setCadence] = useState<Cadence>('month');
-  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [effectiveFrom, setEffectiveFrom] = useState(() => {
+      const d = new Date();
+      return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
+    });
   const [weekStartDay, setWeekStartDay] = useState('1');
   const [fiscalYearStart, setFiscalYearStart] = useState('1');
   const [timezone, setTimezone] = useState('Asia/Shanghai');
@@ -44,7 +47,10 @@ export function SystemSettingsScreen() {
   }, [app.activeWorkspace?.workspace_id, currentPolicy?.period_policy_id]);
 
   const saveWorkspaceName = async () => {
-    if (!app.client || !app.activeWorkspace) return;
+    if (!app.client || !app.activeWorkspace) {
+      setNotice('请先创建企业档案（右上角「＋ 新建档案」）。');
+      return;
+    }
     if (!name.trim()) {
       setNotice('企业名称不能为空。');
       return;
@@ -69,7 +75,10 @@ export function SystemSettingsScreen() {
   };
 
   const savePolicy = async () => {
-    if (!app.client || !app.activeWorkspace) return;
+    if (!app.client || !app.activeWorkspace) {
+      setNotice('请先创建企业档案（右上角「＋ 新建档案」）。');
+      return;
+    }
     if (!effectiveFrom) {
       setNotice('请设置新周期策略的生效日期。');
       return;
