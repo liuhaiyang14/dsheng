@@ -3,11 +3,11 @@
   "product": "dsheng",
   "identifier": "com.dsheng.desktop",
   "version": "0.1.0",
-  "generated_at": "2026-11-03T07:24:37+00:00",
+  "generated_at": "2026-11-03T07:25:20+00:00",
   "git": {
-    "commit": "78e55fc3ba87c2d2e95d365343fe5aea0b377c74",
+    "commit": "8d286ca7e91648618ca6cc5835e111a54a894894",
     "branch": "main",
-    "dirty": true
+    "dirty": false
   },
   "versions": {
     "cargo_workspace": "0.1.0",
