@@ -233,6 +233,17 @@ fn s2_scan_summary_view() {
     assert_eq!(file["file_label"], "核算表模板.xlsx");
     assert_eq!(file["mapping_status"], "mapped");
     assert!(file["sheet_count"].as_u64().unwrap() >= 1);
+    assert!(
+        file["file_id"].as_str().is_some(),
+        "scanFileInfo 用 file_id"
+    );
+    assert!(
+        file["note"]
+            .as_str()
+            .is_some_and(|n| n.contains("核算表:accounting")),
+        "sheet 角色摘要进 note: {}",
+        file["note"]
+    );
     assert!(data["pending_inputs"]
         .as_array()
         .unwrap()

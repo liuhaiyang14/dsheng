@@ -190,20 +190,28 @@ pub fn register_sources(
             .sheets
             .iter()
             .any(|(_, s)| matches!(s.role, "accounting" | "trend" | "task_review" | "task_plan"));
+        // 严格 scanFileInfo（additionalProperties:false：file_id/file_label/row_count/
+        // sheet_count/mapping_status/note；来源哈希等审计信息不进该视图）
+        let note = file
+            .sheets
+            .iter()
+            .map(|(_, s)| {
+                format!(
+                    "{}:{}({}行)",
+                    s.sheet.clone().unwrap_or_default(),
+                    s.role,
+                    s.rows
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("；");
         views.push(json!({
-            "source_id": source_id,
+            "file_id": source_id,
             "file_label": file.file_label,
-            "kind": file.kind,
-            "content_hash": file.content_hash,
-            "sheet_count": file.sheets.len(),
             "row_count": total_rows,
+            "sheet_count": file.sheets.len(),
             "mapping_status": if mapped { "mapped" } else { "pending_review" },
-            "sheets": file.sheets.iter().map(|(_, s)| json!({
-                "sheet": s.sheet,
-                "role": s.role,
-                "rows": s.rows,
-                "unmapped_columns": s.match_info.as_ref().map(|m| m.unmapped_columns.len()).unwrap_or(0),
-            })).collect::<Vec<_>>(),
+            "note": note,
         }));
     }
     Ok(views)
