@@ -64,6 +64,17 @@ function FindingBlock({ finding }: { finding: DiagnosisFinding }) {
   );
 }
 
+function friendlyError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/PROVIDER_REQUIRED|No explicit\/default provider|未.*默认 Provider/i.test(raw)) {
+    return `本档案尚未配置默认 Provider——请到「Provider 设置」填写 Base URL／模型／API Key（Key 仅存本机），并点「设为默认」后回来重试。（${raw}）`;
+  }
+  if (/PROVIDER_KEY_MISSING|no Key|未配置.*Key/i.test(raw)) {
+    return `Provider 缺少 API Key——请到「Provider 设置」重新保存并填入 Key。（${raw}）`;
+  }
+  return raw;
+}
+
 export function DiagnosisScreen() {
   const app = useApp();
   const hasData = workspaceHasData(app.data);
@@ -136,7 +147,7 @@ export function DiagnosisScreen() {
       });
       setPending({ preview, kind: 'generate', label: '确认生成诊断报告（发送 1 次请求）' });
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -159,7 +170,7 @@ export function DiagnosisScreen() {
       });
       setPending({ preview, kind: 'continue', label: '确认继续分析（发送 1 次请求）' });
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -171,7 +182,7 @@ export function DiagnosisScreen() {
       await app.client.generationCancel(app.activeWorkspaceId, attemptId);
       setNotice('已请求取消本次生成（仅本地取消；不保证远端停止计费，迟到数据不提交）。');
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     }
   };
 
@@ -190,7 +201,7 @@ export function DiagnosisScreen() {
       }
       await loadReports();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     } finally {
       setSending(false);
       setBusy(false);
@@ -217,7 +228,7 @@ export function DiagnosisScreen() {
       );
       setNotice(`已请求核心导出 ${format.toUpperCase()}：${result.out}`);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     }
   };
 

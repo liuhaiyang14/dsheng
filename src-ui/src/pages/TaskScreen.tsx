@@ -32,6 +32,17 @@ function cycleRoleOf(task: TaskView): 'review' | 'plan' {
   return task.target_period.from >= '2026-11-01' ? 'plan' : 'review';
 }
 
+function friendlyError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/PROVIDER_REQUIRED|No explicit\/default provider|未.*默认 Provider/i.test(raw)) {
+    return `本档案尚未配置默认 Provider——请到「Provider 设置」填写 Base URL／模型／API Key（Key 仅存本机），并点「设为默认」后回来重试。（${raw}）`;
+  }
+  if (/PROVIDER_KEY_MISSING|no Key|未配置.*Key/i.test(raw)) {
+    return `Provider 缺少 API Key——请到「Provider 设置」重新保存并填入 Key。（${raw}）`;
+  }
+  return raw;
+}
+
 export function TaskScreen() {
   const app = useApp();
   const hasData = workspaceHasData(app.data);
@@ -142,7 +153,7 @@ export function TaskScreen() {
       setLastFingerprint(p.analysis_input_fingerprint);
       setGenerateModalOpen(false);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -155,7 +166,7 @@ export function TaskScreen() {
       await app.client.generationCancel(app.activeWorkspaceId, attemptId);
       setNotice('已请求取消本次生成（仅本地取消；不保证远端停止计费，迟到数据不提交）。');
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     }
   };
 
@@ -170,7 +181,7 @@ export function TaskScreen() {
       setNotice('候选已保存。请逐项确认后应用；应用只创建/更新任务，不重复发送请求。');
       setPreview(null);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     } finally {
       setSending(false);
       setBusy(false);
@@ -208,7 +219,7 @@ export function TaskScreen() {
       setNotice('候选已应用：新任务已创建（初始待开始）。');
       await app.reloadWorkspaceData();
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : String(err));
+      setNotice(friendlyError(err));
     } finally {
       setBusy(false);
     }

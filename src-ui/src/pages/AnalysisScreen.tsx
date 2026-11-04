@@ -44,22 +44,44 @@ const STATUS_TAGS: Record<NonNullable<MetricRowView['status_tag']>, { tone: 'red
   incomplete: { tone: 'gray', label: '数据不完整' },
 };
 
-/** 比较值展示：不可比时显示原因而非把缺失当 0。 */
+/** 合同 reason 码 → 用户可读原因（不改合同，仅展示层翻译）。 */
+const REASON_LABELS: Record<string, string> = {
+  missing_base: '缺少上期/同期数据，暂无法比较',
+  missing_current: '本期数据缺失，暂无法比较',
+  zero_base: '基期为 0，仅显示绝对差异',
+  negative_base: '基期为负数，仅显示绝对差异',
+  coverage_incomplete: '期间覆盖不完整',
+  definition_mismatch: '指标口径与基期不一致',
+  unit_mismatch: '单位口径不一致',
+  scope_mismatch: '业务范围不一致',
+  calendar_mismatch: '周期日历不一致',
+  source_conflict: '来源冲突未解决',
+  configuration_required: '指标还需配置（口径/公式）',
+  unsupported_formula: '公式暂不支持自动计算',
+  precision_unverified: '数值精度未能核验',
+  invalid_input: '输入数据无效',
+};
+
+/** 比较值展示：可比较才显示数值；否则显示 —（原因汇总在表下方说明区）。 */
 function CompareCell({
   compare,
 }: {
   compare: MetricRowView['mom'] | MetricRowView['yoy'];
 }) {
   if (compare == null) {
-    return <td className="muted">不可比：无可比基期</td>;
+    return (
+      <td className="muted" title="无可比基期">
+        —
+      </td>
+    );
   }
   if (compare.availability_status === 'available' && compare.change_rate != null) {
     const tone = compare.change_rate.startsWith('-') ? 'bad' : 'good';
     return <td className={tone}>{formatRatioPercent(compare.change_rate)}</td>;
   }
   return (
-    <td className="muted" title={compare.reason ?? undefined}>
-      不可比{compare.reason ? `：${compare.reason}` : ''}
+    <td className="muted" title={compare.reason ? REASON_LABELS[compare.reason] ?? '无可比基期' : undefined}>
+      —
     </td>
   );
 }
@@ -249,13 +271,22 @@ export function AnalysisScreen() {
               </div>
             ))}
           <div className="root-card">
-            <h4>不可比说明</h4>
+            <h4>环比／同比说明</h4>
             <p>
               {detail.metrics
                 .filter(
                   (m) => m.mom?.availability_status !== 'available' || m.yoy?.availability_status !== 'available',
                 )
-                .map((m) => `${m.metric_label}：${m.mom?.reason ?? m.yoy?.reason ?? '无可比基期'}`)
+                .map((m) => {
+                  const parts: string[] = [];
+                  if (m.mom != null && m.mom.availability_status !== 'available') {
+                    parts.push(`环比${REASON_LABELS[m.mom.reason ?? 'missing_base'] ?? '缺少可比基期'}`);
+                  }
+                  if (m.yoy != null && m.yoy.availability_status !== 'available') {
+                    parts.push(`同比${REASON_LABELS[m.yoy.reason ?? 'missing_base'] ?? '缺少可比基期'}`);
+                  }
+                  return `${m.metric_label}：${parts.length ? parts.join('，') : '无可比基期'}`;
+                })
                 .join('；') || '本期全部指标可比。'}
             </p>
           </div>

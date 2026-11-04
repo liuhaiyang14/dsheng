@@ -55,14 +55,14 @@ describe('S4 经营分析屏', () => {
     );
   });
 
-  it('无基期比较对象为 null 时显示不可比，不把缺失当 0', async () => {
+  it('不可比时单元格显示 —，表下方有平实文字说明', async () => {
     await openAnalysis();
     const table = screen.getByTestId('metric-table');
-    // 合同语义（§1.4）：无合法基期 → mom/yoy 整体为 null；单元显示不可比提示
-    expect(
-      within(table).getAllByText(/不可比：无可比基期/).length,
-    ).toBeGreaterThan(0);
-    expect(within(table).getAllByText(/不可比/).length).toBeGreaterThanOrEqual(3);
+    // 合同语义（§1.4）：无合法基期 → 比较对象为 null；单元格仅显示 —
+    expect(within(table).getAllByText('—').length).toBeGreaterThan(0);
+    // 说明区用平实文字（不再出现技术码 missing_base）
+    expect(screen.queryByText(/missing_base/)).toBeNull();
+    expect(screen.getByText(/环比／同比说明/)).toBeTruthy();
   });
 
   it('粒度切换调用核心 analyze（UI 不自行聚合）', async () => {
