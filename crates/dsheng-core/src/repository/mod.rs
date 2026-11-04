@@ -78,6 +78,10 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "0002_stable_metric_identity",
         include_str!("../../migrations/0002_stable_metric_identity.sql"),
     ),
+    (
+        "0003_stream_flag",
+        include_str!("../../migrations/0003_stream_flag.sql"),
+    ),
 ];
 
 /// 当前 schema 版本（= MIGRATIONS 长度）。

@@ -369,6 +369,102 @@ mod tests {
     }
 
     #[test]
+    fn upgrade_0002_to_0003_preserves_providers_and_relaxes_stream() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = paths_in(dir.path());
+        // 建 v2 库（0001+0002；providers 仍带 CHECK (stream = 0)）
+        let migrations_v2: &[(&'static str, &'static str)] = &[
+            ("0001_init", super::super::MIGRATIONS[0].1),
+            (
+                "0002_stable_metric_identity",
+                super::super::MIGRATIONS[1].1,
+            ),
+        ];
+        let mut guard = MigrationGuard::acquire(&paths).unwrap();
+        migrate_with_migrations(&paths, current_support(), migrations_v2, "test", &mut guard)
+            .unwrap();
+        guard.release();
+        let conn = Connection::open(&paths.db_path).unwrap();
+        conn.execute(
+            "INSERT INTO workspaces (workspace_id, name, created_at, updated_at)
+             VALUES ('w1','测试企业','t','t')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO providers (provider_id, workspace_id, revision, name, base_url, model,
+                    stream, api_key, connect_seconds, response_seconds, total_seconds,
+                    context_window_tokens, output_reserve_tokens, created_at, updated_at)
+             VALUES ('p1','w1',1,'主 Provider','https://api.example.com/v1','m1',0,'sk-keep',
+                     15,180,240,32768,8192,'t','t')",
+            [],
+        )
+        .unwrap();
+        // v2 基线：stream=1 被 0001 的 CHECK (stream = 0) 拒绝
+        assert!(
+            conn.execute("UPDATE providers SET stream = 1 WHERE provider_id = 'p1'", [])
+                .is_err(),
+            "v2 CHECK(stream=0) 仍生效"
+        );
+        drop(conn);
+        // 升级到 v3（0003 放宽 stream；其余路径不动）
+        let mut guard2 = MigrationGuard::acquire(&paths).unwrap();
+        let v = migrate_with_migrations(
+            &paths,
+            current_support(),
+            super::super::MIGRATIONS,
+            "test",
+            &mut guard2,
+        )
+        .unwrap();
+        guard2.release();
+        assert_eq!(v, 3);
+        let conn = Connection::open(&paths.db_path).unwrap();
+        assert_eq!(read_schema_version(&conn).unwrap(), Some(3));
+        // providers 数据保留（含 api_key/revision），stream 回填 0
+        let (name, key, stream, revision): (String, Option<String>, i64, i64) = conn
+            .query_row(
+                "SELECT name, api_key, stream, revision FROM providers WHERE provider_id = 'p1'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (name.as_str(), key.as_deref(), stream, revision),
+            ("主 Provider", Some("sk-keep"), 0, 1)
+        );
+        // v3：stream=1 可写（流式开关落库）；total_seconds 可到 1800（增量）
+        conn.execute("UPDATE providers SET stream = 1 WHERE provider_id = 'p1'", [])
+            .unwrap();
+        conn.execute(
+            "UPDATE providers SET total_seconds = 1800 WHERE provider_id = 'p1'",
+            [],
+        )
+        .unwrap();
+        // 其余约束仍守门：stream 只许 0/1；total_seconds 上限 1800；
+        // UNIQUE (workspace_id, name) 保留
+        assert!(conn
+            .execute("UPDATE providers SET stream = 2 WHERE provider_id = 'p1'", [])
+            .is_err());
+        assert!(conn
+            .execute(
+                "UPDATE providers SET total_seconds = 1801 WHERE provider_id = 'p1'",
+                []
+            )
+            .is_err());
+        assert!(conn
+            .execute(
+                "INSERT INTO providers (provider_id, workspace_id, revision, name, base_url, model,
+                        stream, api_key, connect_seconds, response_seconds, total_seconds,
+                        context_window_tokens, output_reserve_tokens, created_at, updated_at)
+                 VALUES ('p2','w1',1,'主 Provider','https://api.example.com/v1','m1',0,NULL,
+                         15,180,240,32768,8192,'t','t')",
+                [],
+            )
+            .is_err());
+    }
+
+    #[test]
     fn busy_lock_returns_migration_busy() {
         let dir = tempfile::tempdir().unwrap();
         let paths = paths_in(dir.path());
