@@ -671,7 +671,30 @@ fn material_of(
     conn: &Connection,
     workspace_id: Uuid,
 ) -> GenerationMaterial {
-    let input_hash = dsheng_core::analysis::fingerprint::sha256_hex(&payload_json);
+    // 指纹覆盖清单（§2.2）不含 generation_session_id（实现细节）：哈希前剔除，
+    // 否则预览新建会话后发送重建取到新 id → CONFIRMATION_STALE 自锁。
+    fn blank_session_ids(v: &mut Value) {
+        match v {
+            Value::Object(map) => {
+                for (k, val) in map.iter_mut() {
+                    if k == "generation_session_id" {
+                        *val = Value::String(String::new());
+                    } else {
+                        blank_session_ids(val);
+                    }
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(blank_session_ids),
+            _ => {}
+        }
+    }
+    let hash_material = {
+        let mut v: Value = serde_json::from_str(&payload_json)
+            .unwrap_or_else(|_| Value::String(payload_json.clone()));
+        blank_session_ids(&mut v);
+        serde_json::to_string(&v).unwrap_or(payload_json.clone())
+    };
+    let input_hash = dsheng_core::analysis::fingerprint::sha256_hex(&hash_material);
     let manifest = manifest_entries(conn, workspace_id, &run_id.to_string()).unwrap_or_default();
     let manifest_material: Vec<Value> = manifest
         .iter()
