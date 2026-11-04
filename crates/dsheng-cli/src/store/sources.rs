@@ -16,13 +16,38 @@ use dsheng_core::contracts::metrics::{
 };
 use dsheng_core::import::fileio::SheetData;
 use dsheng_core::import::headers::{column_letter, HeaderBlock};
-use dsheng_core::import::template::{detect_sheet_role, SheetMatch, SheetRole};
+use dsheng_core::import::template::{detect_sheet_role_with_names, SheetMatch, SheetRole};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
 use std::path::Path;
 use uuid::Uuid;
+
+/// 工作区指标名全集（metric_key/label/label_aliases，最新版本），供扫描期
+/// 转置推移表锚点做后缀剥离后的精确匹配（§4.3 2026-11-04 增量）。
+pub fn metric_label_names(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT m.metric_key, m.label, m.label_aliases_json
+         FROM metric_definitions m
+         WHERE m.workspace_id = ?1 AND m.version =
+               (SELECT MAX(version) FROM metric_definitions m2
+                WHERE m2.workspace_id = m.workspace_id AND m2.metric_key = m.metric_key)",
+    )?;
+    let rows: Vec<(String, String, String)> = stmt
+        .query_map(params![workspace_id.to_string()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<Result<_, _>>()
+        .map_err(CliError::from)?;
+    let mut names = Vec::new();
+    for (key, label, aliases_raw) in rows {
+        names.push(key);
+        names.push(label);
+        names.extend(serde_json::from_str::<Vec<String>>(&aliases_raw).unwrap_or_default());
+    }
+    Ok(names)
+}
 
 /// CLI 侧旁表（见模块注释）。
 pub fn ensure_sidecar_tables(conn: &Connection) -> CliResult<()> {
@@ -69,7 +94,11 @@ pub struct ScannedFile {
 }
 
 /// 读目录下全部支持文件（xlsx/xls/csv；其他扩展名跳过并记 pending）。
-pub fn scan_directory(dir: &str) -> CliResult<(Vec<ScannedFile>, Vec<String>)> {
+/// `metric_names` 为工作区指标名全集（转置推移表锚点用；空 = 不启用转置识别）。
+pub fn scan_directory(
+    dir: &str,
+    metric_names: &[String],
+) -> CliResult<(Vec<ScannedFile>, Vec<String>)> {
     let root = Path::new(dir);
     if !root.is_dir() {
         return Err(
@@ -111,21 +140,25 @@ pub fn scan_directory(dir: &str) -> CliResult<(Vec<ScannedFile>, Vec<String>)> {
             file_label: label,
             content_hash: sha256_bytes(&bytes),
             kind: ext,
-            sheets: sheets.into_iter().map(analyze_sheet).collect(),
+            sheets: sheets
+                .into_iter()
+                .map(|s| analyze_sheet(s, metric_names))
+                .collect(),
         });
     }
     Ok((files, pending))
 }
 
-/// 识别一个 sheet 的角色与表头块（core §4.1/§4.3）。
-fn analyze_sheet(sheet: SheetData) -> (SheetData, ScannedSheet) {
+/// 识别一个 sheet 的角色与表头块（core §4.1/§4.3；含转置推移表锚点）。
+/// 传入全部行（core 表头搜索内部自限首 50 行；转置锚点的期间数据行
+/// 不受 50 行截断，避免长推移表丢行）。
+fn analyze_sheet(sheet: SheetData, metric_names: &[String]) -> (SheetData, ScannedSheet) {
     let header_rows: Vec<Vec<String>> = sheet
         .rows
         .iter()
-        .take(50)
         .map(|row| row.iter().map(|c| c.raw_text()).collect())
         .collect();
-    let match_info = detect_sheet_role(&sheet.name, &header_rows);
+    let match_info = detect_sheet_role_with_names(&sheet.name, &header_rows, metric_names);
     let role = match match_info.as_ref().map(|m| m.role) {
         Some(r) => r,
         None => SheetRole::GenericTable,
@@ -1111,7 +1144,8 @@ pub fn conflict_resolve(
 /// scan 视图：目录摘要（read-views.scanSummaryView）。
 pub fn scan_summary(conn: &mut Connection, workspace_id: Uuid, dir: &str) -> CliResult<Value> {
     ensure_sidecar_tables(conn)?;
-    let (files, pending_inputs) = scan_directory(dir)?;
+    let metric_names = metric_label_names(conn, workspace_id)?;
+    let (files, pending_inputs) = scan_directory(dir, &metric_names)?;
     let registered = register_sources(conn, workspace_id, &files)?;
     let mut total_rows = 0usize;
     let mut min_date: Option<chrono::NaiveDate> = None;

@@ -16,15 +16,16 @@ pub use fileio::{
 };
 pub use headers::{
     a1, column_letter, cross_scope_sum_allowed, duplicate_columns, find_header_blocks, map_header,
-    normalize_header, parse_period_header, plan_blocks, BlockLayout, BlockPlan, HeaderBlock,
-    FIELD_ALIASES,
+    normalize_header, parse_period_header, parse_period_row, plan_blocks, strip_unit_suffix,
+    BlockLayout, BlockPlan, HeaderBlock, PeriodRowLabel, FIELD_ALIASES,
 };
 pub use scan::{
     chart_series_from_resolved_cells, source_period, CHART_SOURCE_UNAVAILABLE,
     PERIOD_CONFIRMATION_REQUIRED,
 };
 pub use template::{
-    detect_sheet_role, is_task_sheet, period_with_year_context, SheetMatch, SheetRole,
+    detect_sheet_role, detect_sheet_role_with_names, is_task_sheet, period_with_year_context,
+    SheetMatch, SheetRole, TransposedTrendLayout,
 };
 pub use value::{
     classify_cell, expand_merged_anchor, normalize_money_to_yuan, parse_amount_text,

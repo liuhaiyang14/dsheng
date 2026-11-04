@@ -36,6 +36,9 @@ struct Obs {
     evidence_id: String,
     source_label: String,
     scope: String,
+    /// 累计范围观察（§2.5 record_kind=cumulative_total；转置推移表 `累计` 行）：
+    /// 独立范围汇总，不与月行重复相加（不参与窗口求和）。
+    cumulative: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -297,12 +300,101 @@ fn extract_observations(
     let mut zero_filled: Vec<String> = Vec::new();
     for file in files {
         for (sheet_data, sheet) in file.sheets.iter() {
-            let Some(header) = &sheet.header else {
-                continue;
-            };
             if !matches!(sheet.role, "accounting" | "trend") {
                 continue;
             }
+            // 转置推移表（§4.3 2026-11-04 增量）：期间为行×指标为列，
+            // 无标准表头块；与标准 trend 互斥（core 识别期已定）。
+            if let Some(layout) = sheet
+                .match_info
+                .as_ref()
+                .and_then(|m| m.transposed.as_ref())
+            {
+                let width = sheet_data.rows.iter().map(|r| r.len()).max().unwrap_or(1);
+                sources.push(SourceSelection {
+                    source_id: file.file_label.clone(), // source_id 在注册后回填
+                    sheet: sheet.sheet.clone(),
+                    range: format!(
+                        "A{}:{}",
+                        layout.header_row + 1,
+                        dsheng_core::import::headers::column_letter(width)
+                    ),
+                    content_hash: file.content_hash.clone(),
+                });
+                let header_texts = sheet_data.rows.get(layout.header_row - 1);
+                for (col, _) in &layout.metric_columns {
+                    mapping_rows.push(json!({
+                        "tool_field": "metric_label",
+                        "source_label": header_texts
+                            .and_then(|r| r.get(*col))
+                            .map(|c| c.raw_text())
+                            .unwrap_or_default(),
+                        "recognized": dsheng_core::import::headers::column_letter(*col),
+                        "usage": "转置推移表指标列（单位后缀剥离后按目录精确匹配）",
+                    }));
+                }
+                // 每个 (期间, 指标列) 一个 actual 观察；空=missing；真 0/负数保留
+                let mut rows_iter: Vec<(usize, DateRange, bool)> = layout
+                    .period_rows
+                    .iter()
+                    .map(|(r, p)| (*r, *p, false))
+                    .chain(layout.cumulative_rows.iter().map(|(r, p)| (*r, *p, true)))
+                    .collect();
+                rows_iter.sort_by_key(|(r, _, _)| *r);
+                for (row_idx, period, cumulative) in rows_iter {
+                    for (col, name) in &layout.metric_columns {
+                        let Some(def) = match_metric(defs, name) else {
+                            let note = format!("未注册指标列（不参与计算）: {name}");
+                            if !pending_metrics.contains(&note) {
+                                pending_metrics.push(note);
+                            }
+                            continue;
+                        };
+                        let evidence_id = format!(
+                            "cell:{}:{}:{}{}",
+                            file.file_label,
+                            sheet.sheet.clone().unwrap_or_default(),
+                            dsheng_core::import::headers::column_letter(*col),
+                            row_idx + 1
+                        );
+                        let cell = sheet_data.rows.get(row_idx).and_then(|r| r.get(*col));
+                        // 累计行空格不补 0：未报告的累计不是 0（§2.5）
+                        let (value, source_label) = match cell_value(cell) {
+                            Some(v) => (v, file.file_label.clone()),
+                            None if !cumulative
+                                && zero_fill_applies(
+                                    coverage,
+                                    MeasureRole::Actual,
+                                    def,
+                                    cell,
+                                    period,
+                                    window,
+                                ) =>
+                            {
+                                zero_filled.push(evidence_id.clone());
+                                (Decimal::ZERO, zero_fill_label(&file.file_label, coverage))
+                            }
+                            // 空格=missing（缺失≠0）；占位/无效文本同样不产生观察
+                            None => continue,
+                        };
+                        obs.push(Obs {
+                            metric_id: def.metric_id.clone(),
+                            unit: unit_display(&def.unit_json),
+                            role: MeasureRole::Actual,
+                            value,
+                            period,
+                            evidence_id,
+                            source_label,
+                            scope: scope.to_string(),
+                            cumulative,
+                        });
+                    }
+                }
+                continue;
+            }
+            let Some(header) = &sheet.header else {
+                continue;
+            };
             sources.push(SourceSelection {
                 source_id: file.file_label.clone(), // source_id 在注册后回填
                 sheet: sheet.sheet.clone(),
@@ -422,6 +514,7 @@ fn extract_observations(
                         evidence_id,
                         source_label,
                         scope: scope.to_string(),
+                        cumulative: false,
                     });
                 }
             }
@@ -468,6 +561,7 @@ fn extract_observations(
                             evidence_id,
                             source_label,
                             scope: scope.to_string(),
+                            cumulative: false,
                         });
                     }
                 }
@@ -520,6 +614,7 @@ fn extract_observations(
                 evidence_id: format!("manual:{input_id}:r{revision}"),
                 source_label: format!("用户手工输入（第{revision}版）"),
                 scope: scope_key,
+                cumulative: false,
             });
         }
     }
@@ -589,6 +684,8 @@ fn obs_in<'a>(
                 // 期间相交（观察期 ⊆ 窗口或覆盖窗口）
                 && o.period.from <= range.to
                 && o.period.to >= range.from
+                // 累计是独立范围观察（§2.5）：不与月行一起进入窗口求和
+                && !o.cumulative
         })
         .collect()
 }
@@ -768,9 +865,10 @@ pub fn run_analyze(
             DateRange::new(f, t).ok()
         });
 
-    // 扫描（注册来源）＋观察提取
+    // 扫描（注册来源）＋观察提取；指标名全集供转置推移表锚点匹配（§4.3 增量）
     crate::store::sources::ensure_sidecar_tables(conn)?;
-    let (files, _pending_files) = scan_directory(dir)?;
+    let metric_names = crate::store::sources::metric_label_names(conn, workspace_id)?;
+    let (files, _pending_files) = scan_directory(dir, &metric_names)?;
     let registered = crate::store::sources::register_sources(conn, workspace_id, &files)?;
     let defs = load_metric_defs(conn, workspace_id)?;
     let (obs, conflicts, mut sources, mapping_rows, pending_count, zero_filled) =
