@@ -23,7 +23,7 @@ pub fn scan(env: &DesktopEnv, workspace_id: String, directory_label: String) -> 
             dir: directory_label,
         },
     ));
-    __log(&format!("exit ok={} {:?}", __out.get("ok"), __t0.elapsed()));
+    __log(&format!("exit ok={:?} {:?}", __out.get("ok").and_then(|v| v.as_bool()), __t0.elapsed()));
     __out
 }
 
