@@ -41,3 +41,13 @@ B) wire 增量 max_tokens 限界；C) 冻结提示词内嵌 schema 瘦身（动�
 | --- | --- | --- | --- | --- | --- |
 | B1 | diagnosis 5why | （见 attempt e6bdedf0） | **SEMANTIC_VALIDATION_FAILED（我方缺陷）**：完整收流 2,119,383B/5,343 块成功；模型输出通过冻结 schema3 校验，但内部窄投影 TurnJson（deny_unknown_fields，仅 3 字段）误拒合法 accepted_facts | 171s | 无（修复 68c7f52d 前序） |
 | B2 | diagnosis 5why（重试） | （attempt 7916ef51） | **SEMANTIC_VALIDATION_FAILED（我方缺陷）**：再次完整收流 2,135,748B；同层第二处窄投影 TurnPatchJson（仅 summary_update）误拒 report_patch.can_continue | 179s | 无（结构性修复 633714c：删除全部手写窄投影，schema 先行＋容错取值＋完整 turn 落库） |
+
+
+## 批次 2026-11-04-C（用户授权 2 次：5WHY＋任务单落地）
+
+前置：窄投影已根除（633714c）；链路端到端经 6 次真实流量验证无已知障碍。
+
+| # | 操作 | attempt | 结果 | 耗时 | 产物 |
+| --- | --- | --- | --- | --- | --- |
+| C1 | diagnosis 5why | 待填 | | | |
+| C2 | task generate | 待填 | | | |
