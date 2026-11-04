@@ -49,5 +49,9 @@ B) wire 增量 max_tokens 限界；C) 冻结提示词内嵌 schema 瘦身（动�
 
 | # | 操作 | attempt | 结果 | 耗时 | 产物 |
 | --- | --- | --- | --- | --- | --- |
-| C1 | diagnosis 5why | 待填 | | | |
-| C2 | task generate | 待填 | | | |
+| C1 | diagnosis 5why | 376fa5af | **成功**：完整收流 2,236,949B/6,899 块（171s）；schema3 校验通过并落库；报告 9bc76375（3 层 findings 带证据单元格 H21/H12/H36/H38、warnings 口径错位待核验、未知处如实停止） | 171s | diagnosis_reports rev1 + turn patched |
+| C2 | task generate | d0e31707 | **成功**：完整收流 1,252,643B（94s）；任务候选 2e73962c（revenue/销售额 400000/SMART S/M/R/T=met、A=needs_confirmation、无依据字段正确留空待确认、envelope_locally_reconstructed=0） | 94s | task_candidates state=candidate |
+
+**批次 C 结束：2/2 成功。真实两表端到端全链路（扫描→别名注册→分析→流式 5WHY 诊断→任务单候选）
+首次完整落地。** 历经 A/B 两批共 6 次失败（根因：非流式首字节、2MiB 流上限、我方窄投影×2），
+全部由产品侧修复并经真实流量验证；模型侧输出始终合法。
