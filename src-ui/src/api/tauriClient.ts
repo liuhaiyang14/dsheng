@@ -212,6 +212,14 @@ export class TauriClient implements DshengClient {
     });
   }
 
+  // ---- 生成（取消；流式进度经 generation://progress 事件订阅） ----
+  generationCancel(
+    workspaceId: string,
+    attemptId: string,
+  ): Promise<import('./types').GenerationCancelResult> {
+    return this.invoke('generation_cancel', { workspaceId, attemptId });
+  }
+
   // ---- 任务生成（dsheng task generate / task reconcile） ----
   taskGeneratePreview(
     request: TaskGenerateRequest,

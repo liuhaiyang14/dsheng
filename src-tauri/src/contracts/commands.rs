@@ -108,10 +108,16 @@ pub fn diagnosis_generate_preview(state: tauri::State<'_, DesktopEnv>, request: 
 
 #[tauri::command(async)]
 pub fn diagnosis_generate_confirm(
+    app: tauri::AppHandle,
     state: tauri::State<'_, DesktopEnv>,
     confirmation_id: String,
 ) -> Value {
-    core::diagnosis::diagnosis_generate_confirm(&state, confirmation_id)
+    // 流式进度经事件桥广播（generation://progress）；非流式不产生事件
+    core::diagnosis::diagnosis_generate_confirm(
+        &state,
+        confirmation_id,
+        Some(crate::contracts::progress::emitting_sink(&app)),
+    )
 }
 
 #[tauri::command(async)]
@@ -121,10 +127,15 @@ pub fn diagnosis_continue_preview(state: tauri::State<'_, DesktopEnv>, request: 
 
 #[tauri::command(async)]
 pub fn diagnosis_continue_confirm(
+    app: tauri::AppHandle,
     state: tauri::State<'_, DesktopEnv>,
     confirmation_id: String,
 ) -> Value {
-    core::diagnosis::diagnosis_continue_confirm(&state, confirmation_id)
+    core::diagnosis::diagnosis_continue_confirm(
+        &state,
+        confirmation_id,
+        Some(crate::contracts::progress::emitting_sink(&app)),
+    )
 }
 
 #[tauri::command(async)]
@@ -157,6 +168,17 @@ pub fn diagnosis_export(
     core::diagnosis::diagnosis_export(&state, workspace_id, report_id, format, out_path)
 }
 
+// ---- 生成（进度事件经 generation://progress；取消走既有 generation cancel） ----
+
+#[tauri::command(async)]
+pub fn generation_cancel(
+    state: tauri::State<'_, DesktopEnv>,
+    workspace_id: String,
+    attempt_id: String,
+) -> Value {
+    core::generation::generation_cancel(&state, workspace_id, attempt_id)
+}
+
 // ---- 任务生成 / 合并 ----
 
 #[tauri::command(async)]
@@ -166,10 +188,15 @@ pub fn task_generate_preview(state: tauri::State<'_, DesktopEnv>, request: Value
 
 #[tauri::command(async)]
 pub fn task_generate_confirm(
+    app: tauri::AppHandle,
     state: tauri::State<'_, DesktopEnv>,
     confirmation_id: String,
 ) -> Value {
-    core::task::task_generate_confirm(&state, confirmation_id)
+    core::task::task_generate_confirm(
+        &state,
+        confirmation_id,
+        Some(crate::contracts::progress::emitting_sink(&app)),
+    )
 }
 
 #[tauri::command(async)]

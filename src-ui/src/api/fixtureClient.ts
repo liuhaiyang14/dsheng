@@ -128,6 +128,8 @@ export class FixtureClient implements DshengClient {
     { preview: import('./types').ConfirmationPreview; payload: unknown }
   >();
   private candidates = new Map<string, TaskCandidateView>();
+  /** 已取消的生成 attempt（面板取消按钮演示/测试断言用）。 */
+  readonly cancelledAttempts: string[] = [];
 
   constructor() {
     this.workspaces = structuredClone(fixtureWorkspaces);
@@ -655,6 +657,19 @@ export class FixtureClient implements DshengClient {
       payload: request,
     });
     return structuredClone(preview);
+  }
+
+  async generationCancel(
+    workspaceId: string,
+    attemptId: string,
+  ): Promise<import('./types').GenerationCancelResult> {
+    this.requireWorkspace(workspaceId);
+    this.cancelledAttempts.push(attemptId);
+    return {
+      attempt_id: attemptId,
+      cancelled: true,
+      remote_billing_note: '仅本地取消；不保证远端已停止计费',
+    };
   }
 
   async taskGenerateConfirm(confirmationId: string): Promise<TaskCandidateView> {

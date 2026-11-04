@@ -935,3 +935,19 @@ export interface HistoryDetailView {
     task_revision_no: number;
   }[];
 }
+
+/** 生成进度事件（桌面 generation://progress；流式 Provider 接收进度）。 */
+export interface GenerationProgressEvent {
+  attempt_id: string;
+  chunk_seq: number;
+  bytes: number;
+  elapsed_ms: number;
+  stage: string;
+}
+
+/** generation cancel 结果（核心 CLI 契约形状）。 */
+export interface GenerationCancelResult {
+  attempt_id: string;
+  cancelled: boolean;
+  remote_billing_note: string;
+}

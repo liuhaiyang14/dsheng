@@ -5,10 +5,14 @@
 //! apply 携带 token）；task update 传完整 task-edit 输入（`--patch-json`
 //! 通道，含幂等 mutation_id 与乐观并发 expected_task_revision）。
 
-use super::{dispatch, envelope, json_input_file, opt_str, req_str, task_cmd, timeline_grain_of};
+use super::{
+    dispatch, dispatch_with_progress, envelope, json_input_file, opt_str, req_str, task_cmd,
+    timeline_grain_of,
+};
 use crate::contracts::env::{ConfirmationKind, DesktopEnv};
 use dsheng_cli::cli as args;
 use dsheng_cli::error::CliResult;
+use dsheng_cli::store::generation::ProgressSink;
 use serde_json::Value;
 
 /// task generate（preview/confirm 共用；flags 与 CLI 同形）。
@@ -17,12 +21,13 @@ fn task_generate_call(
     request: &Value,
     confirmation_id: Option<String>,
     confirm_send: bool,
+    progress: Option<ProgressSink>,
 ) -> CliResult<Value> {
     let workspace = opt_str(request, "workspace_id");
     let run = req_str(request, "run_id")?;
     let diagnosis_report = opt_str(request, "diagnosis_report_id");
     let provider = opt_str(request, "provider_id");
-    dispatch(
+    dispatch_with_progress(
         env,
         task_cmd(args::TaskAction::Generate {
             workspace,
@@ -33,12 +38,13 @@ fn task_generate_call(
             confirmation_id,
             confirm_send,
         }),
+        progress,
     )
 }
 
 /// 任务生成预览（本地组装 + confirmation 记录）。
 pub fn task_generate_preview(env: &DesktopEnv, request: Value) -> Value {
-    let result = task_generate_call(env, &request, None, false);
+    let result = task_generate_call(env, &request, None, false, None);
     if let Ok(data) = &result {
         env.remember_confirmation(ConfirmationKind::TaskGenerate, &request, data);
     }
@@ -46,10 +52,14 @@ pub fn task_generate_preview(env: &DesktopEnv, request: Value) -> Value {
 }
 
 /// 任务生成确认发送（双门禁）。
-pub fn task_generate_confirm(env: &DesktopEnv, confirmation_id: String) -> Value {
+pub fn task_generate_confirm(
+    env: &DesktopEnv,
+    confirmation_id: String,
+    progress: Option<ProgressSink>,
+) -> Value {
     envelope((|| {
         let request = env.lookup_confirmation(ConfirmationKind::TaskGenerate, &confirmation_id)?;
-        task_generate_call(env, &request, Some(confirmation_id), true)
+        task_generate_call(env, &request, Some(confirmation_id), true, progress)
     })())
 }
 

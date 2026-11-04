@@ -10,6 +10,7 @@
 
 pub mod data;
 pub mod diagnosis;
+pub mod generation;
 pub mod history;
 pub mod settings;
 pub mod task;
@@ -50,6 +51,17 @@ pub fn envelope(result: CliResult<Value>) -> Value {
 pub fn dispatch(env: &DesktopEnv, command: args::Command) -> CliResult<Value> {
     let db = env.db_arg()?;
     dsheng_cli::cmd::dispatch(command, Some(&db))
+}
+
+/// 带生成进度 sink 的 dispatch（confirm* 流式进度经
+/// [`crate::contracts::progress`] 事件桥转发给 UI；其余命令忽略）。
+pub fn dispatch_with_progress(
+    env: &DesktopEnv,
+    command: args::Command,
+    progress: Option<dsheng_cli::store::generation::ProgressSink>,
+) -> CliResult<Value> {
+    let db = env.db_arg()?;
+    dsheng_cli::cmd::dispatch_with_progress(command, Some(&db), progress)
 }
 
 // clap 命令组构造（子命令枚举均为 struct variant；集中便于阅读）。

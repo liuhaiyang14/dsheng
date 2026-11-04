@@ -185,7 +185,11 @@ fn s5_tauri_client_invokes_match_registry_exactly() {
         ui_names, reg_names,
         "UI invoke 命令集与壳层 COMMANDS 注册表不一致"
     );
-    assert_eq!(ui_names.len(), 31, "UI DshengClient 应有 31 条命令");
+    assert_eq!(
+        ui_names.len(),
+        COMMANDS.len(),
+        "UI DshengClient 命令数应与壳层 COMMANDS 注册表一致"
+    );
 
     // 参数键集逐一比对（顺序无关、内容一致；含可选参数恒定发送的键）
     for (name, ui_keys) in &invokes {

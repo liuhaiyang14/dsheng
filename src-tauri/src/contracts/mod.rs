@@ -3,7 +3,7 @@
 //! 分层：
 //! - [`paths`]：S1 桌面数据目录解析（`com.dsheng.desktop`；系统 API，不依赖 cwd）。
 //! - [`env`]：执行环境（库路径解析结果 + 生成确认备忘；tauri State 管理）。
-//! - [`core`]：31 条 command 的进程内实现（直调 dsheng-cli 服务层，测试可
+//! - [`core`]：32 条 command 的进程内实现（直调 dsheng-cli 服务层，测试可
 //!   不经 tauri 运行时调用）。
 //! - [`commands`]：#[tauri::command] 薄封装（参数名 ↔ UI camelCase 键）。
 //! - [`registry`]：S5 联调冒烟基准（COMMANDS 清单与 tauriClient.ts 比对）。
@@ -15,6 +15,7 @@ pub mod commands;
 pub mod core;
 pub mod env;
 pub mod paths;
+pub mod progress;
 pub mod registry;
 
 pub use registry::COMMANDS;

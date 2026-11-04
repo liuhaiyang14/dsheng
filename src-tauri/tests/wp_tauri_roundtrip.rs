@@ -750,7 +750,7 @@ fn uc40_generation_preview_local_and_rejections() {
 
     // confirm 未知 confirmation_id（备忘未命中）→ INVALID_ARGUMENT，不触网
     let code = err_code(
-        cmd::task::task_generate_confirm(&env, "00000000-0000-4000-8000-0000000000aa".into()),
+        cmd::task::task_generate_confirm(&env, "00000000-0000-4000-8000-0000000000aa".into(), None),
         "task_generate_confirm(未知 id)",
     );
     assert_eq!(code, "INVALID_ARGUMENT");

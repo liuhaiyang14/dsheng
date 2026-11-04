@@ -20,6 +20,7 @@ import type {
   ConfirmationPreview,
   DiagnosisFramework,
   DiagnosisReport,
+  GenerationCancelResult,
   HistoryDetailView,
   HistoryEntryView,
   IsoDate,
@@ -173,6 +174,13 @@ export interface DshengClient {
     format: 'md' | 'json',
     outPath: string,
   ): Promise<ExportResult>;
+
+  // ---- 生成（取消；流式进度走 generation://progress 事件，非 client 方法） ----
+  /** 取消进行中的生成 attempt（既有 generation cancel 语义：仅本地取消）。 */
+  generationCancel(
+    workspaceId: string,
+    attemptId: string,
+  ): Promise<GenerationCancelResult>;
 
   // ---- 任务生成（显式按钮 → preview → confirm） ----
   taskGeneratePreview(request: TaskGenerateRequest): Promise<ConfirmationPreview>;
