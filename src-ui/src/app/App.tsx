@@ -82,6 +82,10 @@ function Shell() {
           {app.mode === 'fixture'
             ? '全量虚构演示数据。正式版仅在本机运行；模型发送前逐次确认范围。'
             : '数据仅保存在本机；模型发送前逐次确认范围。'}
+          <br />
+          <span className="foot-version" data-testid="foot-version">
+            v0.1.1 · powered by 海洋
+          </span>
         </div>
       </aside>
       <main className="main">
