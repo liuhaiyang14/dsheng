@@ -375,10 +375,7 @@ mod tests {
         // 建 v2 库（0001+0002；providers 仍带 CHECK (stream = 0)）
         let migrations_v2: &[(&'static str, &'static str)] = &[
             ("0001_init", super::super::MIGRATIONS[0].1),
-            (
-                "0002_stable_metric_identity",
-                super::super::MIGRATIONS[1].1,
-            ),
+            ("0002_stable_metric_identity", super::super::MIGRATIONS[1].1),
         ];
         let mut guard = MigrationGuard::acquire(&paths).unwrap();
         migrate_with_migrations(&paths, current_support(), migrations_v2, "test", &mut guard)
@@ -402,8 +399,11 @@ mod tests {
         .unwrap();
         // v2 基线：stream=1 被 0001 的 CHECK (stream = 0) 拒绝
         assert!(
-            conn.execute("UPDATE providers SET stream = 1 WHERE provider_id = 'p1'", [])
-                .is_err(),
+            conn.execute(
+                "UPDATE providers SET stream = 1 WHERE provider_id = 'p1'",
+                []
+            )
+            .is_err(),
             "v2 CHECK(stream=0) 仍生效"
         );
         drop(conn);
@@ -434,8 +434,11 @@ mod tests {
             ("主 Provider", Some("sk-keep"), 0, 1)
         );
         // v3：stream=1 可写（流式开关落库）；total_seconds 可到 1800（增量）
-        conn.execute("UPDATE providers SET stream = 1 WHERE provider_id = 'p1'", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE providers SET stream = 1 WHERE provider_id = 'p1'",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "UPDATE providers SET total_seconds = 1800 WHERE provider_id = 'p1'",
             [],
@@ -444,7 +447,10 @@ mod tests {
         // 其余约束仍守门：stream 只许 0/1；total_seconds 上限 1800；
         // UNIQUE (workspace_id, name) 保留
         assert!(conn
-            .execute("UPDATE providers SET stream = 2 WHERE provider_id = 'p1'", [])
+            .execute(
+                "UPDATE providers SET stream = 2 WHERE provider_id = 'p1'",
+                []
+            )
             .is_err());
         assert!(conn
             .execute(

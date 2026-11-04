@@ -204,9 +204,15 @@ mod tests {
     fn sample_stream() -> String {
         // 多 chunk 文本拼接 + finish_reason（最后一个非 null）+ usage 块 + [DONE]
         let mut s = String::new();
-        s.push_str("data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n");
-        s.push_str("data: {\"choices\":[{\"delta\":{\"content\":\"第一段·\"},\"finish_reason\":null}]}\n");
-        s.push_str("data: {\"choices\":[{\"delta\":{\"content\":\"第二段\"},\"finish_reason\":null}]}\n");
+        s.push_str(
+            "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n",
+        );
+        s.push_str(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"第一段·\"},\"finish_reason\":null}]}\n",
+        );
+        s.push_str(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"第二段\"},\"finish_reason\":null}]}\n",
+        );
         s.push_str("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n");
         s.push_str("data: {\"choices\":[],\"usage\":{\"total_tokens\":42}}\n");
         s.push_str("data: [DONE]\n");
@@ -326,7 +332,8 @@ mod tests {
     #[test]
     fn eof_without_done_marker_still_yields_tail() {
         // 服务端未发 [DONE] 直接关流：残余行在 finish() 补解析
-        let stream = "data: {\"choices\":[{\"delta\":{\"content\":\"尾段\"},\"finish_reason\":\"stop\"}]}";
+        let stream =
+            "data: {\"choices\":[{\"delta\":{\"content\":\"尾段\"},\"finish_reason\":\"stop\"}]}";
         let mut parser = SseDeltaParser::new();
         let events = feed_in_chunks(&mut parser, stream.as_bytes(), 6);
         assert!(events.is_empty(), "无行结束符时 feed 不产出");

@@ -48,7 +48,11 @@ fn insert_v1_metric(conn: &Connection, metric_id: &str, key: &str, version: i64)
 fn fresh_db_is_schema_2_with_stable_identity_column() {
     let conn = Connection::open_in_memory().unwrap();
     let version = apply_migrations(&conn, "test").unwrap();
-    assert_eq!(version, 2, "0002 后 schema 版本自动跟进");
+    assert_eq!(
+        version,
+        dsheng_core::repository::CURRENT_SCHEMA_VERSION,
+        "全量迁移到当前 schema（0003 后＝3；0002 断言见下方列/索引）"
+    );
     // stable_metric_id 列存在且 NOT NULL（重建表生效）
     let (not_null, dflt): (i64, Option<String>) = conn
         .query_row(
@@ -99,7 +103,7 @@ fn upgrade_0001_to_0002_merges_versions_into_first_version_id() {
     insert_v1_metric(&conn, "b-v1", "key_b", 1);
     // 升级：apply_migrations 只补 0002（0001 已在 metadata 标记）
     let version = apply_migrations(&conn, "test").unwrap();
-    assert_eq!(version, 2);
+    assert_eq!(version, dsheng_core::repository::CURRENT_SCHEMA_VERSION);
     // 全部版本行保留（冻结引用不变）
     let rows: i64 = conn
         .query_row("SELECT COUNT(*) FROM metric_definitions", [], |r| r.get(0))
