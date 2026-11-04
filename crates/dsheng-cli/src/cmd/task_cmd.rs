@@ -18,8 +18,19 @@ use serde_json::json;
 use uuid::Uuid;
 
 pub fn dispatch(action: cli::TaskAction, db: Option<&String>) -> CliResult<serde_json::Value> {
+    dispatch_with_progress(action, db, None)
+}
+
+/// 可选注入进度 sink（桌面壳 confirm 路径；None＝CLI stderr 节流）。
+pub fn dispatch_with_progress(
+    action: cli::TaskAction,
+    db: Option<&String>,
+    progress: Option<crate::store::generation::ProgressSink>,
+) -> CliResult<serde_json::Value> {
     match action {
-        cli::TaskAction::Generate { .. } => super::generation_cmd::task_generate(action, db),
+        cli::TaskAction::Generate { .. } => {
+            super::generation_cmd::task_generate_with_progress(action, db, progress)
+        }
         cli::TaskAction::List { workspace, run } => {
             let conn = ctx::open_db(db)?;
             let ws = ctx::resolve_workspace(&conn, workspace.as_ref())?;

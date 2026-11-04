@@ -42,6 +42,7 @@ pub fn dispatch(
             confirmation_id,
             confirm_send,
             db,
+            None,
         ),
         cli::GenerationAction::Status { workspace, attempt } => {
             let conn = ctx::open_db(db)?;
@@ -58,10 +59,20 @@ pub fn dispatch(
     }
 }
 
-/// diagnosis generate/continue（经 diagnosis_cmd 转发）。
+/// diagnosis generate/continue（经 diagnosis_cmd 转发；CLI 进度＝stderr 节流）。
 pub fn diagnosis_generation(
     action: cli::DiagnosisAction,
     db: Option<&String>,
+) -> CliResult<serde_json::Value> {
+    diagnosis_generation_with_progress(action, db, None)
+}
+
+/// diagnosis generate/continue（可选注入进度 sink；桌面壳经
+/// cmd::dispatch_with_progress 传入事件桥）。
+pub fn diagnosis_generation_with_progress(
+    action: cli::DiagnosisAction,
+    db: Option<&String>,
+    progress: Option<gen::ProgressSink>,
 ) -> CliResult<serde_json::Value> {
     match action {
         cli::DiagnosisAction::Generate {
@@ -163,6 +174,7 @@ pub fn diagnosis_generation(
                 DIAG_SCHEMA,
                 Box::new(gen::HttpDispatch),
                 OutputKind::Diagnosis { framework },
+                progress,
             )
         }
         cli::DiagnosisAction::Continue {
@@ -173,7 +185,7 @@ pub fn diagnosis_generation(
             dry_run,
             confirmation_id,
             confirm_send,
-        } => diagnosis_continue_value(
+        } => diagnosis_continue_value_with_progress(
             workspace,
             session,
             AnswerSource::Stdin {
@@ -184,6 +196,7 @@ pub fn diagnosis_generation(
             confirmation_id,
             confirm_send,
             db,
+            progress,
         ),
         other => {
             let _ = other;
@@ -211,6 +224,32 @@ pub fn diagnosis_continue_value(
     confirmation_id: Option<String>,
     confirm_send: bool,
     db: Option<&String>,
+) -> CliResult<serde_json::Value> {
+    diagnosis_continue_value_with_progress(
+        workspace,
+        session,
+        answer,
+        provider,
+        dry_run,
+        confirmation_id,
+        confirm_send,
+        db,
+        None,
+    )
+}
+
+/// diagnosis continue（可选注入进度 sink；桌面壳续问确认经此发事件）。
+#[allow(clippy::too_many_arguments)]
+pub fn diagnosis_continue_value_with_progress(
+    workspace: Option<String>,
+    session: String,
+    answer: AnswerSource,
+    provider: Option<String>,
+    dry_run: bool,
+    confirmation_id: Option<String>,
+    confirm_send: bool,
+    db: Option<&String>,
+    progress: Option<gen::ProgressSink>,
 ) -> CliResult<serde_json::Value> {
     if let AnswerSource::Stdin {
         require_flag: false,
@@ -300,11 +339,21 @@ pub fn diagnosis_continue_value(
         DIAG_SCHEMA,
         Box::new(gen::HttpDispatch),
         OutputKind::Diagnosis { framework },
+        progress,
     )
 }
 
-/// task generate（经 task_cmd 转发）。
+/// task generate（经 task_cmd 转发；CLI 进度＝stderr 节流）。
 pub fn task_generate(action: cli::TaskAction, db: Option<&String>) -> CliResult<serde_json::Value> {
+    task_generate_with_progress(action, db, None)
+}
+
+/// task generate（可选注入进度 sink）。
+pub fn task_generate_with_progress(
+    action: cli::TaskAction,
+    db: Option<&String>,
+    progress: Option<gen::ProgressSink>,
+) -> CliResult<serde_json::Value> {
     let cli::TaskAction::Generate {
         workspace,
         run,
@@ -398,9 +447,11 @@ pub fn task_generate(action: cli::TaskAction, db: Option<&String>) -> CliResult<
         TASK_SCHEMA,
         Box::new(gen::HttpDispatch),
         OutputKind::Task,
+        progress,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn retry(
     workspace: Option<String>,
     attempt: String,
@@ -409,6 +460,7 @@ fn retry(
     confirmation_id: Option<String>,
     confirm_send: bool,
     db: Option<&String>,
+    progress: Option<gen::ProgressSink>,
 ) -> CliResult<serde_json::Value> {
     let conn = ctx::open_db(db)?;
     let ws = ctx::resolve_workspace(&conn, workspace.as_ref())?;
@@ -470,6 +522,7 @@ fn retry(
         TASK_SCHEMA,
         Box::new(gen::HttpDispatch),
         OutputKind::Task,
+        progress,
     )
 }
 
@@ -492,6 +545,7 @@ fn gate_and_run(
     schema_version: &str,
     dispatcher: Box<dyn gen::RequestDispatch>,
     output_kind: OutputKind,
+    progress: Option<gen::ProgressSink>,
 ) -> CliResult<serde_json::Value> {
     let gate = parse_gate(dry_run, &confirmation_id, confirm_send)?;
     let provider_id = resolve_provider(conn, workspace_id, &provider_flag)?;
@@ -508,6 +562,8 @@ fn gate_and_run(
         ),
         Gate::Send { confirmation_id } => {
             let mut dispatcher = dispatcher;
+            let mut sink = progress.unwrap_or_else(gen::ProgressSink::stderr);
+            let mut on_progress = |event: gen::StreamProgressEvent| sink.on_event(event);
             let (attempt_id, output) = gen::send_confirmed(
                 conn,
                 workspace_id,
@@ -517,6 +573,7 @@ fn gate_and_run(
                 prompt_version,
                 schema_version,
                 dispatcher.as_mut(),
+                &mut on_progress,
             )?;
             match output_kind {
                 OutputKind::Task => {

@@ -12,6 +12,15 @@ use crate::store::diagnosis as diagnosis_store;
 use dsheng_core::contracts::cli::CliErrorCode;
 
 pub fn dispatch(action: cli::DiagnosisAction, db: Option<&String>) -> CliResult<serde_json::Value> {
+    dispatch_with_progress(action, db, None)
+}
+
+/// 可选注入进度 sink（桌面壳 confirm 路径；None＝CLI stderr 节流）。
+pub fn dispatch_with_progress(
+    action: cli::DiagnosisAction,
+    db: Option<&String>,
+    progress: Option<crate::store::generation::ProgressSink>,
+) -> CliResult<serde_json::Value> {
     match action {
         cli::DiagnosisAction::List { workspace, run } => {
             let conn = ctx::open_db(db)?;
@@ -89,7 +98,7 @@ pub fn dispatch(action: cli::DiagnosisAction, db: Option<&String>) -> CliResult<
             }
         },
         cli::DiagnosisAction::Generate { .. } | cli::DiagnosisAction::Continue { .. } => {
-            super::generation_cmd::diagnosis_generation(action, db)
+            super::generation_cmd::diagnosis_generation_with_progress(action, db, progress)
         }
     }
 }

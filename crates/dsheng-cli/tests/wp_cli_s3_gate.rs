@@ -28,6 +28,7 @@ impl RequestDispatch for Recorder {
         &mut self,
         _runtime: &ProviderRuntime,
         _request: &dsheng_core::contracts::provider::ChatCompletionsRequest,
+        _on_chunk: &mut dyn FnMut(u64, u64, i64),
     ) -> Result<
         dsheng_core::contracts::provider::ChatCompletionsResponse,
         (dsheng_core::contracts::cli::CliErrorCode, String),
@@ -111,6 +112,7 @@ fn s3_unconfirmed_send_paths_never_dispatch() {
         "2.3",
         "2",
         &mut recorder,
+        &mut |_| {},
     )
     .unwrap_err();
     assert_eq!(
@@ -130,6 +132,7 @@ fn s3_unconfirmed_send_paths_never_dispatch() {
         "2.3",
         "2",
         &mut recorder,
+        &mut |_| {},
     )
     .unwrap_err();
     assert_eq!(
@@ -175,6 +178,7 @@ fn s3_confirmed_gate_dispatches_exactly_once_and_marks_terminal() {
         "2.3",
         "2",
         &mut recorder,
+        &mut |_| {},
     )
     .unwrap_err();
     assert_eq!(
@@ -212,6 +216,7 @@ fn s3_confirmed_gate_dispatches_exactly_once_and_marks_terminal() {
         "2.3",
         "2",
         &mut second,
+        &mut |_| {},
     )
     .unwrap_err();
     assert_eq!(

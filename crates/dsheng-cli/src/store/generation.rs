@@ -386,19 +386,42 @@ pub struct ProviderRuntime {
     pub name: String,
     pub base_url: String,
     pub model: String,
+    /// Provider 快照 stream 标志（§1 增量）：true=流式（SSE）路径。
+    pub stream: bool,
     pub timeouts: Timeouts,
     pub budget: Budget,
     pub api_key: String,
 }
 
-/// 请求派发抽象：生产＝provider::http 一次 send_once；测试＝记录器
-/// （断言未确认不派发；无网络、无 Mock Provider）。
+/// 请求派发抽象：生产＝provider::http 一次 send_once / send_once_streaming
+/// （按 runtime.stream 选择）；测试＝记录器（断言未确认不派发；无网络、
+/// 无 Mock Provider）。`on_chunk` 为流式进度回调
+/// `(chunk_seq, total_bytes, elapsed_ms)`（非流式实现忽略）。
 pub trait RequestDispatch {
     fn dispatch(
         &mut self,
         runtime: &ProviderRuntime,
         request: &ChatCompletionsRequest,
+        on_chunk: &mut dyn FnMut(u64, u64, i64),
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)>;
+}
+
+/// 派发路径选择（纯函数；DI 测试断言用）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DispatchPath {
+    /// 流式：请求带 "stream": true，SSE 逐块累积（§1 增量）。
+    Streaming,
+    /// 非流式：原 send_once。
+    NonStreaming,
+}
+
+/// stream 标志 → 派发路径（HttpDispatch 分支依据；测试断言选择正确路径）。
+pub fn dispatch_path(stream: bool) -> DispatchPath {
+    if stream {
+        DispatchPath::Streaming
+    } else {
+        DispatchPath::NonStreaming
+    }
 }
 
 /// 生产派发（唯一网络路径；每 attempt 一条请求、无自动重试）。
@@ -409,13 +432,104 @@ impl RequestDispatch for HttpDispatch {
         &mut self,
         runtime: &ProviderRuntime,
         request: &ChatCompletionsRequest,
+        on_chunk: &mut dyn FnMut(u64, u64, i64),
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
-        let (client, endpoint) = dsheng_core::provider::http::build_client(
-            &runtime.base_url,
-            &runtime.timeouts,
-            &runtime.budget,
-        )?;
-        dsheng_core::provider::http::send_once(&client, &endpoint, &runtime.api_key, request)
+        match dispatch_path(runtime.stream) {
+            DispatchPath::Streaming => {
+                let (client, endpoint) = dsheng_core::provider::http::build_streaming_client(
+                    &runtime.base_url,
+                    &runtime.timeouts,
+                    &runtime.budget,
+                )?;
+                // total 起点＝本次派发开始（preparing→终态的近似锚点；
+                // 确认消费/校验耗时不计入，见已知限制）
+                let started_at = dsheng_core::provider::deadline::MonotonicClock::now_millis(
+                    &dsheng_core::provider::deadline::SystemClock,
+                );
+                dsheng_core::provider::http::send_once_streaming(
+                    &client,
+                    &endpoint,
+                    &runtime.api_key,
+                    request,
+                    &runtime.timeouts,
+                    started_at,
+                    on_chunk,
+                )
+            }
+            DispatchPath::NonStreaming => {
+                let (client, endpoint) = dsheng_core::provider::http::build_client(
+                    &runtime.base_url,
+                    &runtime.timeouts,
+                    &runtime.budget,
+                )?;
+                dsheng_core::provider::http::send_once(
+                    &client,
+                    &endpoint,
+                    &runtime.api_key,
+                    request,
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 流式进度事件与消费端（CLI stderr / 桌面事件桥）
+// ---------------------------------------------------------------------------
+
+/// 面向消费端的进度事件（原始 chunk 三元组 ＋ attempt 关联与阶段）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamProgressEvent {
+    pub attempt_id: Uuid,
+    pub chunk_seq: u64,
+    pub bytes: u64,
+    pub elapsed_ms: i64,
+    /// 阶段（当前恒 receiving：接收响应流）。
+    pub stage: &'static str,
+}
+
+/// 进度消费端（S4 接线）：CLI＝stderr 节流；桌面＝事件桥回调。
+pub enum ProgressSink {
+    /// CLI stderr：每 30 秒一条「已接收 N 字节/第 M 块/耗时 Xs」
+    /// （首条立即；stdout 保持纯 JSON 输出，符合 §5.2 约定）。
+    Stderr { last_emit_ms: i64 },
+    /// 桌面壳/嵌入方回调（tauri Emitter 发 generation://progress 等）。
+    Callback(Box<dyn FnMut(StreamProgressEvent) + Send>),
+    /// 静默（预览/非发送路径）。
+    Null,
+}
+
+impl ProgressSink {
+    /// stderr 节流 sink（last_emit 初始为极小值 → 首条立即输出）。
+    pub fn stderr() -> Self {
+        ProgressSink::Stderr {
+            last_emit_ms: i64::MIN,
+        }
+    }
+
+    /// stderr 节流判定（纯函数，测试断言）：首条立即，其后每满 30s 一条。
+    pub fn stderr_emit_due(last_emit_ms: i64, elapsed_ms: i64) -> bool {
+        elapsed_ms.saturating_sub(last_emit_ms) >= 30_000
+    }
+
+    pub fn on_event(&mut self, event: StreamProgressEvent) {
+        match self {
+            ProgressSink::Stderr { last_emit_ms } => {
+                if Self::stderr_emit_due(*last_emit_ms, event.elapsed_ms) {
+                    eprintln!(
+                        "[generation] 已接收 {} 字节/第 {} 块/耗时 {}s（attempt {}，{}）",
+                        event.bytes,
+                        event.chunk_seq,
+                        event.elapsed_ms / 1_000,
+                        event.attempt_id,
+                        event.stage
+                    );
+                    *last_emit_ms = event.elapsed_ms;
+                }
+            }
+            ProgressSink::Callback(f) => f(event),
+            ProgressSink::Null => {}
+        }
     }
 }
 
@@ -1613,6 +1727,8 @@ pub struct ProviderConfigSnapshot {
     pub name: String,
     pub base_url: String,
     pub model: String,
+    /// 流式开关（providers.stream，0003 起可为 true）。
+    pub stream: bool,
     pub timeouts: Timeouts,
     pub budget: Budget,
     pub key_present: bool,
@@ -1633,12 +1749,13 @@ pub fn provider_snapshot(
         i64,
         i64,
         i64,
+        i64,
         Option<String>,
         Option<String>,
     );
     let row: ProviderRow = conn
         .query_row(
-            "SELECT name, base_url, model, revision, connect_seconds, response_seconds,
+            "SELECT name, base_url, model, revision, stream, connect_seconds, response_seconds,
                     total_seconds, context_window_tokens, output_reserve_tokens, api_key,
                     (SELECT workspace_id FROM providers WHERE provider_id = ?1)
              FROM providers WHERE provider_id = ?1",
@@ -1656,11 +1773,12 @@ pub fn provider_snapshot(
                     r.get(8)?,
                     r.get(9)?,
                     r.get(10)?,
+                    r.get(11)?,
                 ))
             },
         )
         .map_err(|_| CliError::new(CliErrorCode::WorkspaceMismatch, "provider 不存在"))?;
-    let owner = row.10.unwrap_or_default();
+    let owner = row.11.unwrap_or_default();
     if owner != workspace_id.to_string() {
         return Err(CliError::new(
             CliErrorCode::WorkspaceMismatch,
@@ -1673,16 +1791,17 @@ pub fn provider_snapshot(
         name: row.0,
         base_url: row.1,
         model: row.2,
+        stream: row.4 == 1,
         timeouts: Timeouts {
-            connect_seconds: row.4 as u32,
-            response_seconds: row.5 as u32,
-            total_seconds: row.6 as u32,
+            connect_seconds: row.5 as u32,
+            response_seconds: row.6 as u32,
+            total_seconds: row.7 as u32,
         },
         budget: Budget {
-            context_window_tokens: row.7 as u32,
-            output_reserve_tokens: row.8 as u32,
+            context_window_tokens: row.8 as u32,
+            output_reserve_tokens: row.9 as u32,
         },
-        key_present: row.9.is_some(),
+        key_present: row.10.is_some(),
     })
 }
 
@@ -1819,6 +1938,7 @@ pub fn create_preview(
 }
 
 /// 确认发送（双门禁之后）：重验 → 消费建 attempt → 派发（注入）→ 落库 → 终态。
+/// `on_progress`：流式进度事件（attempt_id 关联；非流式/预览不触发）。
 /// 返回 (attempt_id, 终态, 提取后的输出对象)。
 #[allow(clippy::too_many_arguments)]
 pub fn send_confirmed(
@@ -1830,6 +1950,7 @@ pub fn send_confirmed(
     prompt_version: &str,
     schema_version: &str,
     dispatcher: &mut dyn RequestDispatch,
+    on_progress: &mut dyn FnMut(StreamProgressEvent),
 ) -> CliResult<(Uuid, Value)> {
     let api_key = crate::store::settings::provider_api_key(conn, provider.provider_id)?
         .ok_or_else(|| {
@@ -1882,11 +2003,23 @@ pub fn send_confirmed(
         name: provider.name.clone(),
         base_url: provider.base_url.clone(),
         model: provider.model.clone(),
+        stream: provider.stream,
         timeouts: provider.timeouts,
         budget: provider.budget,
         api_key,
     };
-    let response = match dispatcher.dispatch(&runtime, &assembled.request) {
+    // 原始 chunk 进度 → 消费端事件（补 attempt 关联与阶段）
+    let attempt_id_for_progress = attempt.attempt_id;
+    let mut chunk_progress = |seq: u64, bytes: u64, ms: i64| {
+        on_progress(StreamProgressEvent {
+            attempt_id: attempt_id_for_progress,
+            chunk_seq: seq,
+            bytes,
+            elapsed_ms: ms,
+            stage: "receiving",
+        });
+    };
+    let response = match dispatcher.dispatch(&runtime, &assembled.request, &mut chunk_progress) {
         Ok(response) => response,
         Err((code, msg)) => {
             let terminal = match code {
