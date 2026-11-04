@@ -16,10 +16,14 @@
 | 2 | diagnosis generate 5w | 5edad685-34d3-4fac-bdfa-7ff5ea6f7449 | ~40k/37.8k | **RESPONSE_TIMEOUT**（响应上限已调 480s 仍超；elapsed 495s） | 495.1s | attempt failed；无报告写入 |
 | 3 | diagnosis generate 5why（流式） | b9e01f53-f7ad-4e05-8b4d-d170d90e7779 | 40.2k/37.2k | **RESPONSE_TOO_LARGE**（流式稳定接收 4,845 块/1.9MB@180s 仍在产出，累计 2,097,422B 超 2MiB 合同上限；流式/进度/空闲超时机制验证有效） | 198s | attempt failed；无报告写入 |
 | 3 | diagnosis generate 5w2h | | | | | |
-| 4 | task generate | 未执行 | | 未派发（主 Agent 判断：与 #1/#2 同尺寸载荷大概率同样超时，暂停避免无效消耗；待用户决策） | | |
+| 4 | diagnosis generate 5why（glm-5.3 流式） | （cid 见 /tmp 已过期） | 40.2k/37.2k | **RESPONSE_TOO_LARGE**（129s 稳定收流 4,808 块/2,097,485B 超 2MiB；与 #3 glm-4.7 总量几乎一致→推理模型思考流字节量是共同根因） | 129s | attempt failed；无报告写入 |
 
 **批次小结（2026-11-04-A，进行中）**：已派发 2 次均 RESPONSE_TIMEOUT（180s/480s 上限各一次），
-请求均真实发出并计数；剩余 1 次授权未使用（#4 预留任务单，待用户对响应上限/模型选择决策）。 glm-4.7 @ coding 入口对 ~38k token 业务
+请求均真实发出并计数；**批次 2026-11-04-A 结束：4/4 授权用尽，0 产出。** 根因链完整定位：非流式首字节>480s（#1/#2，已由流式解决）→
+推理模型（glm-4.7/5.3 同证）思考流字节量 >2MiB 合同响应上限（#3/#4）。
+产品侧门禁/进度/分类全部按合同工作。下一步候选（均需用户批准）：
+A) 合同增量：流式响应字节上限 2MiB→16MiB（思考流占字节、最终正文小）＋新授权批次；
+B) wire 增量 max_tokens 限界；C) 冻结提示词内嵌 schema 瘦身（动冻结资源）。 glm-4.7 @ coding 入口对 ~38k token 业务
 载荷两连超（规划期小载荷 58–196s 可完成）。候选处置（待用户选择）：换非 coding 入口/
 更快模型；或实现诊断发送范围裁剪（当前 A1:Z999 全表→仅相关科目行，预计降到 ~10k tokens）
 后重试；或两者并行。
