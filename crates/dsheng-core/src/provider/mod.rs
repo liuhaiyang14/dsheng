@@ -13,3 +13,4 @@ pub mod deadline;
 pub mod extract;
 pub mod http;
 pub mod schema;
+pub mod stream;
