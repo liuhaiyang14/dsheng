@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "product": "dsheng",
+  "identifier": "com.dsheng.desktop",
+  "version": "0.1.1",
+  "generated_at": "2026-11-04T06:36:02+00:00",
+  "git": {
+    "commit": "6a8def81bcd8bc15fce4a52c0a9aa40b4c63fc43",
+    "branch": "main",
+    "dirty": true
+  },
+  "versions": {
+    "cargo_workspace": "0.1.1",
+    "tauri_conf": "0.1.1",
+    "tauri_cargo": "0.1.1",
+    "ui_package": "0.1.1"
+  },
+  "signing": {
+    "signed": false,
+    "note": "unsigned：不签名、不绕过 Gatekeeper/SmartScreen；见 docs/release/UNSIGNED.md"
+  },
+  "artifacts": [
+    {
+      "category": "skill",
+      "kind": "skill-zip",
+      "platform": null,
+      "arch": null,
+      "file": "dsheng-agent-skill_0.1.1.zip",
+      "size_bytes": 28511,
+      "sha256": "09eb030173b01abe62b24d5c1caed6583f270ef9fc00a4bac61de94f7b881398",
+      "zip": {
+        "entries": 8,
+        "top_level": [
+          "SKILL.md",
+          "reference",
+          "scripts"
+        ],
+        "includes_migrations": false,
+        "includes_cli_binary": false
+      }
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "file": "dsheng-cli_0.1.1_macos_arm64.zip",
+      "size_bytes": 6441340,
+      "sha256": "35d86e2bd0641829e2fdcd1d15e4d3b72827d85b90433f98e8f3bb80ed6fe0b0",
+      "zip": {
+        "entries": 6,
+        "top_level": [
+          "dsheng-cli_0.1.1_macos_arm64"
+        ],
+        "includes_migrations": false,
+        "includes_cli_binary": true
+      }
+    },
+    {
+      "category": "manual",
+      "kind": "manual-pdf",
+      "platform": null,
+      "arch": null,
+      "file": "dsheng-manual_0.1.1.pdf",
+      "size_bytes": 1854365,
+      "sha256": "03e0c3aadbe59bbdbb2664577e7cdf3e7c78a2fce942f71519a243723f2fd0a1"
+    },
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "arm64",
+      "file": "dsheng_0.1.1_macos_arm64.dmg",
+      "size_bytes": 11206679,
+      "sha256": "3d330bc27b8ba3abdfd5fb5d973feb2f3bf32382cf2c6e593a1a6a714947d143"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "file": "dsheng_0.1.1_macos_arm64_portable.zip",
+      "size_bytes": 17345765,
+      "sha256": "77e533603b7eba7e51aa493e2720e485608ea58b1b6070aa79b19dfc488edfa9",
+      "zip": {
+        "entries": 33,
+        "top_level": [
+          "dsheng_0.1.1_macos_arm64_portable"
+        ],
+        "includes_migrations": true,
+        "includes_cli_binary": true
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "present"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "present"
+    },
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "msi",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "present"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "skill",
+      "kind": "skill-zip",
+      "platform": null,
+      "arch": null,
+      "status": "present"
+    },
+    {
+      "category": "manual",
+      "kind": "manual-pdf",
+      "platform": null,
+      "arch": null,
+      "status": "present"
+    }
+  ],
+  "components": {
+    "cli_install_helpers": [
+      {
+        "kind": "install-helper",
+        "platform": "macos",
+        "file": "install/macos-user-install.sh",
+        "size_bytes": 2955,
+        "sha256": "10fb6f5a42a39fc99df218a69fa63d9079f6c3cf0901d9b3721405ce8a129ab5"
+      },
+      {
+        "kind": "install-helper",
+        "platform": "windows",
+        "file": "install/windows-user-install.ps1",
+        "size_bytes": 3100,
+        "sha256": "1d1e7d948c59b59bb1e65c3c66abba1f60d00298142c23a1bd6b4e095b15e1a3"
+      }
+    ],
+    "migrations": [
+      {
+        "name": "0001_init.sql",
+        "sha256": "c3b9b4ff9c282a57a9840669c9c825d16833c3dd627d2ec7b3476e394536f841"
+      },
+      {
+        "name": "0002_stable_metric_identity.sql",
+        "sha256": "235f0b70e79643d7cd30d5edd7b001a8a30a4ef3f29e134465d774df7cd18046"
+      },
+      {
+        "name": "0003_stream_flag.sql",
+        "sha256": "af7a4c498a636c35ccc2ab2c1d66bb30ce185386b58a37891588f725fc9bcc8e"
+      }
+    ],
+    "db_schema_version": 3
+  }
+}
