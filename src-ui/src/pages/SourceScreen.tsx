@@ -73,6 +73,10 @@ export function SourceScreen() {
       pushDiag(`template_download 失败: ${String(e).slice(0, 120)}`);
     }
     if (app.activeWorkspaceId) {
+      const homeDir = (window as unknown as { __TAURI_OS__?: never; __HOME__?: string }).__HOME__
+        ?? (typeof os !== 'undefined' && typeof (os as { homedir?: () => string }).homedir === 'function'
+          ? (os as unknown as { homedir: () => string }).homedir()
+          : '');
       const withTimeout = <T,>(p: Promise<T>, ms: number, tag: string) =>
         Promise.race([
           p,
@@ -90,7 +94,7 @@ export function SourceScreen() {
       }
       try {
         const r = (await withTimeout(
-          invoke('scan', { workspaceId: app.activeWorkspaceId, directoryLabel: '/Users/liuhaiyang/Desktop/ds' }),
+          invoke('scan', { workspaceId: app.activeWorkspaceId, directoryLabel: `${homeDir}/Desktop/ds` }),
           15000,
           'scan(ds)',
         )) as { ok?: boolean; data?: { files?: unknown[] }; error?: unknown };
