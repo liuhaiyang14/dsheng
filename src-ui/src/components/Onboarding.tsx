@@ -119,7 +119,8 @@ export function Onboarding(props: { open: boolean; onClose: () => void }) {
         </div>
         <p className="onboarding-hint">
           周起始日（周一）与财年起始月（一月）暂用默认值，创建后可在「系统设置」中
-          以新版本修改；旧期间不会被改写。
+          以新版本修改；旧期间不会被改写。若要导入的表格数据早于今天，建议把生效日期
+          改为覆盖那些数据的最早月份（如 2026-10-01），否则分析历史期间时会提示补建周期策略。
         </p>
         {error ? (
           <div className="onboarding-error" data-testid="onboarding-error">
