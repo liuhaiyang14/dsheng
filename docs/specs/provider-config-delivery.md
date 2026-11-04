@@ -6,7 +6,7 @@
 
 ## 1. Provider 的身份、路由和保存
 
-1. Provider 按 workspace 隔离，id 为应用分配 UUID。name 去首尾空格后在工作区内唯一。protocol 固定 chat_completions，stream=false。base_url 去末尾斜杠后追加 /chat/completions；若已输入完整 /chat/completions 路径，本地提示填写 Base URL，不重复追加或猜测改写路径。
+1. Provider 按 workspace 隔离，id 为应用分配 UUID。name 去首尾空格后在工作区内唯一。protocol 固定 chat_completions；stream 默认 false，可选 true（**2026-11-04 用户批准增量**）：请求带 `"stream": true`，逐 `choices[0].delta.content` 累积正文，收齐后走与非流式完全相同的正文完整性检查、C 方案提取与 schema/语义校验；`finish_reason` 取最后一个 chunk。base_url 去末尾斜杠后追加 /chat/completions；若已输入完整 /chat/completions 路径，本地提示填写 Base URL，不重复追加或猜测改写路径。
 2. UI 显式选择或 CLI --provider <id> 优先；未指定时只使用 workspace.active_provider_id。没有已确认默认时 PROVIDER_REQUIRED，不取第一条/最近一条、不自动 fallback。删除/不存在/跨企业的配置拒绝发送。
 3. 新建配置不自动设默认。用户点击“设为默认”或执行 provider use 才更新 active_provider_id；删除默认配置后置 null，不自动换服务。历史保留当次 provider_id、name、base_url、请求/响应模型名及 revision 快照，不保留 Key。
 4. providers.revision 从 1 起。name、路由、model、Key、预算或超时任一实际改变均递增；相同值不增。修改携带 expected_revision；竞争返回 REVISION_CONFLICT，不最后写入覆盖。
@@ -36,8 +36,8 @@ diagnosis generate/continue、task generate、generation retry 复用同一流�
 | context_window_tokens | 32,768 | 整数 8,192–1,048,576 | 本地预算，不是已识别模型能力承诺 |
 | output_reserve_tokens | 8,192 | 整数 1,024–65,536，且 <= context/2 | 非法组合拒绝保存，不自动缩小 |
 | connect_timeout_seconds | 15 秒 | 整数 1–60 | DNS/TCP/TLS共用 |
-| response_timeout_seconds | 180 秒 | 整数 30–600 | 连接完成开始发请求至完整body；零星数据不重置 |
-| total_timeout_seconds | 240 秒 | 整数 60–900，且 >= connect+response | preparing至终态，含解析/校验/保存 |
+| response_timeout_seconds | 180 秒 | 整数 30–600 | 非流式：连接完成至完整 body。流式（增量）：相邻数据块（chunk）间空闲上限，有任何数据到达即不触发 |
+| total_timeout_seconds | 240 秒 | 整数 60–1800，且 >= connect+response | preparing至终态，含解析/校验/保存；流式生成可能较长故上限扩至 1800（增量） |
 
 保守输入估算固定为最终 system 和 user 的 content 字符串 UTF-8 字节数之和 + 256 消息开销。conservative_input_tokens + output_reserve_tokens > context_window_tokens 时本地 CONTEXT_BUDGET_EXCEEDED，不发请求。这是本工具的保守预算估算，不保证任意 tokenizer/隐藏包装的绝对上界；服务仍报上下文不足时按 CONTEXT_REJECTED 失败并要求缩范围。不得调用远端 tokenizer/模型估算，也不声称估算就是账单 token。
 

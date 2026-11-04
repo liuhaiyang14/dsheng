@@ -140,7 +140,8 @@ pub fn validate_budget_timeouts(budget: &Budget, timeouts: &Timeouts) -> Result<
     if !(30..=600).contains(&timeouts.response_seconds) {
         return Err("response_seconds_range");
     }
-    if !(60..=900).contains(&timeouts.total_seconds) {
+    // 2026-11-04 增量：流式生成总时长上限扩至 1800s
+    if !(60..=1800).contains(&timeouts.total_seconds) {
         return Err("total_seconds_range");
     }
     if timeouts.total_seconds < timeouts.connect_seconds + timeouts.response_seconds {

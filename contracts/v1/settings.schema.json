@@ -157,7 +157,9 @@
           "maxLength": 200
         },
         "stream": {
-          "const": false
+          "type": "boolean",
+          "default": false,
+          "description": "默认 false（非流式）。true=流式（2026-11-04 用户批准增量）：逐 delta 累积正文，正文完整性/C 方案提取/schema 校验链不变；response_timeout 语义变为相邻 chunk 空闲超时。"
         },
         "timeouts": {
           "$ref": "#/$defs/timeouts"
@@ -797,6 +799,7 @@
     "provider URL restrictions in provider-config-delivery.md",
     "key_action replace requires nonempty separately supplied secret; api_key forbidden in JSON",
     "all referenced IDs must exist in resolved workspace",
-    "provider name is trimmed and unique per workspace"
+    "provider name is trimmed and unique per workspace",
+    "stream=true 仅 chat_completions；流式下 response_seconds=相邻数据块空闲上限，total_seconds=总时长硬顶（可至 1800）"
   ]
 }
