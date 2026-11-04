@@ -407,9 +407,101 @@ pub fn parse_period_header(
     None
 }
 
+/// 转置推移表数据行的 A 列标签（§4.3 2026-11-04 用户批准增量）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PeriodRowLabel {
+    /// 单一期间（YYYY-MM／YYYY年M月／YYYY-MM-DD／明确起止）。
+    Period(crate::contracts::domain::DateRange),
+    /// `累计` 行：须有累计起止，作为独立范围观察（§2.5 cumulative_total），
+    /// 不与其内部月份重复相加。
+    Cumulative(crate::contracts::domain::DateRange),
+}
+
+/// `YYYY年M-N月` 明确起止（同一年内的自然月区间）。
+fn parse_month_span(t: &str) -> Option<crate::contracts::domain::DateRange> {
+    use crate::contracts::domain::DateRange;
+    let body = t.strip_suffix('月')?;
+    let (year_s, span) = body.split_once('年')?;
+    if year_s.is_empty() || span.is_empty() || !year_s.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let sep = span
+        .chars()
+        .find(|&c| matches!(c, '-' | '－' | '–' | '~' | '～' | '至'))?;
+    let (m1_s, m2_s) = span.split_once(sep)?;
+    let digits = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+    if !digits(m1_s) || !digits(m2_s) {
+        return None;
+    }
+    let year: i32 = year_s.parse().ok()?;
+    let m1: u32 = m1_s.parse().ok()?;
+    let m2: u32 = m2_s.parse().ok()?;
+    if !(1..=12).contains(&m1) || !(1..=12).contains(&m2) || m1 > m2 {
+        return None;
+    }
+    let from = chrono::NaiveDate::from_ymd_opt(year, m1, 1)?;
+    let to = {
+        let (ny, nm) = if m2 == 12 {
+            (year + 1, 1)
+        } else {
+            (year, m2 + 1)
+        };
+        chrono::NaiveDate::from_ymd_opt(ny, nm, 1)? - chrono::Duration::days(1)
+    };
+    DateRange::new(from, to).ok()
+}
+
+/// 转置推移表数据行 A 列解析（§4.3 增量）：
+/// 先按单一期间解析，再试 `YYYY年M-N月`（明确起止；含 `累计` → 独立范围观察）。
+pub fn parse_period_row(text: &str, year_context: Option<i32>) -> Option<PeriodRowLabel> {
+    let t = normalize_header(text);
+    if let Some(range) = parse_period_header(&t, year_context) {
+        return Some(PeriodRowLabel::Period(range));
+    }
+    let cumulative = t.contains("累计");
+    let candidate = if cumulative {
+        normalize_header(&t.replace("累计", ""))
+    } else {
+        t
+    };
+    let range = parse_month_span(&candidate)?;
+    Some(if cumulative {
+        PeriodRowLabel::Cumulative(range)
+    } else {
+        PeriodRowLabel::Period(range)
+    })
+}
+
+/// 指标名单位后缀剥离（§4.3 增量：转置列头可带 `(元)` 等单位后缀）。
+///
+/// 去除结尾括号内容（半角/全角），剩余 trim；仅当括号组为结尾且前后都不再
+/// 含括号时才剥离（嵌套括号不猜）。无结尾括号组时返回原文 trim（交由
+/// label/label_aliases 精确匹配判定；剥不出指标名的列不是指标列）。
+pub fn strip_unit_suffix(raw: &str) -> &str {
+    let t = raw.trim();
+    let Some(last) = t.chars().next_back() else {
+        return t;
+    };
+    if !matches!(last, ')' | '）') {
+        return t;
+    }
+    let open = ['(', '（'];
+    let close = [')', '）'];
+    let Some((idx, open_ch)) = t.char_indices().rev().find(|(_, c)| open.contains(c)) else {
+        return t;
+    };
+    let prefix = &t[..idx];
+    let group = &t[idx + open_ch.len_utf8()..t.len() - last.len_utf8()];
+    let has_paren = |s: &str| s.chars().any(|c| open.contains(&c) || close.contains(&c));
+    if prefix.is_empty() || group.is_empty() || has_paren(prefix) || has_paren(group) {
+        return t;
+    }
+    prefix.trim()
+}
+
 #[cfg(test)]
 mod period_tests {
-    use super::parse_period_header;
+    use super::{parse_period_header, parse_period_row, strip_unit_suffix};
     use chrono::NaiveDate;
 
     fn d(s: &str) -> NaiveDate {
@@ -440,5 +532,61 @@ mod period_tests {
         assert!(parse_period_header("2026年1-10月累计", None).is_none());
         assert!(parse_period_header("累计", None).is_none());
         assert!(parse_period_header("26-10", None).is_none());
+    }
+
+    #[test]
+    fn period_row_labels() {
+        use super::PeriodRowLabel;
+        // 单一期间：YYYY-MM / YYYY年M月
+        assert_eq!(
+            parse_period_row("2026-10", None),
+            Some(PeriodRowLabel::Period(
+                crate::contracts::domain::DateRange::new(d("2026-10-01"), d("2026-10-31")).unwrap()
+            ))
+        );
+        assert_eq!(
+            parse_period_row("2025年7月", None),
+            Some(PeriodRowLabel::Period(
+                crate::contracts::domain::DateRange::new(d("2025-07-01"), d("2025-07-31")).unwrap()
+            ))
+        );
+        // 明确起止（无累计）→ 单一期间观察
+        assert_eq!(
+            parse_period_row("2026年1-10月", None),
+            Some(PeriodRowLabel::Period(
+                crate::contracts::domain::DateRange::new(d("2026-01-01"), d("2026-10-31")).unwrap()
+            ))
+        );
+        // 累计行 → 独立范围观察（cumulative_total，§2.5）
+        assert_eq!(
+            parse_period_row("2026年1-10月累计", None),
+            Some(PeriodRowLabel::Cumulative(
+                crate::contracts::domain::DateRange::new(d("2026-01-01"), d("2026-10-31")).unwrap()
+            ))
+        );
+        // 非期间/无明确起止的累计行不猜
+        assert!(parse_period_row("累计", None).is_none());
+        assert!(parse_period_row("注1：说明段", None).is_none());
+        assert!(parse_period_row("2026年10-1月", None).is_none(), "起>止");
+        assert!(parse_period_row("2026年1-13月", None).is_none(), "月份越界");
+    }
+
+    #[test]
+    fn unit_suffix_stripping() {
+        // 半角/全角括号单位后缀
+        assert_eq!(strip_unit_suffix("总销售额(元)"), "总销售额");
+        assert_eq!(strip_unit_suffix("结算收益（元）"), "结算收益");
+        assert_eq!(strip_unit_suffix("单位时间附加值(元/h)"), "单位时间附加值");
+        assert_eq!(strip_unit_suffix("费用构成比(经营费用/销售)"), "费用构成比");
+        assert_eq!(
+            strip_unit_suffix(" 人工费（元） "),
+            "人工费",
+            "首尾空白清理"
+        );
+        // 无后缀 → 原文 trim（不带后缀的指标列同样可精确匹配）
+        assert_eq!(strip_unit_suffix("结算收益"), "结算收益");
+        // 嵌套括号/纯括号/剥后为空 → 不剥（精确匹配失败 → 不是指标列）
+        assert_eq!(strip_unit_suffix("a(b(c))"), "a(b(c))");
+        assert_eq!(strip_unit_suffix("(元)"), "(元)");
     }
 }

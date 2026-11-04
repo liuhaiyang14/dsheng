@@ -740,7 +740,7 @@ fn empty_as_zero_requires_explicit_confirmation_and_snapshots_coverage() {
     std::fs::remove_dir_all(&env.dir).ok();
 }
 
-// ---- F4：推移表（合同方向）期间列命中；真实转置形态按 generic 处理 ----
+// ---- F4：推移表（合同方向）期间列命中；转置布局（§4.3 2026-11-04 增量） ----
 
 /// 合同 §4.3 方向的推移表：科目行 × 期间列（YYYY-MM / YYYY-MM-DD）。
 fn trend_sheet() -> String {
@@ -772,7 +772,9 @@ fn trend_sheet() -> String {
     sheet_xml(&rows, &[])
 }
 
-/// 真实企业形态（转置）：A 列期间值（YYYY-MM 数据行）、B 列起为指标名。
+/// 真实企业形态（转置，§4.3 2026-11-04 用户批准增量）：首行 A 列 period 表头
+/// （月份）、B 列起指标名（带/不带单位后缀）、数据行 A 列 YYYY-MM／YYYY年M月、
+/// 含 `2026年1-10月累计` 行与说明行；`—` 占位与显式 0 混布。
 fn transposed_trend_sheet() -> String {
     use C::*;
     let rows = vec![
@@ -783,6 +785,7 @@ fn transposed_trend_sheet() -> String {
                 T("B1", "总销售额(元)"),
                 T("C1", "结算收益(元)"),
                 T("D1", "人工费(元)"),
+                T("E1", "单位时间附加值"),
             ],
         ),
         (
@@ -792,15 +795,17 @@ fn transposed_trend_sheet() -> String {
                 N("B2", "20"),
                 N("C2", "3.5"),
                 N("D2", "9"),
+                N("E2", "1.5"),
             ],
         ),
         (
             3,
             vec![
-                T("A3", "2025-08"),
+                T("A3", "2025年8月"),
                 N("B3", "30"),
                 N("C3", "4.5"),
                 N("D3", "9"),
+                N("E3", "2.5"),
             ],
         ),
         (
@@ -810,6 +815,7 @@ fn transposed_trend_sheet() -> String {
                 N("B4", "40"),
                 N("C4", "5.5"),
                 N("D4", "9"),
+                T("E4", "—"),
             ],
         ),
         (
@@ -819,8 +825,32 @@ fn transposed_trend_sheet() -> String {
                 N("B5", "50"),
                 N("C5", "-6.5"),
                 N("D5", "9"),
+                N("E5", "0"),
             ],
         ),
+        (
+            6,
+            vec![
+                T("A6", "2026年1-10月累计"),
+                N("B6", "270"),
+                N("C6", "15"),
+                N("D6", "36"),
+                Blank("E6"),
+            ],
+        ),
+        (7, vec![T("A7", "注1：说明段，不是数据行")]),
+    ];
+    sheet_xml(&rows, &[])
+}
+
+/// 仅总销售额一列的转置推移表（与核算表同 metric 同期的候选/冲突用）。
+fn transposed_trend_sales_only_sheet(oct_value: &'static str) -> String {
+    use C::*;
+    let rows = vec![
+        (1, vec![T("A1", "月份"), T("B1", "总销售额(元)")]),
+        (2, vec![T("A2", "2025-07"), N("B2", "20")]),
+        (3, vec![T("A3", "2026-09"), N("B3", "40")]),
+        (4, vec![T("A4", "2026-10"), N("B4", oct_value)]),
     ];
     sheet_xml(&rows, &[])
 }
@@ -886,12 +916,136 @@ fn contract_orientation_trend_sheet_observed_by_period_columns() {
 }
 
 #[test]
-fn real_transposed_trend_layout_stays_generic_table() {
+fn transposed_trend_hits_trend_and_observes_periods_as_rows() {
     let env = Env::with_files(
-        "hard-f4-generic",
+        "hard-f4-transposed",
         &[(
             "合成转置推移表.xlsx",
             vec![("推移表", transposed_trend_sheet())],
+        )],
+    );
+    let scan = env.scan.to_string_lossy().to_string();
+    // 转置锚点命中 trend（note 显示 trend 而非 generic_table）
+    let (out, code) = run(&[
+        "scan",
+        "--db",
+        &env.db,
+        "--workspace",
+        &env.workspace,
+        "--dir",
+        &scan,
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out["data"]["files"][0]["note"]
+            .as_str()
+            .unwrap()
+            .contains("推移表:trend"),
+        "scan note: {}",
+        out["data"]["files"][0]["note"]
+    );
+    let (out, code) = run(&[
+        "analyze",
+        "--db",
+        &env.db,
+        "--workspace",
+        &env.workspace,
+        "--dir",
+        &scan,
+        "--from",
+        "2026-10-01",
+        "--to",
+        "2026-10-31",
+        "--grain",
+        "month",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    let data = &out["data"];
+    // 窗口内只有 2026-10 月行；累计行（2026-01-01/2026-10-31）不与月行相加
+    assert_eq!(actual(data, "sales_net").as_deref(), Some("50"));
+    assert_eq!(
+        actual(data, "settlement_income").as_deref(),
+        Some("-6.5"),
+        "负数原样"
+    );
+    assert_eq!(actual(data, "labor_cost").as_deref(), Some("9"));
+    assert_eq!(
+        actual(data, "value_added_per_hour").as_deref(),
+        Some("0"),
+        "显式 0 保留（真 0 不是缺失）"
+    );
+    // 序列：期间行→桶；累计行是独立范围桶（BTreeMap 键序）；说明行不是数据
+    let series = data["series"].as_array().unwrap();
+    let sales = series
+        .iter()
+        .find(|s| s["metric_key"] == "sales_net")
+        .unwrap();
+    assert_eq!(
+        sales["buckets"],
+        json!([
+            "2025-07-01/2025-07-31",
+            "2025-08-01/2025-08-31",
+            "2026-01-01/2026-10-31",
+            "2026-09-01/2026-09-30",
+            "2026-10-01/2026-10-31",
+        ])
+    );
+    assert_eq!(sales["actual"], json!(["20", "30", "270", "40", "50"]));
+    // `—` 占位与空格=missing：对应桶不出值（不猜 0）
+    let vah = series
+        .iter()
+        .find(|s| s["metric_key"] == "value_added_per_hour")
+        .unwrap();
+    assert_eq!(
+        vah["buckets"],
+        json!([
+            "2025-07-01/2025-07-31",
+            "2025-08-01/2025-08-31",
+            "2026-10-01/2026-10-31",
+        ])
+    );
+    assert_eq!(vah["actual"], json!(["1.5", "2.5", "0"]));
+    // 证据坐标按转置数据格定位（行×指标列：B2..B5 月行、B6 累计行）
+    let sales_metric = metric(data, "sales_net").unwrap();
+    let evidence: Vec<&str> = sales_metric["mom"]["evidence_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    let label = "cell:合成转置推移表.xlsx:推移表";
+    assert_eq!(
+        evidence,
+        vec![
+            format!("{label}:B2"),
+            format!("{label}:B3"),
+            format!("{label}:B6"), // 累计行（期间键序 2026-01-01/2026-10-31）
+            format!("{label}:B4"),
+            format!("{label}:B5"),
+        ]
+    );
+    std::fs::remove_dir_all(&env.dir).ok();
+}
+
+#[test]
+fn transposed_trend_with_non_metric_column_falls_back_to_generic_table() {
+    // §4.3 增量回退规则：任一列（含空表头但有数据的列）无法解析为指标名
+    // → 整表 generic_table，不猜转置语义
+    use C::*;
+    let rows = vec![
+        (
+            1,
+            vec![T("A1", "月份"), T("B1", "总销售额(元)"), T("C1", "备注")],
+        ),
+        (2, vec![T("A2", "2026-10"), N("B2", "50"), T("C2", "文本")]),
+    ];
+    let env = Env::with_files(
+        "hard-f4-fallback",
+        &[(
+            "合成转置推移表.xlsx",
+            vec![("推移表", sheet_xml(&rows, &[]))],
         )],
     );
     let scan = env.scan.to_string_lossy().to_string();
@@ -911,10 +1065,9 @@ fn real_transposed_trend_layout_stays_generic_table() {
             .as_str()
             .unwrap()
             .contains("推移表:generic_table"),
-        "转置形态不满足合同 trend 锚点（科目行×期间列），按 generic：{}",
+        "非指标列 → 整表回退：{}",
         out["data"]["files"][0]["note"]
     );
-    // 不产生观察（不猜转置语义）
     let (out, code) = run(&[
         "analyze",
         "--db",
@@ -924,7 +1077,7 @@ fn real_transposed_trend_layout_stays_generic_table() {
         "--dir",
         &scan,
         "--from",
-        "2026-09-01",
+        "2026-10-01",
         "--to",
         "2026-10-31",
         "--grain",
@@ -933,5 +1086,70 @@ fn real_transposed_trend_layout_stays_generic_table() {
     ]);
     assert_eq!(code, 0, "{out}");
     assert!(out["data"]["metrics"].as_array().unwrap().is_empty());
+    std::fs::remove_dir_all(&env.dir).ok();
+}
+
+#[test]
+fn transposed_trend_and_accounting_same_metric_same_period_candidates() {
+    // 同 metric（sales_net 别名=总销售额）同期（2026-10）多来源 → 既有候选规则：
+    // 同值去重（一个经营值，不重复相加）；不同值 → source_conflicts（不改冲突规则）
+    let files_dedup = [
+        (FILE_LABEL, vec![("核算表", accounting_sheet())]),
+        (
+            "合成转置推移表.xlsx",
+            vec![("推移表", transposed_trend_sales_only_sheet("123456.78"))],
+        ),
+    ];
+    let env = Env::with_files("hard-f4-dedup", &files_dedup);
+    let (out, code) = env.analyze(None);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(
+        actual(&out["data"], "sales_net").as_deref(),
+        Some("123456.78"),
+        "同值候选去重，不与核算表观察相加成 246913.56"
+    );
+    std::fs::remove_dir_all(&env.dir).ok();
+
+    // 不同值：经营值 null，双方保留为 source_conflicts（用户选主来源）
+    let files_conflict = [
+        (FILE_LABEL, vec![("核算表", accounting_sheet())]),
+        (
+            "合成转置推移表.xlsx",
+            vec![("推移表", transposed_trend_sales_only_sheet("1"))],
+        ),
+    ];
+    let env = Env::with_files("hard-f4-conflict", &files_conflict);
+    let (out, code) = env.analyze(None);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(
+        actual(&out["data"], "sales_net"),
+        None,
+        "冲突未解决时经营值 null"
+    );
+    let conn = rusqlite::Connection::open(&env.db).unwrap();
+    let (period, cands_raw): (String, String) = conn
+        .query_row(
+            "SELECT period_from || '/' || period_to, candidate_values_json
+             FROM source_conflicts",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(period, "2026-10-01/2026-10-31");
+    let cands: Value = serde_json::from_str(&cands_raw).unwrap();
+    let cands = cands.as_array().unwrap();
+    assert_eq!(cands.len(), 2, "双方候选均保留");
+    let mut evidence: Vec<&str> = cands
+        .iter()
+        .map(|c| c["evidence_id"].as_str().unwrap())
+        .collect();
+    evidence.sort_unstable();
+    assert_eq!(
+        evidence,
+        vec![
+            "cell:合成核算表.xlsx:核算表:H12",
+            "cell:合成转置推移表.xlsx:推移表:B4",
+        ]
+    );
     std::fs::remove_dir_all(&env.dir).ok();
 }
