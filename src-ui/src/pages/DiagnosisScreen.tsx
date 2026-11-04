@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
+import { GenerationProgressPanel } from '../components/GenerationProgressPanel';
 import { PreviewModal } from '../components/PreviewModal';
 import {
   CONFIDENCE_LABELS,
@@ -75,6 +76,8 @@ export function DiagnosisScreen() {
   const [supplement, setSupplement] = useState('');
   const [pending, setPending] = useState<PendingPreview | null>(null);
   const [busy, setBusy] = useState(false);
+  /** confirm 发送进行中（进度面板渲染窗口；终态或异常即关闭）。 */
+  const [sending, setSending] = useState(false);
   const [stoppedLocal, setStoppedLocal] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -162,9 +165,20 @@ export function DiagnosisScreen() {
     }
   };
 
+  const cancelGeneration = async (attemptId: string) => {
+    if (!app.client || !app.activeWorkspaceId) return;
+    try {
+      await app.client.generationCancel(app.activeWorkspaceId, attemptId);
+      setNotice('已请求取消本次生成（仅本地取消；不保证远端停止计费，迟到数据不提交）。');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const confirmPending = async () => {
     if (!app.client || !pending) return;
     setBusy(true);
+    setSending(true);
     try {
       if (pending.kind === 'generate') {
         await app.client.diagnosisGenerateConfirm(pending.preview.confirmation_id);
@@ -178,6 +192,7 @@ export function DiagnosisScreen() {
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     } finally {
+      setSending(false);
       setBusy(false);
       setPending(null);
     }
@@ -469,6 +484,12 @@ export function DiagnosisScreen() {
       <div className="footer-note">
         报告独立保存到当前企业档案；本页不调用任务生成，任务单页亦不进行根因追问。
       </div>
+
+      <GenerationProgressPanel
+        active={sending}
+        title="诊断生成发送中"
+        onCancel={(attemptId) => void cancelGeneration(attemptId)}
+      />
 
       {pending ? (
         <PreviewModal

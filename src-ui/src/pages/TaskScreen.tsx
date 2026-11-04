@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
+import { GenerationProgressPanel } from '../components/GenerationProgressPanel';
 import { PreviewModal } from '../components/PreviewModal';
 import { TaskDrawer } from '../components/TaskDrawer';
 import { TimelineBoard } from '../components/TimelineBoard';
@@ -49,6 +50,8 @@ export function TaskScreen() {
   const [candidate, setCandidate] = useState<TaskCandidateView | null>(null);
   const [applySelection, setApplySelection] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  /** confirm 发送进行中（进度面板渲染窗口；终态或异常即关闭）。 */
+  const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [timelineGrain, setTimelineGrain] = useState<Cadence>('day');
   const [timelineFrom, setTimelineFrom] = useState('');
@@ -146,9 +149,20 @@ export function TaskScreen() {
   };
 
   /** 显式按钮第三步：确认发送 → 候选（演示层）。 */
+  const cancelGeneration = async (attemptId: string) => {
+    if (!app.client || !app.activeWorkspaceId) return;
+    try {
+      await app.client.generationCancel(app.activeWorkspaceId, attemptId);
+      setNotice('已请求取消本次生成（仅本地取消；不保证远端停止计费，迟到数据不提交）。');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const confirmSend = async () => {
     if (!app.client || !preview) return;
     setBusy(true);
+    setSending(true);
     try {
       const c = await app.client.taskGenerateConfirm(preview.confirmation_id);
       setCandidate(c);
@@ -158,6 +172,7 @@ export function TaskScreen() {
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     } finally {
+      setSending(false);
       setBusy(false);
     }
   };
@@ -556,7 +571,13 @@ export function TaskScreen() {
       ) : null}
 
       {preview ? (
-        <PreviewModal
+        <>
+          <GenerationProgressPanel
+            active={sending}
+            title="任务生成发送中"
+            onCancel={(attemptId) => void cancelGeneration(attemptId)}
+          />
+          <PreviewModal
           preview={preview}
           title="生成任务单 · 发送预览"
           confirmLabel="确认生成任务单（发送 1 次请求）"
@@ -564,6 +585,7 @@ export function TaskScreen() {
           onCancel={() => setPreview(null)}
           busy={busy}
         />
+        </>
       ) : null}
 
       {selectedTask && app.client && app.activeWorkspace ? (

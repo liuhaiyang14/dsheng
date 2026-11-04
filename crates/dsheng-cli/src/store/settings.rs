@@ -218,24 +218,25 @@ fn map_provider_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value
             "protocol": "chat_completions",
             "base_url": r.get::<_, String>(4)?,
             "model": r.get::<_, String>(5)?,
-            "stream": false,
+            "stream": r.get::<_, i64>(6)? == 1,
             "timeouts": {
-                "connect_seconds": r.get::<_, i64>(7)?,
-                "response_seconds": r.get::<_, i64>(8)?,
-                "total_seconds": r.get::<_, i64>(9)?,
+                "connect_seconds": r.get::<_, i64>(8)?,
+                "response_seconds": r.get::<_, i64>(9)?,
+                "total_seconds": r.get::<_, i64>(10)?,
             },
             "budget": {
-                "context_window_tokens": r.get::<_, i64>(10)?,
-                "output_reserve_tokens": r.get::<_, i64>(11)?,
+                "context_window_tokens": r.get::<_, i64>(11)?,
+                "output_reserve_tokens": r.get::<_, i64>(12)?,
             },
         },
-        "key_present": r.get::<_, Option<String>>(6)?.is_some(),
-        "created_at": r.get::<_, String>(12)?,
-        "updated_at": r.get::<_, String>(13)?,
+        "key_present": r.get::<_, Option<String>>(7)?.is_some(),
+        "created_at": r.get::<_, String>(13)?,
+        "updated_at": r.get::<_, String>(14)?,
     }))
 }
 
-const PROVIDER_COLS: &str = "provider_id, workspace_id, revision, name, base_url, model, api_key,
+const PROVIDER_COLS: &str =
+    "provider_id, workspace_id, revision, name, base_url, model, stream, api_key,
        connect_seconds, response_seconds, total_seconds, context_window_tokens,
        output_reserve_tokens, created_at, updated_at";
 
@@ -425,14 +426,15 @@ fn apply_in_tx(
                                 base_url, model, stream, api_key, connect_seconds, response_seconds,
                                 total_seconds, context_window_tokens, output_reserve_tokens,
                                 created_at, updated_at)
-                         VALUES (?1, ?2, 1, ?3, 'chat_completions', ?4, ?5, 0, ?6, ?7, ?8, ?9,
-                                 ?10, ?11, ?12, ?12)",
+                         VALUES (?1, ?2, 1, ?3, 'chat_completions', ?4, ?5, ?6, ?7, ?8, ?9,
+                                 ?10, ?11, ?12, ?13, ?13)",
                         params![
                             id.to_string(),
                             workspace_id.to_string(),
                             name,
                             config.base_url,
                             config.model,
+                            config.stream as i64,
                             key_value,
                             config.timeouts.connect_seconds as i64,
                             config.timeouts.response_seconds as i64,
@@ -489,16 +491,17 @@ fn apply_in_tx(
                     };
                     tx.execute(
                         "UPDATE providers SET revision = revision + 1, name = ?2, base_url = ?3,
-                                model = ?4, connect_seconds = ?5, response_seconds = ?6,
-                                total_seconds = ?7, context_window_tokens = ?8,
-                                output_reserve_tokens = ?9, updated_at = ?10,
-                                api_key = COALESCE(?11, api_key)
+                                model = ?4, stream = ?5, connect_seconds = ?6, response_seconds = ?7,
+                                total_seconds = ?8, context_window_tokens = ?9,
+                                output_reserve_tokens = ?10, updated_at = ?11,
+                                api_key = COALESCE(?12, api_key)
                          WHERE provider_id = ?1",
                         params![
                             id.to_string(),
                             name,
                             config.base_url,
                             config.model,
+                            config.stream as i64,
                             config.timeouts.connect_seconds as i64,
                             config.timeouts.response_seconds as i64,
                             config.timeouts.total_seconds as i64,

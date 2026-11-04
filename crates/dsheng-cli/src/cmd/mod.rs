@@ -16,6 +16,16 @@ use crate::error::{CliError, CliResult};
 use dsheng_core::contracts::cli::CliErrorCode;
 
 pub fn dispatch(command: cli::Command, db: Option<&String>) -> CliResult<serde_json::Value> {
+    dispatch_with_progress(command, db, None)
+}
+
+/// 带进度 sink 的派发（生成类命令流式进度消费端注入；其余命令忽略）。
+/// None＝生成发送路径默认 CLI stderr 节流 sink。
+pub fn dispatch_with_progress(
+    command: cli::Command,
+    db: Option<&String>,
+    progress: Option<crate::store::generation::ProgressSink>,
+) -> CliResult<serde_json::Value> {
     match command {
         cli::Command::Workspace { action } => settings_cmd::workspace(action, db),
         cli::Command::Provider { action } => settings_cmd::provider(action, db),
@@ -45,9 +55,11 @@ pub fn dispatch(command: cli::Command, db: Option<&String>) -> CliResult<serde_j
             db,
         ),
         cli::Command::Analysis { action } => data_cmd::analysis(action, db),
-        cli::Command::Diagnosis { action } => diagnosis_cmd::dispatch(action, db),
+        cli::Command::Diagnosis { action } => {
+            diagnosis_cmd::dispatch_with_progress(action, db, progress)
+        }
         cli::Command::Generation { action } => generation_cmd::dispatch(action, db),
-        cli::Command::Task { action } => task_cmd::dispatch(action, db),
+        cli::Command::Task { action } => task_cmd::dispatch_with_progress(action, db, progress),
         cli::Command::History { action } => history_cmd::dispatch(action, db),
         cli::Command::Export(args) => export_cmd::run(args, db),
         cli::Command::Template { action } => export_cmd::template(action, db),

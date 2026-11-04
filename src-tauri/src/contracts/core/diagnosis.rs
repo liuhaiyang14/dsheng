@@ -8,21 +8,24 @@
 //! 拒绝（INPUT_CONTRACT_INVALID）。
 
 use super::{
-    diagnosis_cmd, dispatch, envelope, export_doc_format_of, framework_of, opt_str, req_str,
-    str_array,
+    diagnosis_cmd, dispatch, dispatch_with_progress, envelope, export_doc_format_of, framework_of,
+    opt_str, req_str, str_array,
 };
 use crate::contracts::env::{ConfirmationKind, DesktopEnv};
 use dsheng_cli::cli as args;
 use dsheng_cli::cmd::generation_cmd::{self, AnswerSource};
 use dsheng_cli::error::CliResult;
+use dsheng_cli::store::generation::ProgressSink;
 use serde_json::Value;
 
 /// diagnosis generate（preview=Gate::Preview / confirm=Gate::Send 重建）。
+/// `progress`：流式进度 sink（confirm 注入事件桥；preview 传 None）。
 fn diagnosis_generate_call(
     env: &DesktopEnv,
     request: &Value,
     confirmation_id: Option<String>,
     confirm_send: bool,
+    progress: Option<ProgressSink>,
 ) -> CliResult<Value> {
     let workspace = opt_str(request, "workspace_id");
     let run = req_str(request, "run_id")?;
@@ -32,7 +35,7 @@ fn diagnosis_generate_call(
     // UI/合同键名 evidence_ids（复审轮 2 P1-1 修复；仅 UI 请求路径使用本函数）
     let evidence = str_array(request, "evidence_ids")?;
     let provider = opt_str(request, "provider_id");
-    dispatch(
+    dispatch_with_progress(
         env,
         diagnosis_cmd(args::DiagnosisAction::Generate {
             workspace,
@@ -46,12 +49,13 @@ fn diagnosis_generate_call(
             confirmation_id,
             confirm_send,
         }),
+        progress,
     )
 }
 
 /// 预览（无 flag）：本地组装 + confirmation 记录（TTL 600s）。
 pub fn diagnosis_generate_preview(env: &DesktopEnv, request: Value) -> Value {
-    let result = diagnosis_generate_call(env, &request, None, false);
+    let result = diagnosis_generate_call(env, &request, None, false, None);
     if let Ok(data) = &result {
         env.remember_confirmation(ConfirmationKind::DiagnosisGenerate, &request, data);
     }
@@ -59,11 +63,15 @@ pub fn diagnosis_generate_preview(env: &DesktopEnv, request: Value) -> Value {
 }
 
 /// 确认发送（双门禁）：原始请求取自本会话 preview 备忘。
-pub fn diagnosis_generate_confirm(env: &DesktopEnv, confirmation_id: String) -> Value {
+pub fn diagnosis_generate_confirm(
+    env: &DesktopEnv,
+    confirmation_id: String,
+    progress: Option<ProgressSink>,
+) -> Value {
     envelope((|| {
         let request =
             env.lookup_confirmation(ConfirmationKind::DiagnosisGenerate, &confirmation_id)?;
-        diagnosis_generate_call(env, &request, Some(confirmation_id), true)
+        diagnosis_generate_call(env, &request, Some(confirmation_id), true, progress)
     })())
 }
 
@@ -73,13 +81,14 @@ fn diagnosis_continue_call(
     request: &Value,
     confirmation_id: Option<String>,
     confirm_send: bool,
+    progress: Option<ProgressSink>,
 ) -> CliResult<Value> {
     let workspace = opt_str(request, "workspace_id");
     let session = req_str(request, "session_id")?;
     let answer = req_str(request, "supplement_fact")?;
     let provider = opt_str(request, "provider_id");
     let db = env.db_arg()?;
-    generation_cmd::diagnosis_continue_value(
+    generation_cmd::diagnosis_continue_value_with_progress(
         workspace,
         session,
         AnswerSource::Inline(answer),
@@ -88,12 +97,13 @@ fn diagnosis_continue_call(
         confirmation_id,
         confirm_send,
         Some(&db),
+        progress,
     )
 }
 
 /// 继续诊断预览。
 pub fn diagnosis_continue_preview(env: &DesktopEnv, request: Value) -> Value {
-    let result = diagnosis_continue_call(env, &request, None, false);
+    let result = diagnosis_continue_call(env, &request, None, false, None);
     if let Ok(data) = &result {
         env.remember_confirmation(ConfirmationKind::DiagnosisContinue, &request, data);
     }
@@ -101,11 +111,15 @@ pub fn diagnosis_continue_preview(env: &DesktopEnv, request: Value) -> Value {
 }
 
 /// 继续诊断确认发送。
-pub fn diagnosis_continue_confirm(env: &DesktopEnv, confirmation_id: String) -> Value {
+pub fn diagnosis_continue_confirm(
+    env: &DesktopEnv,
+    confirmation_id: String,
+    progress: Option<ProgressSink>,
+) -> Value {
     envelope((|| {
         let request =
             env.lookup_confirmation(ConfirmationKind::DiagnosisContinue, &confirmation_id)?;
-        diagnosis_continue_call(env, &request, Some(confirmation_id), true)
+        diagnosis_continue_call(env, &request, Some(confirmation_id), true, progress)
     })())
 }
 

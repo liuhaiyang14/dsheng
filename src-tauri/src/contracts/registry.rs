@@ -15,7 +15,7 @@ pub struct CommandSpec {
     pub args: &'static [&'static str],
 }
 
-/// UI DshengClient 全部命令（31 条 + ping 连通性探测在 mod.rs 单列）。
+/// UI DshengClient 全部命令（32 条 + ping 连通性探测在 mod.rs 单列）。
 pub const COMMANDS: &[CommandSpec] = &[
     // ---- workspace / period ----
     CommandSpec {
@@ -66,7 +66,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     // ---- 数据源 / 经营分析 ----
     CommandSpec {
         name: "template_download",
-        args: &["out_path"],
+        args: &["outPath"],
     },
     CommandSpec {
         name: "scan",
@@ -108,6 +108,11 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "diagnosis_export",
         args: &["workspaceId", "reportId", "format", "outPath"],
+    },
+    // ---- 生成（取消；流式进度走 generation://progress 事件，非 command） ----
+    CommandSpec {
+        name: "generation_cancel",
+        args: &["workspaceId", "attemptId"],
     },
     // ---- 任务生成 / 合并 ----
     CommandSpec {
