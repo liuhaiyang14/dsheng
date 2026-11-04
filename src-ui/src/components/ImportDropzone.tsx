@@ -48,6 +48,20 @@ function tauriDialog(): TauriDialogApi | null {
   return d && typeof d.open === 'function' ? d : null;
 }
 
+/** 直连插件命令（绕过全局 API 桥；2026-11-04 真机问题：选择器能开但返回值不回 JS）。 */
+async function directDialogOpen(options: {
+  directory: boolean;
+  title?: string;
+}): Promise<string | string[] | null | undefined> {
+  const w = window as unknown as {
+    __TAURI__?: { core?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> } };
+  };
+  const invoke = w.__TAURI__?.core?.invoke;
+  if (typeof invoke !== 'function') return undefined; // 无桥可用（交给下一层）
+  const r = await invoke('plugin:dialog|open', { options });
+  return r as string | string[] | null;
+}
+
 function envCheck(): EnvCheck {
   const w = window as unknown as { __TAURI__?: unknown };
   return {
@@ -60,6 +74,8 @@ function envCheck(): EnvCheck {
 export function ImportDropzone(props: {
   busy: boolean;
   onPath: (path: string, note?: string) => void;
+  /** 诊断行回调：把路径获取每一步的结果实时显示给用户/开发。 */
+  onDiag?: (line: string) => void;
 }) {
   const [hover, setHover] = useState(false);
   const [manual, setManual] = useState('');
@@ -122,19 +138,38 @@ export function ImportDropzone(props: {
 
   const pickDirectory = async () => {
     setError(null);
+    // 第 1 层：直连插件命令（最低层，返回值不经全局桥）
+    try {
+      const r1 = await directDialogOpen({ directory: true, title: '选择经营数据目录' });
+      if (typeof r1 === 'string' && r1) {
+        props.onDiag?.(`目录选择（直连）：${r1}`);
+        props.onPath(r1);
+        return;
+      }
+      if (r1 === null) {
+        props.onDiag?.('目录选择（直连）：返回 null（用户取消或桥接空返回）');
+        return;
+      }
+    } catch (err) {
+      props.onDiag?.(`目录选择（直连）失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+    // 第 2 层：全局桥 dialog.open
     const dialog = tauriDialog();
     if (dialog) {
       try {
         const dir = await dialog.open({ directory: true, title: '选择经营数据目录' });
-        if (typeof dir === 'string' && dir) props.onPath(dir);
+        props.onDiag?.(`目录选择（全局桥）：${JSON.stringify(dir)}`);
+        if (typeof dir === 'string' && dir) {
+          props.onPath(dir);
+          return;
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        props.onDiag?.(`目录选择（全局桥）失败：${err instanceof Error ? err.message : String(err)}`);
       }
-      return;
     }
-    // 退路提示：WKWebView 不支持 window.prompt，请用下方手动路径输入
+    // 第 3 层：手动路径输入
     setManualMode(true);
-    setError('系统目录选择器不可用（见环境自检），请在下方手动输入目录路径。');
+    setError('系统选择器返回值未达界面（见诊断行）；请在下方手动输入目录路径后点「解析此目录」。');
   };
 
   const env = envCheck();

@@ -12,6 +12,7 @@ export function SourceScreen() {
   const [scanBusy, setScanBusy] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [diag, setDiag] = useState<string[]>([]);
   const hasData = workspaceHasData(app.data);
   const workspaceName = app.activeWorkspace?.name ?? '当前企业';
 
@@ -37,6 +38,43 @@ export function SourceScreen() {
 
   const scan = app.data.scan;
 
+  const pushDiag = (line: string) =>
+    setDiag((prev) => [...prev.slice(-6), `${new Date().toLocaleTimeString()} ${line}`]);
+
+  /** 自检：逐项直测核心命令并显示原始返回（一次性定位桥接问题）。 */
+  const runSelfTest = async () => {
+    setDiag([]);
+    pushDiag('自检开始…');
+    const w = window as unknown as {
+      __TAURI__?: { core?: { invoke?: (cmd: string, args?: unknown) => Promise<unknown> } };
+    };
+    const invoke = w.__TAURI__?.core?.invoke;
+    if (!invoke) {
+      pushDiag('✗ __TAURI__.core.invoke 不存在（未连接核心）');
+      return;
+    }
+    pushDiag('✓ __TAURI__.core.invoke 存在');
+    try {
+      const r = await invoke('ping');
+      pushDiag(`ping → ${JSON.stringify(r).slice(0, 80)}`);
+    } catch (e) {
+      pushDiag(`ping 失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    try {
+      const r = await invoke('workspace_list');
+      pushDiag(`workspace_list → ok=${JSON.stringify((r as { ok?: boolean })?.ok)}`);
+    } catch (e) {
+      pushDiag(`workspace_list 失败: ${String(e).slice(0, 100)}`);
+    }
+    try {
+      const r = await invoke('template_download', { outPath: '/tmp/dsheng-selftest-template.zip' });
+      pushDiag(`template_download → ${JSON.stringify(r).slice(0, 100)}`);
+    } catch (e) {
+      pushDiag(`template_download 失败: ${String(e).slice(0, 120)}`);
+    }
+    pushDiag('自检完成（以上为原始结果）');
+  };
+
   /** 解析目录（本地扫描，无 Provider 调用）。 */
   const runScan = async (path: string, note?: string) => {
     if (!app.client || !app.activeWorkspaceId) {
@@ -45,9 +83,11 @@ export function SourceScreen() {
     }
     setScanBusy(true);
     setScanError(null);
-    setScanNote(note ?? null);
+    setScanNote(note ?? `已选择：${path}；本地解析中…`);
+    pushDiag(`scan 调用：workspace=${app.activeWorkspaceId} dir=${path}`);
     try {
-      await app.client.scan(app.activeWorkspaceId, path);
+      const summary = await app.client.scan(app.activeWorkspaceId, path);
+      pushDiag(`scan 返回：${summary.files.length} 文件 / ${summary.total_rows} 行`);
       await app.reloadWorkspaceData();
     } catch (err) {
       setScanError(err instanceof Error ? err.message : String(err));
@@ -130,7 +170,26 @@ export function SourceScreen() {
 
       {app.activeWorkspace ? (
         <>
-          <ImportDropzone busy={scanBusy} onPath={(path, note) => void runScan(path, note)} />
+          <ImportDropzone
+            busy={scanBusy}
+            onPath={(path, note) => void runScan(path, note)}
+            onDiag={pushDiag}
+          />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0' }}>
+            <button type="button" className="outline" onClick={() => void runSelfTest()} data-testid="self-test-button">
+              桥接自检
+            </button>
+            {diag.length > 0 ? (
+              <div
+                style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.9, flex: 1 }}
+                data-testid="diag-lines"
+              >
+                {diag.map((l, i) => (
+                  <div key={i}>{l}</div>
+                ))}
+              </div>
+            ) : null}
+          </div>
           {scanNote ? (
             <div className="notice" data-testid="scan-note" style={{ marginTop: 12 }}>
               <b>导入说明</b>
