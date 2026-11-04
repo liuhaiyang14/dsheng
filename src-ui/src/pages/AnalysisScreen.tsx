@@ -272,7 +272,7 @@ export function AnalysisScreen() {
             ))}
           <div className="root-card">
             <h4>环比／同比说明</h4>
-            <p>
+            <ul className="compare-notes">
               {detail.metrics
                 .filter(
                   (m) => m.mom?.availability_status !== 'available' || m.yoy?.availability_status !== 'available',
@@ -285,10 +285,17 @@ export function AnalysisScreen() {
                   if (m.yoy != null && m.yoy.availability_status !== 'available') {
                     parts.push(`同比${REASON_LABELS[m.yoy.reason ?? 'missing_base'] ?? '缺少可比基期'}`);
                   }
-                  return `${m.metric_label}：${parts.length ? parts.join('，') : '无可比基期'}`;
-                })
-                .join('；') || '本期全部指标可比。'}
-            </p>
+                  return (
+                    <li key={m.metric_id}>
+                      <b>{m.metric_label}</b>
+                      <span>{parts.length ? parts.join('；') : '无可比基期'}</span>
+                    </li>
+                  );
+                })}
+              {detail.metrics.every(
+                (m) => m.mom?.availability_status === 'available' && m.yoy?.availability_status === 'available',
+              ) ? <li>本期全部指标可比。</li> : null}
+            </ul>
           </div>
         </div>
       </div>

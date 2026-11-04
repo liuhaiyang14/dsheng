@@ -491,3 +491,13 @@ tr:last-child td { border-bottom: 0; }
   border-top: 1px solid rgba(255,255,255,.10);
   width: 100%; color: #b8a77e; font-size: 10.5px; letter-spacing: .04em;
 }
+
+/* 环比/同比说明列表 */
+.compare-notes { list-style: none; margin: 6px 0 0; padding: 0; }
+.compare-notes li {
+  display: flex; gap: 10px; padding: 4px 0;
+  border-bottom: 1px dashed var(--line); font-size: 12px; line-height: 1.7;
+}
+.compare-notes li:last-child { border-bottom: none; }
+.compare-notes b { min-width: 96px; color: var(--ink); font-weight: 600; flex-shrink: 0; }
+.compare-notes span { color: var(--muted); }
