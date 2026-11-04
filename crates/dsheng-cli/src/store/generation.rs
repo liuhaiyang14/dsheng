@@ -160,43 +160,13 @@ impl GenerationStore for SqliteGenerationStore<'_> {
             match existing {
                 Some(id) => id,
                 None => {
-                    let id = Uuid::new_v4().to_string();
-                    let framework = if binding.workflow == Workflow::Diagnosis {
-                        binding
-                            .report_id
-                            .map(|_| "'5why'")
-                            .unwrap_or("NULL")
-                            .to_string()
-                    } else {
-                        "NULL".into()
-                    };
-                    // 报告路径的 framework 需要真实值；此分支只覆盖缺会话兜底
-                    let _ = framework;
-                    tx.execute(
-                        "INSERT INTO generation_sessions (session_id, workspace_id, run_id,
-                                analysis_revision_no, analysis_input_fingerprint,
-                                generation_input_fingerprint, workflow, framework, state,
-                                prompt_version, schema_version, input_schema_version,
-                                context_policy_version, source_manifest_hash, created_at, updated_at)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 'dispatched', ?8, ?9, '2', ?10,
-                                 ?11, ?12, ?12)",
-                        params![
-                            id,
-                            binding.workspace_id.to_string(),
-                            binding.run_id.map(|u| u.to_string()).unwrap_or_default(),
-                            binding.analysis_revision_no.unwrap_or(1) as i64,
-                            binding.analysis_input_fingerprint,
-                            binding.generation_input_fingerprint,
-                            serde_json::to_value(binding.workflow).unwrap().as_str().unwrap(),
-                            binding.prompt_version,
-                            binding.schema_version,
-                            binding.context_policy_version,
-                            binding.source_manifest_hash,
-                            now_iso()
-                        ],
-                    )
-                    .map_err(CliError::from)?;
-                    id
+                    // 预览应已建会话；此兜底仅防御异常路径。diagnosis 的 CHECK
+                    // 要求非空 framework，故从最近同指纹确认的快照推导不出时
+                    // 直接报错而非写入 NULL。
+                    return Err(CliError::new(
+                        CliErrorCode::LocalSaveFailed,
+                        "generation session 缺失（预览未建立会话；须重新预览）",
+                    ));
                 }
             }
         };
@@ -1095,6 +1065,24 @@ fn session_id_of(conn: &Connection, workspace_id: Uuid, run_id: &str) -> String 
     .unwrap_or_else(|_| Uuid::new_v4().to_string())
 }
 
+/// 会话身份按生成输入指纹解析：同指纹复用当前会话；指纹变化（§2.2 手工值/
+/// Provider 快照等变化）＝新一代输入，另建新会话（旧会话保留不写）。
+fn session_id_for_fingerprint(
+    conn: &Connection,
+    workspace_id: Uuid,
+    run_id: &str,
+    generation_input_fingerprint: &str,
+) -> String {
+    conn.query_row(
+        "SELECT session_id FROM generation_sessions
+         WHERE workspace_id = ?1 AND generation_input_fingerprint = ?2
+         ORDER BY created_at DESC LIMIT 1",
+        params![workspace_id.to_string(), generation_input_fingerprint],
+        |r| r.get(0),
+    )
+    .unwrap_or_else(|_| Uuid::new_v4().to_string())
+}
+
 // ---------------------------------------------------------------------------
 // 预览与确认发送
 // ---------------------------------------------------------------------------
@@ -1254,7 +1242,12 @@ pub fn create_preview(
                 context_policy_version, source_manifest_hash, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'preview', ?9, ?10, '2', '2', ?11, ?12, ?12)",
         params![
-            session_id_of(conn, workspace_id, &material.run_id.to_string()),
+            session_id_for_fingerprint(
+                conn,
+                workspace_id,
+                &material.run_id.to_string(),
+                &material.input_hash
+            ),
             workspace_id.to_string(),
             material.run_id.to_string(),
             material.analysis_revision_no as i64,
