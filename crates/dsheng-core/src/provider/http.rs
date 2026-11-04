@@ -18,7 +18,7 @@
 use crate::contracts::cli::CliErrorCode;
 use crate::contracts::provider::{
     ChatCompletionsRequest, ChatCompletionsResponse, Choice, ResponseMessage,
-    REQUEST_BODY_MAX_BYTES, RESPONSE_BODY_MAX_BYTES,
+    REQUEST_BODY_MAX_BYTES, RESPONSE_BODY_MAX_BYTES, STREAMING_BODY_MAX_BYTES,
 };
 use crate::contracts::settings::{chat_completions_url, Budget, Timeouts};
 use crate::provider::deadline::{MonotonicClock, SystemClock};
@@ -381,7 +381,7 @@ pub fn send_once_streaming(
         &mut clock,
         timeouts.response_seconds as i64 * 1_000,
         total_deadline_at,
-        RESPONSE_BODY_MAX_BYTES,
+        STREAMING_BODY_MAX_BYTES,
         &mut parser,
         on_chunk,
     )?;

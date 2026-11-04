@@ -44,7 +44,11 @@ pub enum GenerationOperation {
 
 /// 请求体/响应体硬上限（固定，不可配置）。
 pub const REQUEST_BODY_MAX_BYTES: usize = 1_048_576; // 1 MiB
+/// 非流式响应体上限（spec §3 固定硬上限）。
 pub const RESPONSE_BODY_MAX_BYTES: usize = 2_097_152; // 2 MiB
+/// 流式响应累计字节上限（2026-11-04 用户批准增量：推理模型思考流占用字节，
+/// 最终正文远小于累计；仍为防失控护栏，非无限）。
+pub const STREAMING_BODY_MAX_BYTES: usize = 16_777_216; // 16 MiB
 pub const USER_MESSAGE_MAX_SCALARS: usize = 8_000; // Unicode scalar values
 /// 保守输入估算固定消息开销。
 pub const CONSERVATIVE_OVERHEAD_BYTES: u64 = 256;

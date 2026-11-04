@@ -31,7 +31,7 @@ diagnosis generate/continue、task generate、generation retry 复用同一流�
 | 项目 | 默认/硬上限 | 用户可配范围 | 行为 |
 | --- | ---: | --- | --- |
 | 最终 HTTP JSON body UTF-8 | 1,048,576 字节 | 固定硬上限 | 含 model/messages 和完整 schema；超限本地 REQUEST_TOO_LARGE，request_count=0 |
-| 完整 HTTP 响应 body | 2,097,152 字节 | 固定硬上限 | 对解压后字节流累计；Content-Length 仅作提前拒绝；超限终止读取并 RESPONSE_TOO_LARGE |
+| 完整 HTTP 响应 body | 非流式 2,097,152 字节；流式 16,777,216 字节 | 固定硬上限（2026-11-04 用户批准增量：流式含推理模型思考流字节，最终正文远小于累计） | 对解压后字节流累计；Content-Length 仅作提前拒绝；超限终止读取并 RESPONSE_TOO_LARGE |
 | 单轮 user_message | 8,000 Unicode scalar values | 固定硬上限 | 不按 UTF-16 单元计；超限 USER_MESSAGE_TOO_LARGE，不截断 |
 | context_window_tokens | 32,768 | 整数 8,192–1,048,576 | 本地预算，不是已识别模型能力承诺 |
 | output_reserve_tokens | 8,192 | 整数 1,024–65,536，且 <= context/2 | 非法组合拒绝保存，不自动缩小 |
