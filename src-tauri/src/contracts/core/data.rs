@@ -8,13 +8,23 @@ use serde_json::Value;
 
 /// dsheng scan（directory_label = UI 数据源目录标签）。
 pub fn scan(env: &DesktopEnv, workspace_id: String, directory_label: String) -> Value {
-    envelope(dispatch(
+    let __t0 = std::time::Instant::now();
+    let __log = |msg: &str| {
+        use std::io::Write as _;
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/dsheng-cmd.log") {
+            let _ = writeln!(f, "[scan] {msg} dir={directory_label} ws={workspace_id}");
+        }
+    };
+    __log("enter");
+    let __out = envelope(dispatch(
         env,
         args::Command::Scan {
             workspace: Some(workspace_id),
             dir: directory_label,
         },
-    ))
+    ));
+    __log(&format!("exit ok={} {:?}", __out.get("ok"), __t0.elapsed()));
+    __out
 }
 
 /// dsheng mapping show。

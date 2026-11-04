@@ -9,7 +9,25 @@ use contracts::env::DesktopEnv;
 
 /// 桌面启动：注册 UI DshengClient 全部 command（名/参数对齐
 /// src-ui/src/api/tauriClient.ts；清单见 contracts::COMMANDS）。
+/// 飞行记录仪：GUI 侧命令异常/panic 落 /tmp/dsheng-cmd.log（排障用，无敏感数据）。
+fn install_flight_recorder() {
+    use std::io::Write as _;
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/dsheng-cmd.log")
+            .ok();
+        if let Some(f) = f.as_mut() {
+            let _ = writeln!(f, "[panic] {info}\n[backtrace]\n{}", std::backtrace::Backtrace::force_capture());
+        }
+        default(info);
+    }));
+}
+
 pub fn run() {
+    install_flight_recorder();
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(DesktopEnv::resolve())

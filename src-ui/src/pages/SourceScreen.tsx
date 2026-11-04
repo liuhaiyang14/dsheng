@@ -39,7 +39,7 @@ export function SourceScreen() {
   const scan = app.data.scan;
 
   const pushDiag = (line: string) =>
-    setDiag((prev) => [...prev.slice(-6), `${new Date().toLocaleTimeString()} ${line}`]);
+    setDiag((prev) => [...prev.slice(-10), `${new Date().toLocaleTimeString()} ${line}`]);
 
   /** 自检：逐项直测核心命令并显示原始返回（一次性定位桥接问题）。 */
   const runSelfTest = async () => {
@@ -72,6 +72,35 @@ export function SourceScreen() {
     } catch (e) {
       pushDiag(`template_download 失败: ${String(e).slice(0, 120)}`);
     }
+    if (app.activeWorkspaceId) {
+      const withTimeout = <T,>(p: Promise<T>, ms: number, tag: string) =>
+        Promise.race([
+          p,
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error(`${tag} 超时 ${ms}ms`)), ms)),
+        ]);
+      try {
+        const r = (await withTimeout(
+          invoke('scan', { workspaceId: app.activeWorkspaceId, directoryLabel: '/tmp' }),
+          8000,
+          'scan(/tmp)',
+        )) as { ok?: boolean; error?: unknown };
+        pushDiag(`scan(/tmp) → ok=${r?.ok}${r?.ok ? '' : ' ' + JSON.stringify(r?.error).slice(0, 90)}`);
+      } catch (e) {
+        pushDiag(`scan(/tmp) 失败/超时: ${String(e).slice(0, 120)}`);
+      }
+      try {
+        const r = (await withTimeout(
+          invoke('scan', { workspaceId: app.activeWorkspaceId, directoryLabel: '/Users/liuhaiyang/Desktop/ds' }),
+          15000,
+          'scan(ds)',
+        )) as { ok?: boolean; data?: { files?: unknown[] }; error?: unknown };
+        pushDiag(
+          `scan(ds) → ok=${r?.ok}${r?.ok ? ` files=${(r?.data?.files ?? []).length}` : ' ' + JSON.stringify(r?.error).slice(0, 90)}`,
+        );
+      } catch (e) {
+        pushDiag(`scan(ds) 失败/超时: ${String(e).slice(0, 120)}`);
+      }
+    }
     pushDiag('自检完成（以上为原始结果）');
   };
 
@@ -86,7 +115,12 @@ export function SourceScreen() {
     setScanNote(note ?? `已选择：${path}；本地解析中…`);
     pushDiag(`scan 调用：workspace=${app.activeWorkspaceId} dir=${path}`);
     try {
-      const summary = await app.client.scan(app.activeWorkspaceId, path);
+      const summary = await Promise.race([
+        app.client.scan(app.activeWorkspaceId, path),
+        new Promise<never>((_, rej) =>
+          setTimeout(() => rej(new Error('核心未在 15 秒内返回（scan 挂起）')), 15000),
+        ),
+      ]);
       pushDiag(`scan 返回：${summary.files.length} 文件 / ${summary.total_rows} 行`);
       await app.reloadWorkspaceData();
     } catch (err) {
