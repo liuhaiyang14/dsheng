@@ -1070,7 +1070,7 @@ fn session_id_of(conn: &Connection, workspace_id: Uuid, run_id: &str) -> String 
 fn session_id_for_fingerprint(
     conn: &Connection,
     workspace_id: Uuid,
-    run_id: &str,
+    _run_id: &str,
     generation_input_fingerprint: &str,
 ) -> String {
     conn.query_row(
