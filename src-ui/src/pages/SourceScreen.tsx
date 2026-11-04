@@ -73,8 +73,7 @@ export function SourceScreen() {
       pushDiag(`template_download 失败: ${String(e).slice(0, 120)}`);
     }
     if (app.activeWorkspaceId) {
-      // 探测目录用 /tmp 快路径即可定位层级问题；真实目录由用户经选择器/手动输入传入
-      const homeDir = '';
+
       const withTimeout = <T,>(p: Promise<T>, ms: number, tag: string) =>
         Promise.race([
           p,
@@ -92,7 +91,7 @@ export function SourceScreen() {
       }
       try {
         const r = (await withTimeout(
-          invoke('scan', { workspaceId: app.activeWorkspaceId, directoryLabel: `${homeDir}/Desktop/ds` }),
+          invoke('scan', { workspaceId: app.activeWorkspaceId, directoryLabel: '/tmp' }),
           15000,
           'scan(ds)',
         )) as { ok?: boolean; data?: { files?: unknown[] }; error?: unknown };
@@ -124,6 +123,8 @@ export function SourceScreen() {
         ),
       ]);
       pushDiag(`scan 返回：${summary.files.length} 文件 / ${summary.total_rows} 行`);
+      // 先并入真实摘要再刷新（刷新保留既有 scan，不再覆盖）
+      app.keepScanResult(summary);
       await app.reloadWorkspaceData();
     } catch (err) {
       setScanError(err instanceof Error ? err.message : String(err));

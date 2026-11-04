@@ -104,6 +104,8 @@ interface AppState {
   clearError: () => void;
   /** 用核心返回刷新当前档案数据（供各屏在显式操作后调用）。 */
   reloadWorkspaceData: () => Promise<void>;
+  /** 记录最近一次真实扫描摘要（用户显式操作的成果，刷新不覆盖）。 */
+  keepScanResult: (summary: ScanSummaryView) => void;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -150,10 +152,14 @@ export function AppProvider({
   );
 
   const loadWorkspaceData = useCallback(
-    async (target: DshengClient, workspaceId: string): Promise<WorkspaceData> => {
+    async (
+      target: DshengClient,
+      workspaceId: string,
+      /** 保留既有扫描摘要：真实扫描结果来自用户显式操作，刷新不得用空目录扫描覆盖。 */
+      keepScan?: ScanSummaryView | null,
+    ): Promise<WorkspaceData> => {
       // 只读取该档案自己的数据；跨档案隔离由核心保证，这里不合并其他档案缓存。
-      const [scan, policies, providers, tasks, history] = await Promise.all([
-        target.scan(workspaceId, '').catch(() => null),
+      const [policies, providers, tasks, history] = await Promise.all([
         target.periodList(workspaceId).catch(() => []),
         target.providerList(workspaceId).catch(() => []),
         target.taskList(workspaceId).catch(() => []),
@@ -166,7 +172,7 @@ export function AppProvider({
           .catch(() => null);
       }
       return {
-        scan,
+        scan: keepScan ?? null,
         policies,
         providers,
         tasks,
@@ -208,11 +214,26 @@ export function AppProvider({
     };
   }, [client, loadWorkspaceData]);
 
+  const keepScanResult = useCallback(
+    (summary: ScanSummaryView) => {
+      setDataMap((prev) =>
+        prev[activeWorkspaceId ?? '']
+          ? { ...prev, [activeWorkspaceId!]: { ...prev[activeWorkspaceId!], scan: summary } }
+          : prev,
+      );
+    },
+    [activeWorkspaceId],
+  );
+
   const reloadWorkspaceData = useCallback(async () => {
     if (!client || !activeWorkspaceId) return;
     setLoading(true);
     try {
-      const loaded = await loadWorkspaceData(client, activeWorkspaceId);
+      const loaded = await loadWorkspaceData(
+        client,
+        activeWorkspaceId,
+        dataMap[activeWorkspaceId]?.scan ?? null,
+      );
       setDataMap((prev) => ({ ...prev, [activeWorkspaceId]: loaded }));
       const fresh = await client.workspaceList();
       setWorkspaces(fresh);
@@ -221,7 +242,7 @@ export function AppProvider({
     } finally {
       setLoading(false);
     }
-  }, [client, activeWorkspaceId, loadWorkspaceData]);
+  }, [client, activeWorkspaceId, loadWorkspaceData, dataMap]);
 
   const createWorkspace = useCallback(
     async (input: {
@@ -309,6 +330,7 @@ export function AppProvider({
     refresh: reloadWorkspaceData,
     clearError: () => setError(null),
     reloadWorkspaceData,
+    keepScanResult,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

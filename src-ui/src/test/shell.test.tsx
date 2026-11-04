@@ -106,13 +106,14 @@ describe('S3 企业切换与空档案隔离（用例 34）', () => {
     expect(screen.getByTestId('foot-workspace').textContent).toBe('新建空白档案');
     expect(screen.getAllByTestId('empty-state').length).toBeGreaterThan(0);
 
-    // 切回示例企业：空提示消失，出现扫描文件
+    // 切回示例企业：空提示消失（扫描摘要不再由空目录扫描自动填充——
+    // 真实结果只在用户显式导入后出现，防止覆盖真实扫描的修复）
     select.value = '00000000-0000-4000-8000-0000000000a1';
     select.dispatchEvent(new Event('change', { bubbles: true }));
     await waitFor(() => {
       expect(screen.queryByTestId('workspace-empty-notice')).toBeNull();
     });
-    await screen.findByText('示例核算表_202610.xlsx');
+    expect(screen.getByTestId('foot-workspace').textContent).toBe('示例制造企业');
   });
 });
 
