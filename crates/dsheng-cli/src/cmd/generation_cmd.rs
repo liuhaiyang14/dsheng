@@ -598,9 +598,15 @@ fn gate_and_run(
                         .map_err(|errors| {
                             CliError::new(CliErrorCode::SchemaValidationFailed, errors.join("; "))
                         })?;
-                    let turn: TurnJson = serde_json::from_value(output.clone()).map_err(|e| {
-                        CliError::new(CliErrorCode::SemanticValidationFailed, e.to_string())
-                    })?;
+                    // output 已通过冻结 turn schema3 校验（上方 validate_diagnosis_turn）；
+                    // 此处只做容错取值，不再二次窄投影（真实联调教训：手写投影窄于
+                    // 合同会误拒合法输出，两次真实派发因此失败）。
+                    let turn_disposition_of = |v: &serde_json::Value| {
+                        v.get("turn_disposition")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or("")
+                            .to_string()
+                    };
                     let session_id: String = conn
                         .query_row(
                             "SELECT session_id FROM generation_sessions
@@ -620,17 +626,23 @@ fn gate_and_run(
                             |r| r.get(0),
                         )
                         .unwrap_or(1);
-                    let disposition = turn.turn_disposition.clone();
+                    let disposition = turn_disposition_of(&output);
+                    let stop_reason = output
+                        .get("stop_reason")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x.to_string());
+                    let summary_update = output
+                        .pointer("/report_patch/summary_update")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x.to_string());
                     let report_json = json!({
                         "schema_version": "3",
                         "framework": gen::framework_db_str(framework),
                         "scope": {"problem_statement": material.user_supplied_text},
-                        "summary": turn.report_patch.as_ref().and_then(|p| p.summary_update.clone()),
+                        "summary": summary_update,
+                        "turn": output,
                         "turn_disposition": disposition,
-                        "accepted_facts": turn.accepted_facts,
-                        "clarification_questions": turn.clarification_questions,
-                        "redirect_message": turn.redirect_message,
-                        "stop_reason": turn.stop_reason,
+                        "stop_reason": stop_reason,
                     });
                     let state = match disposition.as_str() {
                         "needs_clarification" => "clarification",
@@ -649,7 +661,7 @@ fn gate_and_run(
                         &report_json,
                         if state == "patched" { 1 } else { 0 },
                         state,
-                        turn.stop_reason.as_deref(),
+                        stop_reason.as_deref(),
                     )?;
                     Ok(json!({
                         "attempt_id": attempt_id.to_string(),
@@ -688,33 +700,4 @@ fn run_metric_ids(conn: &rusqlite::Connection, run_id: &str) -> CliResult<Vec<St
                 .collect()
         })
         .unwrap_or_default())
-}
-
-/// 诊断 turn JSON（schema3 已校验后的本地投影；顶层字段与冻结 turn schema
-/// 完全一致——2026-11-04 真实联调教训：投影窄于合同会误拒合法输出）。
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TurnJson {
-    #[serde(default)]
-    schema_version: Option<String>,
-    #[serde(default)]
-    framework: Option<String>,
-    turn_disposition: String,
-    #[serde(default)]
-    accepted_facts: Vec<serde_json::Value>,
-    #[serde(default)]
-    report_patch: Option<TurnPatchJson>,
-    #[serde(default)]
-    redirect_message: Option<String>,
-    #[serde(default)]
-    clarification_questions: Vec<serde_json::Value>,
-    #[serde(default)]
-    stop_reason: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TurnPatchJson {
-    #[serde(default)]
-    summary_update: Option<String>,
 }
