@@ -33,8 +33,11 @@ B) wire 增量 max_tokens 限界；C) 冻结提示词内嵌 schema 瘦身（动�
 
 - 增量：流式响应字节上限 16MiB（非流式维持 2MiB）
 - 计划：#B1 5WHY（glm-5.3 流式）→ 成功则 #B2 任务单
+- **批次 B 结束：2/2 用尽。** 两次均完整收流（16MiB 增量生效），模型输出均通过冻结合同
+  schema 校验；失败全部归因我方两处手写窄投影（已结构性根除 633714c）。任务单路径审计
+  无同类风险（schema2 先行＋容错取值）。链路已端到端打通至最后一行代码，仅待新授权落地产出。
 
 | # | 操作 | confirmation_id | 结果 | 耗时 | 产物 |
 | --- | --- | --- | --- | --- | --- |
-| B1 | diagnosis 5why | 待填 | | | |
-| B2 | task generate | 待填 | | | |
+| B1 | diagnosis 5why | （见 attempt e6bdedf0） | **SEMANTIC_VALIDATION_FAILED（我方缺陷）**：完整收流 2,119,383B/5,343 块成功；模型输出通过冻结 schema3 校验，但内部窄投影 TurnJson（deny_unknown_fields，仅 3 字段）误拒合法 accepted_facts | 171s | 无（修复 68c7f52d 前序） |
+| B2 | diagnosis 5why（重试） | （attempt 7916ef51） | **SEMANTIC_VALIDATION_FAILED（我方缺陷）**：再次完整收流 2,135,748B；同层第二处窄投影 TurnPatchJson（仅 summary_update）误拒 report_patch.can_continue | 179s | 无（结构性修复 633714c：删除全部手写窄投影，schema 先行＋容错取值＋完整 turn 落库） |
