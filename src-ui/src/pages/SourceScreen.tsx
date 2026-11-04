@@ -123,9 +123,8 @@ export function SourceScreen() {
         ),
       ]);
       pushDiag(`scan 返回：${summary.files.length} 文件 / ${summary.total_rows} 行`);
-      // 先并入真实摘要再刷新（刷新保留既有 scan，不再覆盖）
-      app.keepScanResult(summary);
-      await app.reloadWorkspaceData();
+      // 刷新时显式携带真实摘要（闭包竞态修复：不再依赖先 setState 再读旧 state）
+      await app.reloadWorkspaceData({ keepScan: summary });
     } catch (err) {
       setScanError(err instanceof Error ? err.message : String(err));
     } finally {

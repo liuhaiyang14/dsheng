@@ -102,10 +102,8 @@ interface AppState {
   switchWorkspace: (workspaceId: string) => Promise<void>;
   refresh: () => Promise<void>;
   clearError: () => void;
-  /** 用核心返回刷新当前档案数据（供各屏在显式操作后调用）。 */
-  reloadWorkspaceData: () => Promise<void>;
-  /** 记录最近一次真实扫描摘要（用户显式操作的成果，刷新不覆盖）。 */
-  keepScanResult: (summary: ScanSummaryView) => void;
+  /** 用核心返回刷新当前档案数据（供各屏在显式操作后调用；keepScan 显式保留扫描摘要）。 */
+  reloadWorkspaceData: (opts?: { keepScan?: ScanSummaryView | null }) => Promise<void>;
 }
 
 const AppContext = createContext<AppState | null>(null);
@@ -214,25 +212,15 @@ export function AppProvider({
     };
   }, [client, loadWorkspaceData]);
 
-  const keepScanResult = useCallback(
-    (summary: ScanSummaryView) => {
-      setDataMap((prev) =>
-        prev[activeWorkspaceId ?? '']
-          ? { ...prev, [activeWorkspaceId!]: { ...prev[activeWorkspaceId!], scan: summary } }
-          : prev,
-      );
-    },
-    [activeWorkspaceId],
-  );
-
-  const reloadWorkspaceData = useCallback(async () => {
+  const reloadWorkspaceData = useCallback(
+    async (opts?: { keepScan?: ScanSummaryView | null }) => {
     if (!client || !activeWorkspaceId) return;
     setLoading(true);
     try {
       const loaded = await loadWorkspaceData(
         client,
         activeWorkspaceId,
-        dataMap[activeWorkspaceId]?.scan ?? null,
+        opts?.keepScan !== undefined ? opts.keepScan : (dataMap[activeWorkspaceId]?.scan ?? null),
       );
       setDataMap((prev) => ({ ...prev, [activeWorkspaceId]: loaded }));
       const fresh = await client.workspaceList();
@@ -242,7 +230,8 @@ export function AppProvider({
     } finally {
       setLoading(false);
     }
-  }, [client, activeWorkspaceId, loadWorkspaceData, dataMap]);
+  },
+  [client, activeWorkspaceId, loadWorkspaceData, dataMap]);
 
   const createWorkspace = useCallback(
     async (input: {
@@ -330,7 +319,6 @@ export function AppProvider({
     refresh: reloadWorkspaceData,
     clearError: () => setError(null),
     reloadWorkspaceData,
-    keepScanResult,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
