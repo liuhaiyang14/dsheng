@@ -627,6 +627,9 @@ fn gate_and_run(
                         "scope": {"problem_statement": material.user_supplied_text},
                         "summary": turn.report_patch.as_ref().and_then(|p| p.summary_update.clone()),
                         "turn_disposition": disposition,
+                        "accepted_facts": turn.accepted_facts,
+                        "clarification_questions": turn.clarification_questions,
+                        "redirect_message": turn.redirect_message,
                         "stop_reason": turn.stop_reason,
                     });
                     let state = match disposition.as_str() {
@@ -687,13 +690,24 @@ fn run_metric_ids(conn: &rusqlite::Connection, run_id: &str) -> CliResult<Vec<St
         .unwrap_or_default())
 }
 
-/// 诊断 turn JSON（schema3 已校验后的本地最小投影）。
+/// 诊断 turn JSON（schema3 已校验后的本地投影；顶层字段与冻结 turn schema
+/// 完全一致——2026-11-04 真实联调教训：投影窄于合同会误拒合法输出）。
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct TurnJson {
+    #[serde(default)]
+    schema_version: Option<String>,
+    #[serde(default)]
+    framework: Option<String>,
     turn_disposition: String,
     #[serde(default)]
+    accepted_facts: Vec<serde_json::Value>,
+    #[serde(default)]
     report_patch: Option<TurnPatchJson>,
+    #[serde(default)]
+    redirect_message: Option<String>,
+    #[serde(default)]
+    clarification_questions: Vec<serde_json::Value>,
     #[serde(default)]
     stop_reason: Option<String>,
 }
