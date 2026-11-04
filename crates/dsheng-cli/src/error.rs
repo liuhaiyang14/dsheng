@@ -81,7 +81,7 @@ impl From<RepoError> for CliError {
             ),
             RepoError::PolicySelectionRequired => CliError::new(
                 CliErrorCode::ContextInvalid,
-                "分析范围跨策略版本且未显式选择（--policy）",
+                "所选期间没有生效的周期策略覆盖。请在「系统设置 → 核算周期」把生效日期设为早于数据最早月份后保存（会新建策略版本，不改写历史），或在分析时改用已覆盖的期间。（CLI 高级用法：--policy 显式选择）",
             )
             .with_field("policy"),
             RepoError::IdempotencyConflict => CliError::new(

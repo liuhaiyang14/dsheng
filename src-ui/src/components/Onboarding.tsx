@@ -16,18 +16,19 @@ const CADENCE_OPTIONS = [
   { value: 'quarter', label: '季度' },
 ] as const;
 
-function todayIso(): string {
+/** 默认生效日 = 两个月前的月首日（T-2）：新客户导入上月起的历史表即刻可用。 */
+function defaultEffectiveFrom(): string {
   const d = new Date();
-  const m = `${d.getMonth() + 1}`.padStart(2, '0');
-  const day = `${d.getDate()}`.padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 2);
+  return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-01`;
 }
 
 export function Onboarding(props: { open: boolean; onClose: () => void }) {
   const app = useApp();
   const [name, setName] = useState('');
   const [cadence, setCadence] = useState<'day' | 'week' | 'month' | 'quarter'>('month');
-  const [effectiveFrom, setEffectiveFrom] = useState(todayIso());
+  const [effectiveFrom, setEffectiveFrom] = useState(defaultEffectiveFrom());
   const [timezone, setTimezone] = useState('Asia/Shanghai');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -118,9 +119,9 @@ export function Onboarding(props: { open: boolean; onClose: () => void }) {
           </label>
         </div>
         <p className="onboarding-hint">
-          周起始日（周一）与财年起始月（一月）暂用默认值，创建后可在「系统设置」中
-          以新版本修改；旧期间不会被改写。若要导入的表格数据早于今天，建议把生效日期
-          改为覆盖那些数据的最早月份（如 2026-10-01），否则分析历史期间时会提示补建周期策略。
+          生效日期已默认设为两个月前的月首日，方便直接导入近两月的表格；若有更早的历史数据，
+          请把该日期改为早于数据最早月份。周起始日（周一）与财年起始月（一月）暂用默认值，
+          创建后可在「系统设置」中以新版本修改；旧期间不会被改写。
         </p>
         {error ? (
           <div className="onboarding-error" data-testid="onboarding-error">
