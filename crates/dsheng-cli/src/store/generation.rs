@@ -435,6 +435,8 @@ pub struct GenerationMaterial {
     pub run_id: Uuid,
     pub report_id: Option<Uuid>,
     pub report_revision_no: Option<u32>,
+    /// 预览 source_scope_summary（裁剪后范围如实反映；settings.schema 字段集）。
+    pub scope_rows: Vec<Value>,
 }
 
 /// 从 run revision 组装诊断输入投影（验证过 dsheng-diagnosis-input-v2）。
@@ -446,7 +448,7 @@ pub fn build_diagnosis_payload(
     framework: Framework,
     problem: &str,
     focus_metric_ids: &[String],
-    _evidence_ids: &[String],
+    evidence_ids: &[String],
     session_state: SessionStateProjection,
     continuation: Option<ContinuationInputProjection>,
     user_message: &str,
@@ -457,8 +459,11 @@ pub fn build_diagnosis_payload(
         run_id,
     )
     .map_err(CliError::from)?;
+    let selection = trimmed_source_selection(conn, workspace_id, run_id, revision, evidence_ids)?;
     let snapshot = load_snapshot(conn, run_id, revision)?;
     let defs = load_definition_projections(conn, workspace_id)?;
+    let used_defs =
+        used_definition_closure(defs, &observed_metric_keys(&snapshot), focus_metric_ids);
     let metrics = metric_projections(conn, workspace_id, &snapshot)?;
     let conflicts = conflict_projections(conn, workspace_id, run_id)?;
     let manual = manual_projections(conn, workspace_id)?;
@@ -491,10 +496,10 @@ pub fn build_diagnosis_payload(
             user_confirmed_continue: continuation.is_some(),
             context_policy_version: ContextPolicyVersion::V2,
         },
-        workspace: workspace_projection(conn, workspace_id, defs)?,
+        workspace: workspace_projection(conn, workspace_id, used_defs)?,
         metrics,
-        source_manifest: manifest_entries(conn, workspace_id, run_id)?,
-        source_records: vec![],
+        source_manifest: selection.manifest.clone(),
+        source_records: selection.records.clone(),
         manual_inputs: manual,
         missing_or_anomalous_inputs: anomalies,
         source_conflicts: conflicts,
@@ -530,8 +535,7 @@ pub fn build_diagnosis_payload(
         revision,
         fingerprint,
         Uuid::parse_str(run_id).map_err(|_| CliError::invalid("run_id 非法"))?,
-        conn,
-        workspace_id,
+        selection,
     ))
 }
 
@@ -549,6 +553,7 @@ pub fn build_task_payload(
         run_id,
     )
     .map_err(CliError::from)?;
+    let selection = trimmed_source_selection(conn, workspace_id, run_id, revision, &[])?;
     let snapshot = load_snapshot(conn, run_id, revision)?;
     let defs = load_definition_projections(conn, workspace_id)?;
     let metrics = metric_projections(conn, workspace_id, &snapshot)?;
@@ -607,10 +612,14 @@ pub fn build_task_payload(
             workflow: TaskWorkflowMarker::Task,
             schema_version: TaskSchemaVersion::V2,
         },
-        workspace: workspace_projection(conn, workspace_id, defs)?,
+        workspace: workspace_projection(
+            conn,
+            workspace_id,
+            used_definition_closure(defs, &observed_metric_keys(&snapshot), &[]),
+        )?,
         metrics,
-        source_manifest: manifest_entries(conn, workspace_id, run_id)?,
-        source_records: vec![],
+        source_manifest: selection.manifest.clone(),
+        source_records: selection.records.clone(),
         manual_inputs: manual,
         missing_or_anomalous_inputs: anomalies,
         source_conflicts: conflicts,
@@ -654,8 +663,7 @@ pub fn build_task_payload(
         revision,
         fingerprint,
         Uuid::parse_str(run_id).map_err(|_| CliError::invalid("run_id 非法"))?,
-        conn,
-        workspace_id,
+        selection,
     ))
 }
 
@@ -668,8 +676,7 @@ fn material_of(
     revision: u32,
     fingerprint: String,
     run_id: Uuid,
-    conn: &Connection,
-    workspace_id: Uuid,
+    selection: TrimmedSourceSelection,
 ) -> GenerationMaterial {
     // 指纹覆盖清单（§2.2）不含 generation_session_id（实现细节）：哈希前剔除，
     // 否则预览新建会话后发送重建取到新 id → CONFIRMATION_STALE 自锁。
@@ -695,8 +702,8 @@ fn material_of(
         serde_json::to_string(&v).unwrap_or(payload_json.clone())
     };
     let input_hash = dsheng_core::analysis::fingerprint::sha256_hex(&hash_material);
-    let manifest = manifest_entries(conn, workspace_id, &run_id.to_string()).unwrap_or_default();
-    let manifest_material: Vec<Value> = manifest
+    let manifest_material: Vec<Value> = selection
+        .manifest
         .iter()
         .map(|m| {
             json!({
@@ -723,6 +730,7 @@ fn material_of(
         run_id,
         report_id: None,
         report_revision_no: None,
+        scope_rows: selection.scope_rows,
     }
 }
 
@@ -824,6 +832,66 @@ fn load_definition_projections(
     Ok(out)
 }
 
+/// §1.4：workspace.metric_definitions 只发送本次使用指标及其公式依赖的
+/// 冻结定义。使用集＝分析快照观察到/用户聚焦的 metric_key ∪ 其 AST/
+/// required_inputs 依赖闭包（闭包仅收工作区已注册键）。
+fn used_definition_closure(
+    defs: Vec<MetricDefinitionProjection>,
+    observed_keys: &std::collections::BTreeSet<String>,
+    focus_keys: &[String],
+) -> Vec<MetricDefinitionProjection> {
+    fn ast_refs(node: &FormulaAst, out: &mut Vec<String>) {
+        match node {
+            FormulaAst::Ref { metric_key } => out.push(metric_key.clone()),
+            FormulaAst::Const { .. } => {}
+            FormulaAst::Add { args }
+            | FormulaAst::Sub { args }
+            | FormulaAst::Mul { args }
+            | FormulaAst::Div { args } => {
+                ast_refs(&args[0], out);
+                ast_refs(&args[1], out);
+            }
+        }
+    }
+    let by_key: std::collections::HashMap<&str, &MetricDefinitionProjection> =
+        defs.iter().map(|d| (d.metric_key.as_str(), d)).collect();
+    let mut used: std::collections::BTreeSet<String> = observed_keys.clone();
+    used.extend(focus_keys.iter().cloned());
+    let mut queue: Vec<String> = used.iter().cloned().collect();
+    while let Some(key) = queue.pop() {
+        let Some(def) = by_key.get(key.as_str()) else {
+            continue;
+        };
+        let mut refs: Vec<String> = Vec::new();
+        if let Some(formula) = &def.formula {
+            ast_refs(formula, &mut refs);
+        }
+        refs.extend(def.required_inputs.iter().cloned());
+        for r in refs {
+            if by_key.contains_key(r.as_str()) && !used.contains(&r) {
+                used.insert(r.clone());
+                queue.push(r);
+            }
+        }
+    }
+    defs.into_iter()
+        .filter(|d| used.contains(&d.metric_key))
+        .collect()
+}
+
+/// 分析快照中出现观察的 metric_key 集合。
+fn observed_metric_keys(snapshot: &RunSnapshot) -> std::collections::BTreeSet<String> {
+    snapshot
+        .metrics
+        .as_array()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|m| m["metric_key"].as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn workspace_projection(
     conn: &Connection,
     workspace_id: Uuid,
@@ -914,43 +982,472 @@ fn clone_with_numbers(v: &Value) -> Value {
     }
 }
 
-fn manifest_entries(
+// ---------------------------------------------------------------------------
+// 生成载荷来源范围裁剪（prompt-context-validation.md §4：收窄“选定范围”本身）
+// ---------------------------------------------------------------------------
+
+/// 裁剪结果：manifest（新范围）/source_records（逐格）/预览 scope 行。
+pub struct TrimmedSourceSelection {
+    pub manifest: Vec<SourceManifestEntry>,
+    pub records: Vec<SourceRecordProjection>,
+    pub scope_rows: Vec<Value>,
+}
+
+/// 旁表单元格快照（analyze 落库；生成时只读）。
+struct CellSnap {
+    row_no: usize,
+    col_no: usize,
+    raw_text: String,
+    cell_kind: String,
+    value_state: String,
+    typed_value: Option<String>,
+    formula: Option<String>,
+    merged_range: Option<String>,
+}
+
+/// “相关行/列”选定范围计算（确定性：同一 DB 状态 → 同一范围/记录/指纹）：
+///
+/// - 标准表（核算/推移，有表头块）：选定行＝表头块行 ∪ 标签列命中已注册指标
+///   的行（metric_key/label/别名精确匹配）∪ 分析快照观察（mom/yoy evidence）
+///   所在行 ∪ 冲突候选 evidence 所在行 ∪ 用户 --evidence 指向的行；
+///   行内发送该行 A..最后非空列的全部非空格（仍逐格）。
+/// - 推移表转置 sheet（§4.3）：选定列＝period 列（A 列）∪ 指标列整列；
+///   非指标列不发；证据锚点格仍保留（evidence 单元格不得丢）。
+/// - 无表头 sheet（generic）：仅证据锚点行入选；无锚点则整个 sheet 不发
+///   （未选内容不发）。
+/// - 未贡献任何选定记录的来源不进 source_manifest（未选文件始终不发）。
+pub fn trimmed_source_selection(
     conn: &Connection,
     workspace_id: Uuid,
     run_id: &str,
-) -> CliResult<Vec<SourceManifestEntry>> {
-    let _ = run_id;
-    let mut stmt = conn.prepare(
-        "SELECT source_id, file_label, kind, content_hash FROM source_files
-         WHERE workspace_id = ?1 ORDER BY file_label",
-    )?;
-    let rows = stmt.query_map(params![workspace_id.to_string()], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, String>(3)?,
-        ))
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let (source_id, file_label, kind, content_hash) = row?;
-        let Ok(source_uuid) = Uuid::parse_str(&source_id) else {
+    revision: u32,
+    extra_evidence: &[String],
+) -> CliResult<TrimmedSourceSelection> {
+    crate::store::sources::ensure_sidecar_tables(conn)?;
+    // 工作区指标名全集（行/列识别口径与扫描期一致）
+    let metric_names: std::collections::HashSet<String> =
+        crate::store::sources::metric_label_names(conn, workspace_id)?
+            .into_iter()
+            .collect();
+    // 来源文件（file_label→source 解析锚点用；输出按 file_label 排序）
+    struct SourceRow {
+        source_id: String,
+        file_label: String,
+        kind: String,
+        content_hash: String,
+    }
+    let sources: Vec<SourceRow> = {
+        let mut stmt = conn.prepare(
+            "SELECT source_id, file_label, kind, content_hash FROM source_files
+             WHERE workspace_id = ?1 ORDER BY file_label, created_at, source_id",
+        )?;
+        let rows = stmt.query_map(params![workspace_id.to_string()], |r| {
+            Ok(SourceRow {
+                source_id: r.get(0)?,
+                file_label: r.get(1)?,
+                kind: r.get(2)?,
+                content_hash: r.get(3)?,
+            })
+        })?;
+        rows.collect::<Result<_, _>>().map_err(CliError::from)?
+    };
+    // 布局快照（按 source 分组；sheet 有序）
+    let mut layouts: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Value>> =
+        Default::default();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT source_id, sheet, layout_json FROM cli_source_sheet_layouts
+             WHERE workspace_id = ?1",
+        )?;
+        let rows = stmt.query_map(params![workspace_id.to_string()], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (sid, sheet, raw) = row?;
+            let layout: Value = serde_json::from_str(&raw).unwrap_or(json!({}));
+            layouts.entry(sid).or_default().insert(sheet, layout);
+        }
+    }
+    // 单元格快照（按 source/sheet/行/列有序）
+    type SheetCells = std::collections::BTreeMap<usize, Vec<CellSnap>>;
+    let mut cells: std::collections::BTreeMap<(String, String), SheetCells> = Default::default();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT source_id, sheet, row_no, col_no, raw_text, cell_kind, value_state,
+                    typed_value, formula, merged_range
+             FROM cli_source_cells WHERE workspace_id = ?1
+             ORDER BY source_id, sheet, row_no, col_no",
+        )?;
+        let rows = stmt.query_map(params![workspace_id.to_string()], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                CellSnap {
+                    row_no: r.get::<_, i64>(2)? as usize,
+                    col_no: r.get::<_, i64>(3)? as usize,
+                    raw_text: r.get(4)?,
+                    cell_kind: r.get(5)?,
+                    value_state: r.get(6)?,
+                    typed_value: r.get(7)?,
+                    formula: r.get(8)?,
+                    merged_range: r.get(9)?,
+                },
+            ))
+        })?;
+        for row in rows {
+            let (sid, sheet, snap) = row?;
+            cells
+                .entry((sid, sheet))
+                .or_default()
+                .entry(snap.row_no)
+                .or_default()
+                .push(snap);
+        }
+    }
+    // 证据锚点（file_label, sheet, row 1 基, col 0 基）：观察/补0/冲突候选/用户
+    let mut anchors: Vec<(String, String, usize, usize)> = Vec::new();
+    {
+        let raw: Option<(String, Option<String>, String)> = conn
+            .query_row(
+                "SELECT normalized_metrics_json, comparisons_json, period_policy_snapshot_json
+                 FROM run_revisions WHERE run_id = ?1 AND revision_no = ?2",
+                params![run_id, revision as i64],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(other),
+            })
+            .map_err(CliError::from)?;
+        let mut evidence_ids: Vec<String> = Vec::new();
+        if let Some((normalized, comparisons, policy)) = raw {
+            for text in [Some(normalized), comparisons, Some(policy)]
+                .into_iter()
+                .flatten()
+            {
+                if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                    collect_evidence_ids(&v, &mut evidence_ids);
+                }
+            }
+        }
+        {
+            let mut stmt = conn.prepare(
+                "SELECT candidate_values_json FROM source_conflicts
+                 WHERE workspace_id = ?1 AND run_id = ?2",
+            )?;
+            let rows: Vec<String> = stmt
+                .query_map(params![workspace_id.to_string(), run_id], |r| r.get(0))?
+                .collect::<Result<_, _>>()
+                .map_err(CliError::from)?;
+            for text in rows {
+                if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                    collect_evidence_ids(&v, &mut evidence_ids);
+                }
+            }
+        }
+        evidence_ids.extend(extra_evidence.iter().cloned());
+        // file_label → source（同 label 多来源取最早注册：sources 已按
+        // file_label/created_at/source_id 排序，entry 保留首个即最早）
+        let mut label_to_source: std::collections::HashMap<&str, &SourceRow> = Default::default();
+        for s in &sources {
+            label_to_source.entry(s.file_label.as_str()).or_insert(s);
+        }
+        for id in evidence_ids {
+            let Some((file_label, sheet, row, col)) = parse_cell_evidence(&id) else {
+                continue; // manual:/content-hash 证据不经单元格域（manual_inputs 另投影）
+            };
+            if !label_to_source.contains_key(file_label.as_str()) {
+                continue;
+            }
+            anchors.push((file_label, sheet, row, col));
+        }
+        anchors.sort();
+        anchors.dedup();
+    }
+
+    // 逐来源/逐 sheet 计算选定范围
+    let mut manifest = Vec::new();
+    let mut records: Vec<SourceRecordProjection> = Vec::new();
+    let mut scope_rows = Vec::new();
+    for source in &sources {
+        let Some(sheets) = layouts.get(&source.source_id) else {
             continue;
         };
-        let selection = format!("A1:Z999（{kind} 全表已扫描）");
-        out.push(SourceManifestEntry {
-            source_id: source_uuid,
-            file_label,
-            sheet: None,
-            selected_range: selection.clone(),
-            content_hash: content_hash.clone(),
-            selection_hash: dsheng_core::analysis::fingerprint::sha256_hex(&format!(
-                "{source_id}|{selection}|{content_hash}"
-            )),
-        });
+        for (sheet, layout) in sheets {
+            let Some(rows_of_sheet) = cells.get(&(source.source_id.clone(), sheet.clone())) else {
+                continue;
+            };
+            let sheet_anchors: Vec<(usize, usize)> = anchors
+                .iter()
+                .filter(|(label, s, _, _)| *label == source.file_label && s == sheet)
+                .map(|(_, _, r, c)| (*r, *c))
+                .collect();
+            let total_rows = rows_of_sheet.len();
+            let total_cols = rows_of_sheet
+                .values()
+                .flat_map(|cells_row| cells_row.iter().map(|c| c.col_no))
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
+            // 选定单元格（行/列或证据锚点），按行列序输出
+            let mut picked: std::collections::BTreeMap<usize, Vec<&CellSnap>> = Default::default();
+            let mut trim_note = String::new();
+            if let Some(transposed) = layout.get("transposed") {
+                // 转置推移表：指标列整列（含 period 列 A＝col 0）；非指标列不发
+                let mut cols: std::collections::BTreeSet<usize> =
+                    std::collections::BTreeSet::from([0usize]);
+                if let Some(list) = transposed.get("metric_columns").and_then(|v| v.as_array()) {
+                    for pair in list {
+                        if let Some(col) = pair.get(0).and_then(|v| v.as_u64()) {
+                            cols.insert(col as usize);
+                        }
+                    }
+                }
+                for (row_no, row_cells) in rows_of_sheet {
+                    for cell in row_cells {
+                        if cols.contains(&cell.col_no) {
+                            picked.entry(*row_no).or_default().push(cell);
+                        }
+                    }
+                }
+                // 证据锚点格保留（evidence 单元格不得丢——即使位于非指标列）
+                for (row_no, col_no) in &sheet_anchors {
+                    if let Some(cell) = rows_of_sheet
+                        .get(row_no)
+                        .and_then(|row_cells| row_cells.iter().find(|c| c.col_no == *col_no))
+                    {
+                        picked.entry(*row_no).or_default().push(cell);
+                    }
+                }
+                let selected_cols = picked
+                    .values()
+                    .flat_map(|row_cells| row_cells.iter().map(|c| c.col_no))
+                    .collect::<std::collections::BTreeSet<_>>();
+                if !picked.is_empty() {
+                    trim_note =
+                        format!("已按指标列裁剪：{}/{} 列", selected_cols.len(), total_cols);
+                }
+            } else if let Some(header) = layout.get("header") {
+                // 标准表：表头块行 ∪ 标签列命中已注册指标的行 ∪ 证据锚点行。
+                // 仅剩表头（无指标行/锚点行）的 sheet 整体不选（该 sheet 对本次
+                // 生成无支撑；未选内容不发）。
+                let header_row = header.get("row").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
+                let header_rows = header
+                    .get("row_count")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(1) as usize;
+                let label_col = layout
+                    .get("label_col")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as usize);
+                let mut relevant_rows: Vec<usize> = Vec::new();
+                for (row_no, row_cells) in rows_of_sheet {
+                    let in_header = *row_no >= header_row && *row_no < header_row + header_rows;
+                    if in_header {
+                        continue;
+                    }
+                    let label_hit = label_col.is_some_and(|lc| {
+                        row_cells
+                            .iter()
+                            .find(|c| c.col_no == lc)
+                            .map(|c| metric_names.contains(c.raw_text.trim()))
+                            .unwrap_or(false)
+                    });
+                    let anchor_hit = sheet_anchors.iter().any(|(r, _)| r == row_no);
+                    if label_hit || anchor_hit {
+                        relevant_rows.push(*row_no);
+                    }
+                }
+                if relevant_rows.is_empty() {
+                    continue;
+                }
+                for (row_no, row_cells) in rows_of_sheet {
+                    let in_header = *row_no >= header_row && *row_no < header_row + header_rows;
+                    if in_header || relevant_rows.contains(row_no) {
+                        picked.insert(*row_no, row_cells.iter().collect());
+                    }
+                }
+                trim_note = format!("已按相关行裁剪：{}/{} 行", picked.len(), total_rows);
+            } else {
+                // 无表头 sheet：仅证据锚点行（未选内容不发）
+                for (row_no, col_no) in &sheet_anchors {
+                    if let Some(row_cells) = rows_of_sheet.get(row_no) {
+                        let cell = row_cells.iter().find(|c| c.col_no == *col_no);
+                        if let Some(cell) = cell {
+                            picked.entry(*row_no).or_default().push(cell);
+                        }
+                    }
+                }
+                if !picked.is_empty() {
+                    trim_note = format!("已按证据行裁剪：{}/{} 行", picked.len(), total_rows);
+                }
+            }
+            if picked.is_empty() {
+                continue;
+            }
+            // 去重同行重复引用（锚点＋列选可能重叠）并按列排序
+            let mut ordered: Vec<(usize, Vec<&CellSnap>)> = Vec::new();
+            for (row_no, mut row_cells) in picked {
+                row_cells.sort_by_key(|c| c.col_no);
+                row_cells.dedup_by_key(|c| c.col_no);
+                ordered.push((row_no, row_cells));
+            }
+            let min_row = ordered.first().map(|(r, _)| *r).unwrap_or(1);
+            let max_row = ordered.last().map(|(r, _)| *r).unwrap_or(1);
+            let max_col = ordered
+                .iter()
+                .flat_map(|(_, cells_row)| cells_row.iter().map(|c| c.col_no))
+                .max()
+                .unwrap_or(0);
+            let range_str = format!(
+                "A{}:{}{}（{trim_note}）",
+                min_row,
+                dsheng_core::import::headers::column_letter(max_col),
+                max_row
+            );
+            let sheet_label: Option<String> = if source.kind == "csv" {
+                None
+            } else {
+                Some(sheet.clone())
+            };
+            manifest.push(SourceManifestEntry {
+                source_id: Uuid::parse_str(&source.source_id).unwrap_or(Uuid::nil()),
+                file_label: source.file_label.clone(),
+                sheet: sheet_label.clone(),
+                selected_range: range_str.clone(),
+                content_hash: source.content_hash.clone(),
+                selection_hash: dsheng_core::analysis::fingerprint::sha256_hex(&format!(
+                    "{}|{range_str}|{}",
+                    source.source_id, source.content_hash
+                )),
+            });
+            scope_rows.push(json!({
+                "source_id": source.source_id,
+                "file_label": source.file_label,
+                "sheet": sheet_label,
+                "selected_range": range_str,
+                "row_count": ordered.len(),
+                "content_hash": source.content_hash,
+            }));
+            let sheet_or_csv = if source.kind == "csv" {
+                "csv".to_string()
+            } else {
+                sheet.clone()
+            };
+            for (row_no, row_cells) in ordered {
+                for cell in row_cells {
+                    let a1 = format!(
+                        "{}{row_no}",
+                        dsheng_core::import::headers::column_letter(cell.col_no)
+                    );
+                    records.push(SourceRecordProjection {
+                        evidence_id: format!("cell:{}:{sheet_or_csv}:{a1}", source.source_id),
+                        source_id: Uuid::parse_str(&source.source_id).unwrap_or(Uuid::nil()),
+                        file_label: source.file_label.clone(),
+                        sheet: sheet_label.clone(),
+                        cell_or_row: a1,
+                        values: SourceCellValues {
+                            cell_type: match cell.cell_kind.as_str() {
+                                "text" => CellTypeProjection::Text,
+                                "bool" => CellTypeProjection::Boolean,
+                                "formula" => CellTypeProjection::Formula,
+                                "error" => CellTypeProjection::Error,
+                                _ => CellTypeProjection::Number,
+                            },
+                            raw_text: cell.raw_text.clone(),
+                            typed_value: cell.typed_value.clone().map(|v| {
+                                if cell.cell_kind == "bool" {
+                                    TypedCellValue::Bool(v == "true")
+                                } else {
+                                    TypedCellValue::Str(v)
+                                }
+                            }),
+                            formula: cell.formula.clone(),
+                            value_state: match cell.value_state.as_str() {
+                                "valid" => ValueStateProjection::Valid,
+                                "pending_input" => ValueStateProjection::PendingInput,
+                                "invalid" => ValueStateProjection::Invalid,
+                                "conflict" => ValueStateProjection::Conflict,
+                                "configuration_required" => {
+                                    ValueStateProjection::ConfigurationRequired
+                                }
+                                "unsupported_formula" => ValueStateProjection::UnsupportedFormula,
+                                "precision_unverified" => ValueStateProjection::PrecisionUnverified,
+                                _ => ValueStateProjection::Missing,
+                            },
+                            number_format: None,
+                            merged_range: cell.merged_range.clone(),
+                            mapping: None,
+                        },
+                    });
+                }
+            }
+        }
     }
-    Ok(out)
+    // 合同排序：source_id/sheet/行列定位/evidence_id
+    records.sort_by(|a, b| {
+        a.source_id
+            .cmp(&b.source_id)
+            .then_with(|| a.sheet.cmp(&b.sheet))
+            .then_with(|| a.cell_or_row.cmp(&b.cell_or_row))
+            .then_with(|| a.evidence_id.cmp(&b.evidence_id))
+    });
+    Ok(TrimmedSourceSelection {
+        manifest,
+        records,
+        scope_rows,
+    })
+}
+
+/// 递归收集 JSON 内全部 evidence_ids/zero_filled_evidence_ids 数组字符串。
+fn collect_evidence_ids(v: &Value, out: &mut Vec<String>) {
+    match v {
+        Value::Object(map) => {
+            for (k, val) in map {
+                if k == "evidence_ids" || k == "zero_filled_evidence_ids" {
+                    if let Some(items) = val.as_array() {
+                        for item in items {
+                            if let Some(id) = item.as_str() {
+                                out.push(id.to_string());
+                            }
+                        }
+                    }
+                } else {
+                    collect_evidence_ids(val, out);
+                }
+            }
+        }
+        Value::Array(items) => items.iter().for_each(|i| collect_evidence_ids(i, out)),
+        _ => {}
+    }
+}
+
+/// 解析 `cell:{file_label}:{sheet}:{A1}` → (file_label, sheet, 行 1 基, 列 0 基)。
+/// file_label 可含冒号；sheet/列行不可（末两段固定）。
+fn parse_cell_evidence(id: &str) -> Option<(String, String, usize, usize)> {
+    let rest = id.strip_prefix("cell:")?;
+    let mut parts = rest.rsplitn(3, ':');
+    let a1 = parts.next()?;
+    let sheet = parts.next()?;
+    let file_label = parts.next()?;
+    if file_label.is_empty() || sheet.is_empty() {
+        return None;
+    }
+    let col_letters: String = a1.chars().take_while(char::is_ascii_alphabetic).collect();
+    let row_digits: String = a1.chars().skip_while(char::is_ascii_alphabetic).collect();
+    if col_letters.is_empty() || row_digits.is_empty() {
+        return None;
+    }
+    let mut col = 0usize;
+    for ch in col_letters.chars() {
+        col = col * 26 + (ch.to_ascii_uppercase() as usize - 'A' as usize + 1);
+    }
+    let row: usize = row_digits.parse().ok()?;
+    Some((file_label.to_string(), sheet.to_string(), row, col - 1))
 }
 
 fn manual_projections(
@@ -1288,20 +1785,7 @@ pub fn create_preview(
         ],
     )
     .map_err(CliError::from)?;
-    let manifest_rows = manifest_entries(conn, workspace_id, &material.run_id.to_string())?;
-    let source_scope_summary: Vec<Value> = manifest_rows
-        .iter()
-        .map(|m| {
-            json!({
-                "source_id": m.source_id.to_string(),
-                "file_label": m.file_label,
-                "sheet": m.sheet,
-                "selected_range": m.selected_range,
-                "row_count": 0,
-                "content_hash": m.content_hash,
-            })
-        })
-        .collect();
+    let source_scope_summary: Vec<Value> = material.scope_rows.clone();
     Ok(json!({
         "confirmation_id": created.confirmation_id.to_string(),
         "expires_at": dsheng_core::repository::utc_iso(created.expires_at),
