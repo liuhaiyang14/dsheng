@@ -73,10 +73,8 @@ export function SourceScreen() {
       pushDiag(`template_download 失败: ${String(e).slice(0, 120)}`);
     }
     if (app.activeWorkspaceId) {
-      const homeDir = (window as unknown as { __TAURI_OS__?: never; __HOME__?: string }).__HOME__
-        ?? (typeof os !== 'undefined' && typeof (os as { homedir?: () => string }).homedir === 'function'
-          ? (os as unknown as { homedir: () => string }).homedir()
-          : '');
+      // 探测目录用 /tmp 快路径即可定位层级问题；真实目录由用户经选择器/手动输入传入
+      const homeDir = '';
       const withTimeout = <T,>(p: Promise<T>, ms: number, tag: string) =>
         Promise.race([
           p,
