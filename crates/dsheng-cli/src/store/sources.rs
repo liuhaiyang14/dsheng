@@ -58,10 +58,188 @@ pub fn ensure_sidecar_tables(conn: &Connection) -> CliResult<()> {
              revision      INTEGER NOT NULL CHECK (revision >= 1),
              draft_json    TEXT NOT NULL,
              updated_at    TEXT NOT NULL
+         );
+         CREATE TABLE IF NOT EXISTS cli_source_cells (
+             workspace_id  TEXT NOT NULL,
+             source_id     TEXT NOT NULL,
+             sheet         TEXT NOT NULL,
+             row_no        INTEGER NOT NULL CHECK (row_no >= 1),
+             col_no        INTEGER NOT NULL CHECK (col_no >= 0),
+             raw_text      TEXT NOT NULL,
+             cell_kind     TEXT NOT NULL CHECK (cell_kind IN
+                 ('text','int','number','float_unverified','bool','formula','error')),
+             value_state   TEXT NOT NULL CHECK (value_state IN
+                 ('valid','missing','pending_input','invalid','conflict',
+                  'configuration_required','unsupported_formula','precision_unverified')),
+             typed_value   TEXT,
+             formula       TEXT,
+             merged_range  TEXT,
+             PRIMARY KEY (workspace_id, source_id, sheet, row_no, col_no)
+         );
+         CREATE TABLE IF NOT EXISTS cli_source_sheet_layouts (
+             workspace_id  TEXT NOT NULL,
+             source_id     TEXT NOT NULL,
+             sheet         TEXT NOT NULL,
+             role          TEXT NOT NULL,
+             layout_json   TEXT NOT NULL,
+             PRIMARY KEY (workspace_id, source_id, sheet)
          );",
     )
     .map_err(CliError::from)?;
     Ok(())
+}
+
+/// 旁表单元格字段（raw_text, cell_kind, value_state, typed_value, formula）。
+type CellSnapshotFields = (
+    String,
+    &'static str,
+    &'static str,
+    Option<String>,
+    Option<String>,
+);
+
+/// CellValue → 旁表行字段（词法保留；value_state 按 core §1.1 状态机）。
+/// 空白格 None（不造记录）。
+fn cell_snapshot_fields(
+    cell: &dsheng_core::import::fileio::CellValue,
+) -> Option<CellSnapshotFields> {
+    use dsheng_core::import::fileio::CellValue;
+    let state = match cell.value_state() {
+        dsheng_core::contracts::domain::ValueState::Valid => "valid",
+        dsheng_core::contracts::domain::ValueState::Missing => "missing",
+        dsheng_core::contracts::domain::ValueState::PendingInput => "pending_input",
+        dsheng_core::contracts::domain::ValueState::Invalid => "invalid",
+        dsheng_core::contracts::domain::ValueState::Conflict => "conflict",
+        dsheng_core::contracts::domain::ValueState::ConfigurationRequired => {
+            "configuration_required"
+        }
+        dsheng_core::contracts::domain::ValueState::UnsupportedFormula => "unsupported_formula",
+        dsheng_core::contracts::domain::ValueState::PrecisionUnverified => "precision_unverified",
+    };
+    // 空白格不造记录（data-period-import.md §1.4：blank 不发；合并非锚点为 Empty）
+    let decimal_of = || {
+        cell.exact_decimal()
+            .map(dsheng_core::contracts::decimal::to_canonical_string)
+    };
+    let fields = match cell {
+        CellValue::Empty => return None,
+        CellValue::Text(t) => {
+            if t.trim().is_empty() {
+                return None;
+            }
+            (cell.raw_text(), "text", state, Some(t.clone()), None)
+        }
+        CellValue::Int(_) => (cell.raw_text(), "int", state, decimal_of(), None),
+        CellValue::Number(_) => (cell.raw_text(), "number", state, decimal_of(), None),
+        CellValue::FloatUnverified(t) => (t.clone(), "float_unverified", state, None, None),
+        CellValue::Bool(b) => (cell.raw_text(), "bool", state, Some(b.to_string()), None),
+        CellValue::Formula { source, .. } => {
+            (source.clone(), "formula", state, None, Some(source.clone()))
+        }
+        CellValue::Error(e) => {
+            if e.trim().is_empty() {
+                return None;
+            }
+            (cell.raw_text(), "error", state, None, None)
+        }
+    };
+    Some(fields)
+}
+
+/// 落库扫描快照：全部非空格（cli_source_cells）＋每 sheet 布局（layouts）。
+/// 幂等（INSERT OR REPLACE）；source_id 由注册视图按 file_label 匹配回填。
+pub fn persist_source_snapshot(
+    conn: &Connection,
+    workspace_id: Uuid,
+    registered: &[Value],
+    files: &[ScannedFile],
+) -> CliResult<()> {
+    ensure_sidecar_tables(conn)?;
+    for file in files {
+        let Some(source_id) = registered
+            .iter()
+            .find(|v| v["file_label"].as_str() == Some(file.file_label.as_str()))
+            .and_then(|v| v["file_id"].as_str())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        for (sheet_data, scanned) in file.sheets.iter() {
+            // 合并范围 → 左上锚点映射（值仅保留锚点；锚点记录携带完整范围）
+            let mut merged_of: std::collections::HashMap<(usize, usize), String> =
+                std::collections::HashMap::new();
+            for range in &sheet_data.merged_ranges {
+                if let Some(((col, row), _)) = parse_a1_pair(range) {
+                    merged_of.entry((row, col)).or_insert_with(|| range.clone());
+                }
+            }
+            for (row_idx, row) in sheet_data.rows.iter().enumerate() {
+                for (col_idx, cell) in row.iter().enumerate() {
+                    let Some((raw_text, cell_kind, value_state, typed_value, formula)) =
+                        cell_snapshot_fields(cell)
+                    else {
+                        continue;
+                    };
+                    conn.execute(
+                        "INSERT OR REPLACE INTO cli_source_cells (workspace_id, source_id, sheet,
+                                row_no, col_no, raw_text, cell_kind, value_state, typed_value,
+                                formula, merged_range)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                        params![
+                            workspace_id.to_string(),
+                            source_id,
+                            sheet_data.name,
+                            row_idx as i64 + 1,
+                            col_idx as i64,
+                            raw_text,
+                            cell_kind,
+                            value_state,
+                            typed_value,
+                            formula,
+                            merged_of.get(&(row_idx, col_idx))
+                        ],
+                    )
+                    .map_err(CliError::from)?;
+                }
+            }
+            conn.execute(
+                "INSERT OR REPLACE INTO cli_source_sheet_layouts (workspace_id, source_id, sheet,
+                        role, layout_json)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    workspace_id.to_string(),
+                    source_id,
+                    sheet_data.name,
+                    scanned.role,
+                    serde_json::to_string(&crate::store::analysis::sheet_layout_snapshot(
+                        sheet_data, scanned
+                    ))
+                    .unwrap_or_else(|_| "{}".into())
+                ],
+            )
+            .map_err(CliError::from)?;
+        }
+    }
+    Ok(())
+}
+
+/// "B7:B9" → 左上 (0 基 col, row)；解析失败 None。
+fn parse_a1_pair(range: &str) -> Option<((usize, usize), (usize, usize))> {
+    let (start, end) = range.split_once(':')?;
+    let parse = |a1: &str| -> Option<(usize, usize)> {
+        let col_letters: String = a1.chars().take_while(char::is_ascii_alphabetic).collect();
+        let row_digits: String = a1.chars().skip_while(char::is_ascii_alphabetic).collect();
+        if col_letters.is_empty() || row_digits.is_empty() {
+            return None;
+        }
+        let mut col = 0usize;
+        for ch in col_letters.chars() {
+            col = col * 26 + (ch.to_ascii_uppercase() as usize - 'A' as usize + 1);
+        }
+        let row: usize = row_digits.parse().ok()?;
+        Some((col - 1, row - 1))
+    };
+    Some((parse(start)?, parse(end)?))
 }
 
 fn now_iso() -> String {

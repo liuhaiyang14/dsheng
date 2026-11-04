@@ -273,6 +273,102 @@ fn zero_fill_label(file_label: &str, coverage: &CoverageDecision) -> String {
     )
 }
 
+fn period_str(range: &DateRange) -> String {
+    format!(
+        "{}/{}",
+        range.from.format("%Y-%m-%d"),
+        range.to.format("%Y-%m-%d")
+    )
+}
+
+/// 扫描布局快照（cli_source_sheet_layouts.layout_json；生成载荷相关行/列
+/// 裁剪的输入）。字段推导与 extract_observations 同源：表头块/标签列/期间列/
+/// 推移表期间列/转置布局。无表头且非转置 → `{}`（该 sheet 仅在证据锚点
+/// 指向时入选）。
+pub fn sheet_layout_snapshot(
+    sheet_data: &dsheng_core::import::fileio::SheetData,
+    scanned: &crate::store::sources::ScannedSheet,
+) -> Value {
+    if let Some(layout) = scanned
+        .match_info
+        .as_ref()
+        .and_then(|m| m.transposed.as_ref())
+    {
+        return json!({
+            "transposed": {
+                "header_row": layout.header_row,
+                "metric_columns": layout
+                    .metric_columns
+                    .iter()
+                    .map(|(c, n)| json!([c, n]))
+                    .collect::<Vec<_>>(),
+                "period_rows": layout
+                    .period_rows
+                    .iter()
+                    .map(|(r, p)| json!([r, period_str(p)]))
+                    .collect::<Vec<_>>(),
+                "cumulative_rows": layout
+                    .cumulative_rows
+                    .iter()
+                    .map(|(r, p)| json!([r, period_str(p)]))
+                    .collect::<Vec<_>>(),
+            }
+        });
+    }
+    let Some(header) = &scanned.header else {
+        return json!({});
+    };
+    let col_of = |field: &str| {
+        header
+            .columns
+            .iter()
+            .find(|(_, f)| *f == field)
+            .map(|(c, _)| *c)
+    };
+    let period_col = col_of("period");
+    // 推移表：无 period 列时，表头块行内可解析为期间的未映射列即期间列
+    //（与 extract_observations 相同推导；§4.1/§4.3）。
+    let trend_period_cols: Vec<(usize, DateRange)> = if period_col.is_none() {
+        let width = sheet_data.rows.iter().map(|r| r.len()).max().unwrap_or(0);
+        let header_rows: Vec<&Vec<CellValue>> = (header.row.saturating_sub(1)
+            ..header.row.saturating_sub(1) + header.row_count)
+            .filter_map(|r| sheet_data.rows.get(r))
+            .collect();
+        (0..width)
+            .filter_map(|c| {
+                if header.columns.iter().any(|(hc, _)| *hc == c) {
+                    return None;
+                }
+                let text = header_rows
+                    .iter()
+                    .find_map(|r| r.get(c).filter(|v| !v.raw_text().trim().is_empty()))
+                    .map(|cell| cell.raw_text())?;
+                let range = parse_period_header(&text, None)?;
+                Some((c, range))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let mut columns = serde_json::Map::new();
+    for (col, field) in &header.columns {
+        columns.insert(field.to_string(), json!(col));
+    }
+    json!({
+        "header": {
+            "row": header.row,
+            "row_count": header.row_count,
+            "columns": columns,
+        },
+        "label_col": col_of("metric_label").or_else(|| col_of("task_title")),
+        "period_col": period_col,
+        "trend_period_cols": trend_period_cols
+            .iter()
+            .map(|(c, p)| json!([c, period_str(p)]))
+            .collect::<Vec<_>>(),
+    })
+}
+
 /// 观察提取结果：观察、冲突草稿、来源选择、映射行、待确认指标数、补 0 证据坐标。
 type Extracted = (
     Vec<Obs>,
@@ -870,6 +966,8 @@ pub fn run_analyze(
     let metric_names = crate::store::sources::metric_label_names(conn, workspace_id)?;
     let (files, _pending_files) = scan_directory(dir, &metric_names)?;
     let registered = crate::store::sources::register_sources(conn, workspace_id, &files)?;
+    // 扫描快照落旁表（非空格＋布局）：生成载荷按相关行/列裁剪的确定性输入
+    crate::store::sources::persist_source_snapshot(conn, workspace_id, &registered, &files)?;
     let defs = load_metric_defs(conn, workspace_id)?;
     let (obs, conflicts, mut sources, mapping_rows, pending_count, zero_filled) =
         extract_observations(conn, workspace_id, &defs, &files, window, &scope, &coverage)?;
