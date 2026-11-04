@@ -148,6 +148,9 @@ export class TauriClient implements DshengClient {
   templateDownload(outPath: string): Promise<ExportResult> {
     return this.invoke('template_download', { outPath });
   }
+  metricRegisterDefaults(workspaceId: string): Promise<{ registered: number; skipped_already_present: string[]; failed: unknown[] }> {
+    return this.invoke('metric_register_defaults', { workspaceId });
+  }
   fieldMappings(workspaceId: string, runId: string): Promise<FieldMappingRow[]> {
     return this
       .invoke<{ mappings: FieldMappingRow[] }>('mapping_show', { workspaceId, runId })

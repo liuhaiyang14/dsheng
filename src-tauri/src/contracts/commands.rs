@@ -264,3 +264,8 @@ pub fn history_show(
 pub fn template_download(state: tauri::State<'_, DesktopEnv>, out_path: String) -> Value {
     core::data::template_download(&state, out_path)
 }
+
+#[tauri::command(async)]
+pub fn metric_register_defaults(state: tauri::State<'_, DesktopEnv>, workspace_id: String) -> Value {
+    core::metric_defaults::register_defaults(&state, workspace_id)
+}

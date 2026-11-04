@@ -19,6 +19,8 @@ tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["arbitrary_precision"] }
 dsheng-core = { path = "../crates/dsheng-core" }
+chrono = "0.4"
+uuid = { version = "1", features = ["v4"] }
 # 服务层：桌面 command 与 CLI 复用同一实现（ctx::open_db_at / cmd::dispatch / store/**）
 dsheng-cli = { path = "../crates/dsheng-cli" }
 # 数据目录解析用系统 API（Known Folder/XDG；不依赖 cwd）

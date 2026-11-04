@@ -141,6 +141,8 @@ export interface DshengClient {
   scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView>;
   /** 空白导入模板包（三工作簿＋字段说明）落盘到指定路径。 */
   templateDownload(outPath: string): Promise<ExportResult>;
+  /** 一键注册常用指标（含真实科目全名别名；幂等，已注册跳过）。 */
+  metricRegisterDefaults(workspaceId: string): Promise<{ registered: number; skipped_already_present: string[]; failed: unknown[] }>;
   fieldMappings(workspaceId: string, runId: string): Promise<
     { tool_field: string; source_label: string; recognized: string; usage: string }[]
   >;

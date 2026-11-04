@@ -13,6 +13,7 @@ export function SourceScreen() {
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [diag, setDiag] = useState<string[]>([]);
+  const [lastDir, setLastDir] = useState<string | null>(null);
   const hasData = workspaceHasData(app.data);
   const workspaceName = app.activeWorkspace?.name ?? '当前企业';
 
@@ -114,6 +115,7 @@ export function SourceScreen() {
     setScanBusy(true);
     setScanError(null);
     setScanNote(note ?? `已选择：${path}；本地解析中…`);
+    setLastDir(path);
     pushDiag(`scan 调用：workspace=${app.activeWorkspaceId} dir=${path}`);
     try {
       const summary = await Promise.race([
@@ -123,8 +125,32 @@ export function SourceScreen() {
         ),
       ]);
       pushDiag(`scan 返回：${summary.files.length} 文件 / ${summary.total_rows} 行`);
+      setScanNote(`解析完成：${summary.files.length} 个文件 / ${summary.total_rows} 行。待核对的表可在下方确认；完成后到「经营分析」运行分析。`);
       // 刷新时显式携带真实摘要（闭包竞态修复：不再依赖先 setState 再读旧 state）
       await app.reloadWorkspaceData({ keepScan: summary });
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
+  /** 一键注册常用指标并重扫（对齐 CLI 验证流；让推移表按指标列识别）。 */
+  const registerAndRescan = async () => {
+    if (!app.client || !app.activeWorkspaceId) {
+      setScanError('请先创建企业档案。');
+      return;
+    }
+    setScanBusy(true);
+    setScanError(null);
+    try {
+      const r = await app.client.metricRegisterDefaults(app.activeWorkspaceId);
+      pushDiag(`指标注册：新增 ${r.registered}，已存在跳过 ${(r.skipped_already_present ?? []).length}`);
+      if (lastDir) {
+        await runScan(lastDir, '注册后自动重扫（推移表将按指标列识别）');
+      } else {
+        setScanNote('指标已注册；请重新选择目录扫描一次，让推移表按指标列识别。');
+      }
     } catch (err) {
       setScanError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -239,6 +265,28 @@ export function SourceScreen() {
             </div>
           ) : null}
         </>
+      ) : null}
+
+      {scan && (scan.files ?? []).some((f) => f.mapping_status === 'pending_review') ? (
+        <div className="notice" style={{ marginTop: 12 }} data-testid="pending-review-guide">
+          <b>待核对的工作表</b>
+          <span>
+            下列文件部分工作表未按已知指标结构识别（{(scan.files ?? []).filter((f) => f.mapping_status === 'pending_review').map((f) => f.file_label).join('、')}）。
+            常见原因：本档案尚未注册指标别名（推移表按“指标列”识别需要）。可一键注册常用指标后自动重扫；
+            未识别的表仍会按通用表格保留，不丢数据。
+          </span>
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button
+              type="button"
+              className="primary"
+              disabled={scanBusy}
+              onClick={() => void registerAndRescan()}
+              data-testid="register-metrics-button"
+            >
+              {scanBusy ? '处理中…' : '一键注册常用指标并重扫'}
+            </button>
+          </div>
+        </div>
       ) : null}
 
       {!hasData ? (

@@ -422,6 +422,10 @@ export class FixtureClient implements DshengClient {
     return { written: true, out: outPath, bytes: 2048 };
   }
 
+  async metricRegisterDefaults(): Promise<{ registered: number; skipped_already_present: string[]; failed: unknown[] }> {
+    return { registered: 7, skipped_already_present: [], failed: [] };
+  }
+
   async scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView> {
     this.requireWorkspace(workspaceId);
     if (!this.hasData(workspaceId)) {

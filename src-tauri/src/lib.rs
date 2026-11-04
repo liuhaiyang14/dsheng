@@ -35,6 +35,7 @@ pub fn run() {
             contracts::ping,
             contracts::js_log,
             contracts::commands::template_download,
+            contracts::commands::metric_register_defaults,
             contracts::commands::workspace_list,
             contracts::commands::workspace_create,
             contracts::commands::workspace_update,

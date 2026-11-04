@@ -9,6 +9,7 @@
 //! 子模块：settings / data / diagnosis / task / history。
 
 pub mod data;
+pub mod metric_defaults;
 pub mod diagnosis;
 pub mod generation;
 pub mod history;
