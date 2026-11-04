@@ -29,3 +29,12 @@ pub fn ping() -> serde_json::Value {
         "data": { "app": "dsheng", "core_version": dsheng_core::APP_VERSION }
     })
 }
+
+/// JS 飞行记录仪：webview 的 error/unhandledrejection 落入同一日志（排障，无敏感数据）。
+#[tauri::command(async)]
+pub fn js_log(message: String) {
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/dsheng-cmd.log") {
+        let _ = writeln!(f, "[js] {message}");
+    }
+}

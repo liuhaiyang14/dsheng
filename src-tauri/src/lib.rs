@@ -33,6 +33,7 @@ pub fn run() {
         .manage(DesktopEnv::resolve())
         .invoke_handler(tauri::generate_handler![
             contracts::ping,
+            contracts::js_log,
             contracts::commands::template_download,
             contracts::commands::workspace_list,
             contracts::commands::workspace_create,
