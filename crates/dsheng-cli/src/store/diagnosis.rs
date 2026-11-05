@@ -8,6 +8,9 @@
 
 use crate::error::{CliError, CliResult};
 use dsheng_core::contracts::cli::CliErrorCode;
+use dsheng_core::generation::report::{
+    apply_report_patch, ReportPatch, ReportPeriod, ReportScope, ReportSeed,
+};
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -43,10 +46,14 @@ pub fn report_list(conn: &Connection, workspace_id: Uuid, run_id: &str) -> CliRe
     )?;
     let rows = stmt.query_map(params![workspace_id.to_string(), run_id], |r| {
         let report_json: String = r.get(8)?;
-        let warnings = serde_json::from_str::<Value>(&report_json)
-            .ok()
-            .and_then(|v| v.get("warnings").and_then(|w| w.as_array()).cloned())
-            .unwrap_or_default();
+        let report = serde_json::from_str::<Value>(&report_json).unwrap_or(Value::Null);
+        let content = report.pointer("/turn/report_patch").unwrap_or(&report);
+        let active_warnings = content
+            .get("warnings")
+            .or_else(|| content.get("warnings_upsert"))
+            .and_then(Value::as_array)
+            .map(|warnings| warnings.iter().filter(|w| w["status"] == "active").count())
+            .unwrap_or(0);
         Ok(json!({
             "report_id": r.get::<_, String>(0)?,
             "workspace_id": r.get::<_, String>(1)?,
@@ -56,9 +63,10 @@ pub fn report_list(conn: &Connection, workspace_id: Uuid, run_id: &str) -> CliRe
             "problem_statement": r.get::<_, String>(5)?,
             "report_revision_no": r.get::<_, i64>(6)?,
             "state": r.get::<_, String>(7)?,
-            "stop_reason": Value::Null,
-            "can_continue": r.get::<_, Option<String>>(12)?.is_none(),
-            "active_warning_count": warnings.len(),
+            "stop_reason": content.get("stop_reason").cloned().unwrap_or(Value::Null),
+            "can_continue": r.get::<_, Option<String>>(12)?.is_none()
+                && content.get("can_continue").and_then(Value::as_bool).unwrap_or(false),
+            "active_warning_count": active_warnings,
             "created_at": r.get::<_, String>(10)?,
             "updated_at": r.get::<_, String>(11)?,
         }))
@@ -109,15 +117,79 @@ pub fn report_show(
             )
             .map_err(CliError::from)?,
     };
-    let report_json: String = conn
+    let (raw, run_id, analysis_revision, fingerprint, session_id, framework, problem, focus,
+        created_at, updated_at): (String, String, u32, String, String, String, String, Option<String>, String, String) = conn
         .query_row(
-            "SELECT report_json FROM diagnosis_reports WHERE report_id = ?1 AND report_revision_no = ?2",
+            "SELECT report_json, run_id, analysis_revision_no, analysis_input_fingerprint,
+                    session_id, framework, problem_statement, focus_metric_id, created_at, updated_at
+             FROM diagnosis_reports WHERE report_id = ?1 AND report_revision_no = ?2",
             params![report_id, revision],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?)),
         )
         .map_err(|_| validation("report revision 不存在"))?;
-    serde_json::from_str(&report_json)
-        .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "report 快照 JSON 损坏"))
+    let mut report: Value = serde_json::from_str(&raw)
+        .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "report 快照 JSON 损坏"))?;
+    // 0.1.1 曾把 turn 包装直接存为 report；仅从不可变的绑定 revision 恢复。
+    // 不读取当前来源文件，不写回旧快照，也不猜测未保存的发送范围。
+    if let Some(patch_value) = report.pointer("/turn/report_patch") {
+        let patch: ReportPatch = serde_json::from_value(patch_value.clone())
+            .map_err(|e| validation(format!("旧诊断报告 patch 无效：{e}")))?;
+        let (normalized, policy): (String, String) = conn
+            .query_row(
+                "SELECT normalized_metrics_json, period_policy_snapshot_json FROM run_revisions
+             WHERE run_id = ?1 AND revision_no = ?2",
+                params![run_id, analysis_revision],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .map_err(|_| validation("诊断报告绑定的分析 revision 不存在"))?;
+        let normalized: Value =
+            serde_json::from_str(&normalized).map_err(|_| validation("分析快照 JSON 损坏"))?;
+        let policy: Value =
+            serde_json::from_str(&policy).map_err(|_| validation("周期策略快照 JSON 损坏"))?;
+        let seed = ReportSeed {
+            report_id: report_id.to_string(),
+            generation_session_id: session_id,
+            workspace_id: workspace_id.to_string(),
+            run_id,
+            framework: serde_json::from_value(json!(framework))
+                .map_err(|_| validation("诊断框架无效"))?,
+            scope: ReportScope {
+                problem_statement: problem,
+                focus_metric_ids: focus.into_iter().collect(),
+            },
+            period: ReportPeriod {
+                from: normalized
+                    .pointer("/period/from")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                to: normalized
+                    .pointer("/period/to")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                period_policy_version: policy
+                    .get("version")
+                    .map(|v| {
+                        v.as_str()
+                            .map(str::to_string)
+                            .unwrap_or_else(|| v.to_string())
+                    })
+                    .unwrap_or_default(),
+            },
+            source_manifest: vec![],
+            analysis_revision_no: analysis_revision,
+            analysis_input_fingerprint: fingerprint,
+            now: created_at,
+            current_user_message: None,
+        };
+        let mut recovered =
+            apply_report_patch(None, &patch, &seed).map_err(|e| CliError::new(e.code, e.detail))?;
+        recovered.revision_no = revision as u32;
+        recovered.updated_at = updated_at;
+        report = serde_json::to_value(recovered).map_err(|e| validation(e.to_string()))?;
+    }
+    dsheng_core::provider::schema::validate_diagnosis_report(&report)
+        .map_err(|errors| validation(format!("诊断报告快照不完整：{}", errors.join("; "))))?;
+    Ok(report)
 }
 
 /// report JSON → 会议/归档 Markdown（本地投影，不调模型）。

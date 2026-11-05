@@ -1823,6 +1823,29 @@ fn assemble(
     .map_err(|e| CliError::new(e.code, e.detail))
 }
 
+// 同一指纹会复用会话；旧 schema 不支持追加该报告的新 revision。
+// 必须在预览和发送前都检查，避免重复请求后才遇到保存冲突。
+fn ensure_diagnosis_storage_available(
+    conn: &Connection,
+    workspace_id: Uuid,
+    material: &GenerationMaterial,
+) -> CliResult<()> {
+    if material.workflow == Workflow::Diagnosis {
+        let existing: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM diagnosis_reports r JOIN generation_sessions s ON s.session_id = r.session_id
+             WHERE s.workspace_id = ?1 AND s.run_id = ?2 AND s.generation_input_fingerprint = ?3",
+            params![workspace_id.to_string(), material.run_id.to_string(), material.input_hash], |r| r.get(0),
+        )?;
+        if existing > 0 {
+            return Err(CliError::new(
+                CliErrorCode::DataValidationFailed,
+                "相同问题和输入已有诊断报告，请查看本期诊断记录。此次未发送模型请求。",
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// dry-run 预览：建 confirmation（TTL 600s）＋ confirmationPreview 视图。
 pub fn create_preview(
     conn: &mut Connection,
@@ -1833,6 +1856,7 @@ pub fn create_preview(
     prompt_version: &str,
     schema_version: &str,
 ) -> CliResult<Value> {
+    ensure_diagnosis_storage_available(conn, workspace_id, material)?;
     if !provider.key_present {
         return Err(CliError::new(
             CliErrorCode::ProviderKeyMissing,
@@ -1952,6 +1976,7 @@ pub fn send_confirmed(
     dispatcher: &mut dyn RequestDispatch,
     on_progress: &mut dyn FnMut(StreamProgressEvent),
 ) -> CliResult<(Uuid, Value)> {
+    ensure_diagnosis_storage_available(conn, workspace_id, material)?;
     let api_key = crate::store::settings::provider_api_key(conn, provider.provider_id)?
         .ok_or_else(|| {
             CliError::new(
@@ -2315,77 +2340,165 @@ pub fn save_task_candidate(
     Ok(candidate_id)
 }
 
-/// 保存诊断轮次/报告（发送成功后；turn 已过 schema 校验）。
-#[allow(clippy::too_many_arguments)]
-pub fn save_diagnosis_turn(
+/// 保存已经通过 schema 校验的诊断输出；本地事务同时写轮次和完整报告。
+/// 会话绑定来自本次 attempt，而不是同一 run 的“最新”会话。
+pub fn save_diagnosis_output(
     conn: &mut Connection,
     workspace_id: Uuid,
     material: &GenerationMaterial,
     framework: Framework,
     attempt_id: Uuid,
-    session_id: &str,
-    turn_no: i64,
-    user_message: &str,
-    report_json: &Value,
-    report_revision: i64,
-    turn_state: &str,
-    stop_reason: Option<&str>,
-) -> CliResult<String> {
-    let report_id: String = conn
+    output: &Value,
+) -> CliResult<Value> {
+    use dsheng_core::generation::report::{
+        apply_report_patch, ReportPatch, ReportPeriod, ReportScope, ReportSeed,
+    };
+    dsheng_core::provider::schema::validate_diagnosis_turn(framework, output)
+        .map_err(|errors| CliError::new(CliErrorCode::SchemaValidationFailed, errors.join("; ")))?;
+    let tx = conn.transaction()?;
+    let (session_id, provider_id): (String, String) = tx
         .query_row(
-            "SELECT report_id FROM diagnosis_reports WHERE session_id = ?1 LIMIT 1",
-            params![session_id],
-            |r| r.get(0),
-        )
-        .unwrap_or_else(|_| Uuid::new_v4().to_string());
-    let now = now_iso();
-    let turn_id = Uuid::new_v4().to_string();
-    conn.execute(
-        "INSERT INTO diagnosis_turns (turn_id, session_id, workspace_id, turn_no, round_no,
-                user_message, turn_kind, turn_state, accepted_facts_json, context_manifest_json,
-                prompt_version, schema_version, provider_id, attempt_id, stop_reason, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?4, ?5, 'model_turn', ?6, '[]', '{}', '2.0', '3', ?7, ?8, ?9, ?10)",
-        params![
-            turn_id,
-            session_id,
-            workspace_id.to_string(),
-            turn_no,
-            user_message,
-            turn_state,
-            material
-                .report_id
-                .map(|u| u.to_string())
-                .unwrap_or_default(),
-            attempt_id.to_string(),
-            stop_reason,
-            now
-        ],
-    )
-    .map_err(CliError::from)?;
-    if turn_state == "patched" {
-        conn.execute(
-            "INSERT INTO diagnosis_reports (report_id, workspace_id, run_id, analysis_revision_no,
-                    analysis_input_fingerprint, report_revision_no, session_id, framework,
-                    problem_statement, report_json, state, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'accepted', ?11, ?11)",
+            "SELECT a.session_id, a.provider_id FROM generation_attempts a
+         JOIN generation_sessions s ON s.session_id = a.session_id
+         WHERE a.attempt_id = ?1 AND a.workspace_id = ?2 AND s.workspace_id = ?2
+           AND s.run_id = ?3 AND s.workflow = 'diagnosis' AND s.framework = ?4",
             params![
-                report_id,
+                attempt_id.to_string(),
                 workspace_id.to_string(),
                 material.run_id.to_string(),
-                material.analysis_revision_no as i64,
-                material.analysis_input_fingerprint,
-                report_revision,
+                framework_db_str(framework)
+            ],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|_| {
+            CliError::new(
+                CliErrorCode::DataValidationFailed,
+                "诊断 attempt 与会话不匹配",
+            )
+        })?;
+    let existing: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM diagnosis_reports WHERE session_id = ?1",
+        [&session_id],
+        |r| r.get(0),
+    )?;
+    if existing > 0 {
+        return Err(CliError::new(
+            CliErrorCode::DataValidationFailed,
+            "当前版本尚不支持保存诊断续问的新版本；已保存报告保持不变",
+        ));
+    }
+    let turn_no: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(turn_no), 0) + 1 FROM diagnosis_turns WHERE session_id = ?1",
+        [&session_id],
+        |r| r.get(0),
+    )?;
+    let payload: Value = serde_json::from_str(&material.payload_json)
+        .map_err(|_| CliError::new(CliErrorCode::InputContractInvalid, "诊断输入 JSON 损坏"))?;
+    let parse_error =
+        |e: serde_json::Error| CliError::new(CliErrorCode::InputContractInvalid, e.to_string());
+    let now = now_iso();
+    let patch = output.get("report_patch").filter(|v| !v.is_null());
+    let report = if let Some(patch) = patch {
+        let patch: ReportPatch = serde_json::from_value(patch.clone()).map_err(parse_error)?;
+        let seed = ReportSeed {
+            report_id: Uuid::new_v4().to_string(),
+            generation_session_id: session_id.clone(),
+            workspace_id: workspace_id.to_string(),
+            run_id: material.run_id.to_string(),
+            framework: framework.into(),
+            scope: ReportScope {
+                problem_statement: payload
+                    .pointer("/scope/problem_statement")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        CliError::new(CliErrorCode::InputContractInvalid, "诊断输入缺少问题范围")
+                    })?
+                    .to_string(),
+                focus_metric_ids: serde_json::from_value(
+                    payload["scope"]["focus_metric_ids"].clone(),
+                )
+                .map_err(parse_error)?,
+            },
+            period: ReportPeriod {
+                from: payload
+                    .pointer("/period/source_from")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                to: payload
+                    .pointer("/period/source_to")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                period_policy_version: payload
+                    .pointer("/period/period_policy_version")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| {
+                        CliError::new(CliErrorCode::InputContractInvalid, "诊断输入缺少周期策略")
+                    })?
+                    .to_string(),
+            },
+            source_manifest: serde_json::from_value(payload["source_manifest"].clone())
+                .map_err(parse_error)?,
+            analysis_revision_no: material.analysis_revision_no,
+            analysis_input_fingerprint: material.analysis_input_fingerprint.clone(),
+            now: now.clone(),
+            current_user_message: Some(material.user_supplied_text.clone()),
+        };
+        let report =
+            apply_report_patch(None, &patch, &seed).map_err(|e| CliError::new(e.code, e.detail))?;
+        let value = serde_json::to_value(&report).map_err(parse_error)?;
+        dsheng_core::provider::schema::validate_diagnosis_report(&value).map_err(|errors| {
+            CliError::new(CliErrorCode::SchemaValidationFailed, errors.join("; "))
+        })?;
+        tx.execute(
+            "INSERT INTO diagnosis_reports (report_id, workspace_id, run_id, analysis_revision_no,
+                analysis_input_fingerprint, report_revision_no, session_id, framework,
+                problem_statement, focus_metric_id, report_json, state, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'accepted', ?12, ?12)",
+            params![
+                report.report_id,
+                report.workspace_id,
+                report.run_id,
+                report.analysis_revision_no,
+                report.analysis_input_fingerprint,
+                report.revision_no,
                 session_id,
                 framework_db_str(framework),
-                material.user_supplied_text,
-                serde_json::to_string(report_json).unwrap(),
+                report.scope.problem_statement,
+                report.scope.focus_metric_ids.first(),
+                value.to_string(),
                 now
             ],
-        )
-        .map_err(CliError::from)?;
-    }
-    let _ = material.framework;
-    Ok(turn_id)
+        )?;
+        Some(report)
+    } else {
+        None
+    };
+    let state = match output["turn_disposition"].as_str() {
+        Some("needs_clarification") => "clarification",
+        Some("off_topic_redirect") => "redirect",
+        _ => "patched",
+    };
+    let turn_id = Uuid::new_v4().to_string();
+    tx.execute(
+        "INSERT INTO diagnosis_turns (turn_id, session_id, workspace_id, turn_no, round_no,
+            user_message, turn_kind, turn_state, accepted_facts_json, report_patch_json,
+            report_revision_after, context_manifest_json, prompt_version, schema_version,
+            provider_id, attempt_id, clarification_questions_json, redirect_message, stop_reason, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?4, ?5, 'model_turn', ?6, ?7, ?8, ?9, '{}', '2.0', '3', ?10, ?11, ?12, ?13, ?14, ?15)",
+        params![turn_id, session_id, workspace_id.to_string(), turn_no, material.user_supplied_text,
+            state, output["accepted_facts"].to_string(), patch.map(Value::to_string),
+            report.as_ref().map(|r| r.revision_no), provider_id, attempt_id.to_string(),
+            output["clarification_questions"].to_string(), output["redirect_message"].as_str(),
+            output["stop_reason"].as_str(), now],
+    )?;
+    // 仅保存已确认的范围元数据，不保存完整 prompt 或原始表内容。
+    tx.execute("UPDATE generation_sessions SET scope_snapshot_json = ?2, updated_at = ?3 WHERE session_id = ?1",
+        params![session_id, json!({"scope":payload["scope"],"period":payload["period"],"source_manifest":payload["source_manifest"]}).to_string(), now])?;
+    tx.commit()?;
+    Ok(
+        json!({"attempt_id":attempt_id.to_string(),"session_id":session_id,
+        "turn_id":turn_id,"turn_state":state,"report_id":report.as_ref().map(|r| &r.report_id)}),
+    )
 }
 
 /// run 归属 workspace（generation_cmd 辅助）。

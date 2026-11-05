@@ -277,6 +277,25 @@ pub fn diagnosis_continue_value_with_progress(
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "session 不存在"))?;
+    ctx::ensure_object_in_workspace(
+        &conn,
+        "generation_sessions",
+        "session_id",
+        &session,
+        ws.workspace_id,
+        "session",
+    )?;
+    // 当前表的 report_id 为单列主键，尚不能保存同一报告的新 revision。
+    // 在预览/真实发送之前拒绝，不能付费生成后才遇到主键冲突。
+    let saved_reports: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM diagnosis_reports WHERE session_id = ?1",
+        [&session],
+        |r| r.get(0),
+    )?;
+    if saved_reports > 0 {
+        return Err(CliError::new(CliErrorCode::DataValidationFailed,
+            "当前版本尚不支持保存诊断续问的新版本；请保留现有报告，返回诊断页新建分析。此次未发送模型请求。"));
+    }
     if frozen.is_some() {
         return Err(CliError::new(
             CliErrorCode::DataValidationFailed,
@@ -599,85 +618,14 @@ fn gate_and_run(
                         "next": "task reconcile --dry-run 应用候选",
                     }))
                 }
-                OutputKind::Diagnosis { framework } => {
-                    // turn schema 校验（框架对应）→ 状态机 → 报告/轮次落库
-                    dsheng_core::provider::schema::validate_diagnosis_turn(framework, &output)
-                        .map_err(|errors| {
-                            CliError::new(CliErrorCode::SchemaValidationFailed, errors.join("; "))
-                        })?;
-                    // output 已通过冻结 turn schema3 校验（上方 validate_diagnosis_turn）；
-                    // 此处只做容错取值，不再二次窄投影（真实联调教训：手写投影窄于
-                    // 合同会误拒合法输出，两次真实派发因此失败）。
-                    let turn_disposition_of = |v: &serde_json::Value| {
-                        v.get("turn_disposition")
-                            .and_then(|x| x.as_str())
-                            .unwrap_or("")
-                            .to_string()
-                    };
-                    let session_id: String = conn
-                        .query_row(
-                            "SELECT session_id FROM generation_sessions
-                             WHERE workspace_id = ?1 AND run_id = ?2
-                             ORDER BY created_at DESC LIMIT 1",
-                            rusqlite::params![
-                                workspace_id.to_string(),
-                                material.run_id.to_string()
-                            ],
-                            |r| r.get(0),
-                        )
-                        .map_err(CliError::from)?;
-                    let turn_no: i64 = conn
-                        .query_row(
-                            "SELECT COALESCE(MAX(turn_no), 0) + 1 FROM diagnosis_turns WHERE session_id = ?1",
-                            rusqlite::params![session_id],
-                            |r| r.get(0),
-                        )
-                        .unwrap_or(1);
-                    let disposition = turn_disposition_of(&output);
-                    let stop_reason = output
-                        .get("stop_reason")
-                        .and_then(|x| x.as_str())
-                        .map(|x| x.to_string());
-                    let summary_update = output
-                        .pointer("/report_patch/summary_update")
-                        .and_then(|x| x.as_str())
-                        .map(|x| x.to_string());
-                    let report_json = json!({
-                        "schema_version": "3",
-                        "framework": gen::framework_db_str(framework),
-                        "scope": {"problem_statement": material.user_supplied_text},
-                        "summary": summary_update,
-                        "turn": output,
-                        "turn_disposition": disposition,
-                        "stop_reason": stop_reason,
-                    });
-                    let state = match disposition.as_str() {
-                        "needs_clarification" => "clarification",
-                        "off_topic_redirect" => "redirect",
-                        _ => "patched",
-                    };
-                    let turn_id = crate::store::generation::save_diagnosis_turn(
-                        conn,
-                        workspace_id,
-                        &material,
-                        framework,
-                        attempt_id,
-                        &session_id,
-                        turn_no,
-                        &material.user_supplied_text,
-                        &report_json,
-                        if state == "patched" { 1 } else { 0 },
-                        state,
-                        stop_reason.as_deref(),
-                    )?;
-                    Ok(json!({
-                        "attempt_id": attempt_id.to_string(),
-                        "session_id": session_id,
-                        "turn_id": turn_id,
-                        "turn_state": state,
-                        "report_id": report_json.get("report_id"),
-                    }))
-                }
+                OutputKind::Diagnosis { framework } => gen::save_diagnosis_output(
+                    conn,
+                    workspace_id,
+                    &material,
+                    framework,
+                    attempt_id,
+                    &output,
+                ),
             }
         }
     }

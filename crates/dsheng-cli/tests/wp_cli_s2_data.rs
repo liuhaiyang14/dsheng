@@ -1048,10 +1048,17 @@ fn s2_diagnosis_local_read_and_revise() {
     let report_id = uuid::Uuid::new_v4().to_string();
     let turn_id = uuid::Uuid::new_v4().to_string();
     let report_json = json!({
-        "scope": {"problem_statement": "销售额未达下限", "framework": "5why"},
-        "findings": [{"finding_id": "f1", "summary": "老客流失"}],
-        "facts_and_hypotheses": [{"fact_id": "fact-1", "statement": "10月拜访量下降", "fact_status": "user_report"}],
-        "warnings": [], "open_questions": []
+        "schema_version":"3", "report_id":report_id, "generation_session_id":session_id,
+        "workspace_id":f.workspace, "run_id":run_id, "framework":"5why",
+        "scope":{"problem_statement":"销售额未达下限","focus_metric_ids":[]},
+        "period":{"from":"2026-10-01","to":"2026-10-31","period_policy_version":"1"},
+        "revision_no":1,"summary":"合成报告","source_manifest":[],
+        "findings":[{"finding_id":"f1","level":1,"question":"为什么下降？","answer":"客流减少",
+            "fact_status":"hypothesis","evidence_ids":[],"reasoning_summary":"待核对",
+            "confidence":"low","validation_question":"核对客流？","status":"candidate"}],
+        "facts_and_hypotheses":[],"evidence_refs":[],"clarification_questions":[],"warnings":[],
+        "stop_reason":null,"can_continue":true,"created_at":"2026-11-03T00:00:00Z",
+        "updated_at":"2026-11-03T00:00:00Z","analysis_revision_no":1,"analysis_input_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     });
     {
         let conn = rusqlite::Connection::open(&f.db).unwrap();
@@ -1119,7 +1126,7 @@ fn s2_diagnosis_local_read_and_revise() {
         &report_id,
         "--json",
     ]);
-    assert_eq!(code, 0);
+    assert_eq!(code, 0, "{out}");
     assert_eq!(ok(&out)["scope"]["problem_statement"], "销售额未达下限");
     // export md
     let out_path = f.dir.join("report.md");

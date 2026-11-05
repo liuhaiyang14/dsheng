@@ -610,7 +610,7 @@ fn s3_task_generate_stale_diagnosis_reference_rejected() {
 }
 
 #[test]
-fn s3_candidate_and_turn_saving_are_pure_local() {
+fn s3_candidate_saving_is_pure_local() {
     let f = Fixture::new("gate-save");
     let mut conn = rusqlite::Connection::open(&f.db).unwrap();
     let material = material_of_fixture(&f);
@@ -640,43 +640,5 @@ fn s3_candidate_and_turn_saving_are_pure_local() {
         )
         .unwrap();
     assert_eq!(state, "candidate");
-    // save_diagnosis_turn：轮次落库（不伪造模型响应；报告仅在 patched 状态写入）
-    let framework = dsheng_core::contracts::provider::Framework::Why5;
-    let session_id: String = conn
-        .query_row(
-            "INSERT INTO generation_sessions (session_id, workspace_id, run_id, analysis_revision_no,
-                    analysis_input_fingerprint, generation_input_fingerprint, workflow, framework,
-                    state, prompt_version, schema_version, input_schema_version,
-                    source_manifest_hash, created_at, updated_at)
-             VALUES (?1, ?2, ?3, 1, 'fp', 'gfp', 'diagnosis', '5why', 'active', '2.0', '3', '2', 'h', ?4, ?4)
-             RETURNING session_id",
-            rusqlite::params![uuid::Uuid::new_v4().to_string(), f.workspace.to_string(), f.run_id, "2026-11-03T00:00:00Z"],
-            |r| r.get(0),
-        )
-        .unwrap();
-    let report = json!({"schema_version": "3", "scope": {"problem_statement": "p"}});
-    let turn_id = gen::save_diagnosis_turn(
-        &mut conn,
-        f.workspace,
-        &material,
-        framework,
-        uuid::Uuid::new_v4(),
-        &session_id,
-        1,
-        "请分析",
-        &report,
-        1,
-        "patched",
-        None,
-    )
-    .unwrap();
-    let reports: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM diagnosis_reports WHERE session_id = ?1",
-            rusqlite::params![session_id],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(reports, 1, "patched 轮次写报告");
-    let _ = turn_id;
+    // 诊断轮次/完整报告落库覆盖见 wp_diagnosis_report_recovery.rs。
 }
