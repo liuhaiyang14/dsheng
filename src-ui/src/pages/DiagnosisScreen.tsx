@@ -10,8 +10,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
-import { GenerationProgressPanel } from '../components/GenerationProgressPanel';
-import { PreviewModal } from '../components/PreviewModal';
+import { GenerationDialog } from '../components/GenerationDialog';
+import { useGeneration } from '../components/useGeneration';
 import {
   CONFIDENCE_LABELS,
   DIAGNOSIS_FRAMEWORK_OPTIONS,
@@ -102,13 +102,13 @@ export function DiagnosisScreen() {
   const [supplement, setSupplement] = useState('');
   const [pending, setPending] = useState<PendingPreview | null>(null);
   const [busy, setBusy] = useState(false);
-  /** confirm 发送进行中（进度面板渲染窗口；终态或异常即关闭）。 */
-  const [sending, setSending] = useState(false);
+  const generation = useGeneration(app.client, app.activeWorkspaceId);
+  const sending = generation.active;
   const [stoppedLocal, setStoppedLocal] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    app.setContextLock(sending ? '正在生成诊断；请等待完成或在进度面板取消后再切换企业、期间或页面。' : null);
+    app.setContextLock(sending ? '正在生成诊断；请等待完成或在生成弹窗停止后再切换企业、期间或页面。' : null);
     return () => app.setContextLock(null);
   }, [app.setContextLock, sending]);
 
@@ -187,7 +187,7 @@ export function DiagnosisScreen() {
 
   /** 显式按钮：生成诊断报告 → 预览。 */
   const requestGenerate = async () => {
-    if (!app.client || !app.activeWorkspaceId || !runId || !detail || historical) return;
+    if (!app.client || !app.activeWorkspaceId || !runId || !detail || historical || sending || app.loading) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -214,6 +214,7 @@ export function DiagnosisScreen() {
         // 核心返回的当前分析版本证据；不编造单元格定位。
         evidence_ids: evidenceIds,
       });
+      generation.reset();
       setPending({ preview, kind: 'generate', label: '确认生成诊断报告（发送 1 次请求）' });
     } catch (err) {
       setNotice(friendlyError(err));
@@ -224,7 +225,7 @@ export function DiagnosisScreen() {
 
   /** 显式按钮：继续分析 → 预览（含补充事实）。 */
   const requestContinue = async () => {
-    if (!app.client || !app.activeWorkspaceId || !selected || continuationUnavailable) return;
+    if (!app.client || !app.activeWorkspaceId || !selected || continuationUnavailable || sending || app.loading) return;
     if (supplement.trim().length === 0) {
       setNotice('请先补充一条现场事实或核实结果。');
       return;
@@ -237,6 +238,7 @@ export function DiagnosisScreen() {
         session_id: selected.generation_session_id,
         supplement_fact: supplement.trim(),
       });
+      generation.reset();
       setPending({ preview, kind: 'continue', label: '确认继续分析（发送 1 次请求）' });
     } catch (err) {
       setNotice(friendlyError(err));
@@ -245,39 +247,26 @@ export function DiagnosisScreen() {
     }
   };
 
-  const cancelGeneration = async (attemptId: string) => {
-    if (!app.client || !app.activeWorkspaceId) return;
-    try {
-      await app.client.generationCancel(app.activeWorkspaceId, attemptId);
-      setNotice('已请求取消本次生成（仅本地取消；不保证远端停止计费，迟到数据不提交）。');
-    } catch (err) {
-      setNotice(friendlyError(err));
-    }
-  };
-
   const confirmPending = async () => {
-    if (!app.client || !pending) return;
-    setBusy(true);
-    setSending(true);
-    try {
-      if (pending.kind === 'generate') {
-        const receipt = await app.client.diagnosisGenerateConfirm(pending.preview.confirmation_id);
+    if (!app.client || !pending || sending || app.loading) return;
+    const client = app.client;
+    const confirmed = pending;
+    app.setContextLock('正在生成诊断；请等待完成或在生成弹窗停止后再切换企业、期间或页面。');
+    const result = await generation.run(confirmed.preview.confirmation_id, () => confirmed.kind === 'generate'
+      ? client.diagnosisGenerateConfirm(confirmed.preview.confirmation_id)
+      : client.diagnosisContinueConfirm(confirmed.preview.confirmation_id));
+    if (result.status === 'succeeded') {
+      if (confirmed.kind === 'generate') {
+        const receipt = result.value;
         if (receipt.report_id) setSelectedReportId(receipt.report_id);
         setNotice(receipt.report_id
           ? '诊断报告已生成并保存到当前企业档案。'
           : '本轮分析已保存，尚未形成报告。');
       } else {
-        await app.client.diagnosisContinueConfirm(pending.preview.confirmation_id);
         setSupplement('');
         setNotice('补充事实已随本轮分析发送并记录为用户陈述（未核实）。');
       }
       setListReload((value) => value + 1);
-    } catch (err) {
-      setNotice(friendlyError(err));
-    } finally {
-      setSending(false);
-      setBusy(false);
-      setPending(null);
     }
   };
 
@@ -354,7 +343,7 @@ export function DiagnosisScreen() {
             type="button"
             className="primary"
             onClick={() => void requestGenerate()}
-            disabled={busy || historical}
+            disabled={busy || sending || historical || app.loading}
             data-testid="generate-diagnosis-button"
           >
             生成诊断报告
@@ -542,7 +531,7 @@ export function DiagnosisScreen() {
                     type="button"
                     className="primary"
                     onClick={() => void requestContinue()}
-                    disabled={busy || isStopped || continuationUnavailable}
+                    disabled={busy || sending || isStopped || continuationUnavailable || app.loading}
                     data-testid="continue-diagnosis-button"
                   >
                     继续分析
@@ -586,20 +575,15 @@ export function DiagnosisScreen() {
         报告独立保存到当前企业档案；本页不调用任务生成，任务单页亦不进行根因追问。
       </div>
 
-      <GenerationProgressPanel
-        active={sending}
-        title="诊断生成发送中"
-        onCancel={(attemptId) => void cancelGeneration(attemptId)}
-      />
-
       {pending ? (
-        <PreviewModal
+        <GenerationDialog
           preview={pending.preview}
-          title={pending.kind === 'generate' ? '生成诊断报告 · 发送预览' : '继续分析 · 发送预览'}
+          title={pending.kind === 'generate' ? '生成诊断报告' : '继续分析'}
           confirmLabel={pending.label}
+          generation={generation}
+          contextLoading={app.loading}
           onConfirm={() => void confirmPending()}
-          onCancel={() => setPending(null)}
-          busy={busy}
+          onClose={() => { generation.reset(); setPending(null); }}
         />
       ) : null}
     </div>

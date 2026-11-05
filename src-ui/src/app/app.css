@@ -587,3 +587,20 @@ tr:last-child td { border-bottom: 0; }
 .source-technical-details[open] > summary { margin-bottom: 10px; }
 .source-intake-panel .manual-path { margin: 0; padding: 0 16px 16px; }
 .source-intake-panel .file-list { max-height: 420px; overflow-y: auto; }
+
+/* 模型发送与进度保留在同一弹窗，不以假百分比表示未知完成度。 */
+.generation-dialog { max-width: 640px; }
+.generation-dialog:focus { outline: none; }
+.generation-stage { display: flex; align-items: flex-start; gap: 16px; margin: 6px 0 22px; }
+.generation-stage strong { font-size: 1.125rem; }
+.generation-stage p { margin: 8px 0 0; line-height: 1.7; }
+.generation-spinner { flex: 0 0 24px; width: 24px; height: 24px; margin-top: 2px; border: 2px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: generation-spin 1s linear infinite; }
+.generation-terminal-mark { flex: 0 0 24px; color: var(--blue); font-size: 1.4rem; line-height: 1.2; }
+.generation-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0 0 18px; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.generation-stats dt { color: var(--muted); font-size: .8125rem; margin-bottom: 9px; }
+.generation-stats dd { margin: 0; font-family: var(--font-ui); font-variant-numeric: tabular-nums; font-size: 1.5rem; overflow-wrap: anywhere; }
+.generation-stats small { font-size: .75rem; color: var(--muted); }
+.generation-text-counts { color: var(--muted); font-size: .875rem; }
+.generation-dialog .notice.error { display: block; line-height: 1.7; overflow-wrap: anywhere; }
+@keyframes generation-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .generation-spinner { animation: none; } }

@@ -234,6 +234,12 @@ export class TauriClient implements DshengClient {
   ): Promise<import('./types').GenerationCancelResult> {
     return this.invoke('generation_cancel', { workspaceId, attemptId });
   }
+  generationCancelByConfirmation(
+    workspaceId: string,
+    confirmationId: string,
+  ): Promise<Omit<import('./types').GenerationCancelResult, 'attempt_id'> & { attempt_id: string | null }> {
+    return this.invoke('generation_cancel_by_confirmation', { workspaceId, confirmationId });
+  }
 
   // ---- 任务生成（dsheng task generate / task reconcile） ----
   taskGeneratePreview(

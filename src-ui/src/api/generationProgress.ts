@@ -20,6 +20,17 @@ type TauriWithEvents = { event?: TauriEventListener } | undefined;
 
 export const GENERATION_PROGRESS_EVENT = 'generation://progress';
 
+/** 发送前等待监听就绪，避免丢失首个请求标识/等待响应事件。 */
+export async function listenGenerationProgress(
+  listener: (event: GenerationProgressEvent) => void,
+): Promise<() => void> {
+  const tauri = typeof window !== 'undefined'
+    ? (window as unknown as { __TAURI__?: TauriWithEvents }).__TAURI__
+    : undefined;
+  if (!tauri?.event?.listen) return () => {};
+  return tauri.event.listen(GENERATION_PROGRESS_EVENT, (event) => listener(event.payload));
+}
+
 /** 订阅生成进度事件；返回取消订阅。无 Tauri 时为 no-op（退化 tick）。 */
 export function subscribeGenerationProgress(
   listener: (event: GenerationProgressEvent) => void,

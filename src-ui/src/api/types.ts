@@ -965,10 +965,15 @@ export interface HistoryDetailView {
 /** 生成进度事件（桌面 generation://progress；流式 Provider 接收进度）。 */
 export interface GenerationProgressEvent {
   attempt_id: string;
+  /** 桌面事件关联字段；旧版本事件可能未携带。 */
+  confirmation_id?: string;
+  workspace_id?: string;
   chunk_seq: number;
   bytes: number;
   elapsed_ms: number;
   stage: string;
+  content_chars?: number;
+  reasoning_chars?: number;
 }
 
 /** generation cancel 结果（核心 CLI 契约形状）。 */

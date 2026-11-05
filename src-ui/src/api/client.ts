@@ -192,6 +192,11 @@ export interface DshengClient {
     workspaceId: string,
     attemptId: string,
   ): Promise<GenerationCancelResult>;
+  /** 桌面辅助：attempt 尚未创建时也可登记停止意图。 */
+  generationCancelByConfirmation?(
+    workspaceId: string,
+    confirmationId: string,
+  ): Promise<Omit<GenerationCancelResult, 'attempt_id'> & { attempt_id: string | null }>;
 
   // ---- 任务生成（显式按钮 → preview → confirm） ----
   taskGeneratePreview(request: TaskGenerateRequest): Promise<ConfirmationPreview>;

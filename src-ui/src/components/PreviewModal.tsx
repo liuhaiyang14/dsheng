@@ -16,6 +16,7 @@ export function PreviewModal({
   onConfirm,
   onCancel,
   busy,
+  confirmDisabled,
   children,
 }: {
   preview: ConfirmationPreview;
@@ -24,6 +25,7 @@ export function PreviewModal({
   onConfirm: () => void;
   onCancel: () => void;
   busy?: boolean;
+  confirmDisabled?: boolean;
   /** 附加选择（如任务生成时可选引用诊断报告）。 */
   children?: ReactNode;
 }) {
@@ -96,7 +98,7 @@ export function PreviewModal({
             type="button"
             className="primary"
             onClick={onConfirm}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             data-testid="preview-confirm"
           >
             {busy ? '处理中…' : confirmLabel}

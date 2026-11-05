@@ -9,8 +9,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
-import { GenerationProgressPanel } from '../components/GenerationProgressPanel';
-import { PreviewModal } from '../components/PreviewModal';
+import { GenerationDialog } from '../components/GenerationDialog';
+import { useGeneration } from '../components/useGeneration';
 import { TaskDrawer } from '../components/TaskDrawer';
 import { TimelineBoard } from '../components/TimelineBoard';
 import {
@@ -62,8 +62,8 @@ export function TaskScreen() {
   const [candidate, setCandidate] = useState<TaskCandidateView | null>(null);
   const [applySelection, setApplySelection] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
-  /** confirm 发送进行中（进度面板渲染窗口；终态或异常即关闭）。 */
-  const [sending, setSending] = useState(false);
+  const generation = useGeneration(app.client, app.activeWorkspaceId);
+  const sending = generation.active;
   const [notice, setNotice] = useState<string | null>(null);
   const [timelineGrain, setTimelineGrain] = useState<Cadence>(detail?.grain ?? 'day');
   const [timelineFrom, setTimelineFrom] = useState(detail?.period.from ?? '');
@@ -73,7 +73,7 @@ export function TaskScreen() {
 
   useEffect(() => {
     app.setContextLock(sending
-      ? '正在生成任务；请等待完成或在进度面板取消后再切换企业、期间或页面。'
+      ? '正在生成任务；请等待完成或在生成弹窗停止后再切换企业、期间或页面。'
       : candidate ? '本页有待应用的任务候选，请先应用或全部忽略，再切换企业、期间或页面。' : null);
     return () => app.setContextLock(null);
   }, [app.setContextLock, sending, candidate]);
@@ -125,7 +125,7 @@ export function TaskScreen() {
 
   /** 显式按钮第一步：打开生成参数（可选引用诊断报告）。 */
   const openGenerate = () => {
-    if (historical) return;
+    if (historical || sending || app.loading) return;
     if (!hasData || !detail) {
       setNotice('请先为当前企业档案导入数据并完成字段映射。');
       return;
@@ -135,7 +135,7 @@ export function TaskScreen() {
 
   /** 显式按钮第二步：请求发送预览。 */
   const requestPreview = async () => {
-    if (!app.client || !app.activeWorkspaceId || !runId || historical) return;
+    if (!app.client || !app.activeWorkspaceId || !runId || historical || sending || app.loading) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -144,6 +144,7 @@ export function TaskScreen() {
         run_id: runId,
         diagnosis_report_id: useReport && reportId ? reportId : undefined,
       });
+      generation.reset();
       setPreview(p);
       setLastFingerprint(p.analysis_input_fingerprint);
       setGenerateModalOpen(false);
@@ -154,32 +155,18 @@ export function TaskScreen() {
     }
   };
 
-  /** 显式按钮第三步：确认发送 → 候选（演示层）。 */
-  const cancelGeneration = async (attemptId: string) => {
-    if (!app.client || !app.activeWorkspaceId) return;
-    try {
-      await app.client.generationCancel(app.activeWorkspaceId, attemptId);
-      setNotice('已请求取消本次生成（仅本地取消；不保证远端停止计费，迟到数据不提交）。');
-    } catch (err) {
-      setNotice(friendlyError(err));
-    }
-  };
-
+  /** 显式按钮第三步：确认发送 → 候选；停止成功时不应用迟到候选。 */
   const confirmSend = async () => {
-    if (!app.client || !preview) return;
-    setBusy(true);
-    setSending(true);
-    try {
-      const c = await app.client.taskGenerateConfirm(preview.confirmation_id);
+    if (!app.client || !preview || sending || app.loading) return;
+    const client = app.client;
+    const confirmationId = preview.confirmation_id;
+    app.setContextLock('正在生成任务；请等待完成或在生成弹窗停止后再切换企业、期间或页面。');
+    const result = await generation.run(confirmationId, () => client.taskGenerateConfirm(confirmationId));
+    if (result.status === 'succeeded') {
+      const c = result.value;
       setCandidate(c);
       setApplySelection(Object.fromEntries(c.tasks.map((t) => [t.task_key, true])));
       setNotice('候选已保存。请逐项确认后应用；应用只创建/更新任务，不重复发送请求。');
-      setPreview(null);
-    } catch (err) {
-      setNotice(friendlyError(err));
-    } finally {
-      setSending(false);
-      setBusy(false);
     }
   };
 
@@ -260,7 +247,7 @@ export function TaskScreen() {
             type="button"
             className="primary"
             onClick={openGenerate}
-            disabled={busy || historical}
+            disabled={busy || sending || historical || app.loading}
             data-testid="generate-task-button"
           >
             生成任务单
@@ -578,21 +565,15 @@ export function TaskScreen() {
       ) : null}
 
       {preview ? (
-        <>
-          <GenerationProgressPanel
-            active={sending}
-            title="任务生成发送中"
-            onCancel={(attemptId) => void cancelGeneration(attemptId)}
-          />
-          <PreviewModal
+        <GenerationDialog
           preview={preview}
-          title="生成任务单 · 发送预览"
+          title="生成任务单"
           confirmLabel="确认生成任务单（发送 1 次请求）"
+          generation={generation}
+          contextLoading={app.loading}
           onConfirm={() => void confirmSend()}
-          onCancel={() => setPreview(null)}
-          busy={busy}
+          onClose={() => { generation.reset(); setPreview(null); }}
         />
-        </>
       ) : null}
 
       {selectedTask && app.client && app.activeWorkspace ? (
