@@ -188,7 +188,7 @@ export interface ProviderPublic {
   protocol: 'chat_completions';
   base_url: string;
   model: string;
-  stream: false;
+  stream: boolean;
   timeouts: Timeouts;
   budget: Budget;
 }
