@@ -7,10 +7,15 @@ export interface GenerationState {
   phase: GenerationPhase;
   latest: GenerationProgressEvent | null;
   elapsedMs: number;
+  lastActivityAt: number | null;
+  canRetryConnection: boolean;
   error: string | null;
   message: string | null;
 }
-const initialState: GenerationState = { phase: 'idle', latest: null, elapsedMs: 0, error: null, message: null };
+const initialState: GenerationState = {
+  phase: 'idle', latest: null, elapsedMs: 0, lastActivityAt: null,
+  canRetryConnection: false, error: null, message: null,
+};
 const activePhase = (phase: GenerationPhase) => phase === 'starting' || phase === 'running' || phase === 'stopping';
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 
@@ -23,6 +28,8 @@ interface Inflight {
   finished: boolean;
   cancelled: boolean;
   stopRequested: boolean;
+  receivedBytes: number;
+  receivedChunks: number;
   attemptId?: string;
   cancelPromise?: Promise<void>;
   unsubscribe?: () => void;
@@ -79,6 +86,8 @@ export function useGeneration(client: DshengClient | null, workspaceId: string |
         request.cancelled = true;
         update(request, { phase: 'stopping', message: '停止已确认，正在结束本次请求。' });
       } catch (error) {
+        // 终态事件比迟到的取消 IPC 错误更明确，不能把已确认停止改回运行中。
+        if (request.cancelled) return;
         request.stopRequested = false;
         update(request, { phase: 'running', error: `停止失败：${errorText(error)}`, message: '本次请求仍在进行，可以再次停止。' });
       } finally {
@@ -97,18 +106,28 @@ export function useGeneration(client: DshengClient | null, workspaceId: string |
     }
     const request: Inflight = {
       confirmationId, workspaceId, client, startedAt: Date.now(), invoked: false,
-      finished: false, cancelled: false, stopRequested: false,
+      finished: false, cancelled: false, stopRequested: false, receivedBytes: 0, receivedChunks: 0,
     };
     current.current = request;
     setState({ ...initialState, phase: 'starting' });
     try {
       try {
+        const desktopEvents = (window as unknown as { __TAURI__?: { event?: { listen?: unknown } } }).__TAURI__?.event;
+        if (client.kind === 'tauri' && typeof desktopEvents?.listen !== 'function') {
+          throw new Error('桌面事件通道不可用');
+        }
         request.unsubscribe = await listenGenerationProgress((event) => {
           if (current.current !== request || request.finished || request.cancelled) return;
           if (event.confirmation_id !== confirmationId || (event.workspace_id && event.workspace_id !== workspaceId)) return;
           if (request.attemptId && request.attemptId !== event.attempt_id) return;
           request.attemptId = event.attempt_id;
-          update(request, { latest: event });
+          const newActivity = event.stage === 'receiving'
+            && (event.bytes > request.receivedBytes || event.chunk_seq > request.receivedChunks);
+          if (event.stage === 'receiving') {
+            request.receivedBytes = Math.max(request.receivedBytes, event.bytes);
+            request.receivedChunks = Math.max(request.receivedChunks, event.chunk_seq);
+          }
+          update(request, { latest: event, ...(newActivity ? { lastActivityAt: Date.now() } : {}) });
           if (event.stage === 'cancelled') {
             request.cancelled = true;
             update(request, { phase: 'stopping', message: '停止已确认，正在结束本次请求。' });
@@ -117,10 +136,7 @@ export function useGeneration(client: DshengClient | null, workspaceId: string |
           if (request.stopRequested) void stopRequest(request);
         });
       } catch {
-        if (!client.generationCancelByConfirmation) {
-          throw new Error('无法准备实时状态通道，请重试后再发送。');
-        }
-        update(request, { message: '实时状态暂不可用；请求结束后会显示结果。' });
+        throw new Error('无法连接实时状态通道，本次请求尚未发送。请重试连接。');
       }
       if (request.cancelled || !mounted.current || current.current !== request) return { status: 'cancelled' };
       request.invoked = true;
@@ -140,7 +156,8 @@ export function useGeneration(client: DshengClient | null, workspaceId: string |
         update(request, { phase: 'cancelled', error: null, message: '本次生成已停止，迟到结果不会加载。' });
         return { status: 'cancelled' };
       }
-      update(request, { phase: 'failed', error: errorText(error), message: '本次生成未完成，没有自动重试。' });
+      update(request, { phase: 'failed', canRetryConnection: !request.invoked,
+        error: errorText(error), message: request.invoked ? '本次生成未完成，没有自动重试。' : '尚未发送模型请求。' });
       return { status: 'failed' };
     } finally {
       request.finished = true;

@@ -40,7 +40,20 @@ export function GenerationDialog({
     : phase === 'starting' ? '正在准备请求' : '正在生成';
   const event = state.latest;
   const elapsed = Math.max(state.elapsedMs, event?.elapsed_ms ?? 0);
-  const receiving = event != null && event.bytes > 0;
+  const secondsSinceOutput = state.lastActivityAt == null ? null
+    : Math.floor(Math.max(0, Date.now() - state.lastActivityAt) / 1000);
+  const receiving = secondsSinceOutput != null && secondsSinceOutput < 2;
+  const stage = event?.stage;
+  const outputStage = stage === 'receiving'
+    ? receiving ? '正在接收模型响应' : secondsSinceOutput == null ? '等待模型输出' : '等待后续输出'
+    : stage ? stageLabels[stage] ?? '正在处理模型响应' : label;
+  const activityHint = stage === 'validating' ? '模型输出已结束，正在校验生成结果。'
+    : stage === 'saving' ? '校验已通过，正在保存结果。'
+    : stage === 'completed' || stage === 'succeeded' ? '模型输出已结束，正在确认保存结果。'
+    : phase === 'starting' ? '正在连接实时状态通道，请稍候。'
+    : secondsSinceOutput == null ? '正在等待模型输出。等待期间可以手动停止。'
+    : receiving ? '正在接收模型输出，完整结果将在校验和保存后显示。'
+    : '等待后续输出，当前请求仍在进行，可以手动停止。';
   return (
     <div className="modal-scrim" data-testid="preview-modal">
       <div className="modal generation-dialog" role="dialog" aria-modal="true" aria-label={`${title} · ${label}`}
@@ -66,10 +79,11 @@ export function GenerationDialog({
             {active ? <span className="generation-spinner" aria-hidden="true" /> : <span className="generation-terminal-mark" aria-hidden="true">{phase === 'succeeded' ? '✓' : '—'}</span>}
             <div>
               <strong data-testid="generation-progress-stage">{active && phase !== 'stopping' && event
-                ? stageLabels[event.stage] ?? '正在处理模型响应' : label}</strong>
-              <p className="muted" data-testid="generation-progress-hint">{state.message ?? (receiving
-                ? '输出活动持续更新；完整结果将在校验和保存后显示。'
-                : '正在等待模型输出。等待期间可以手动停止。')}</p>
+                ? outputStage : label}</strong>
+              <p className="muted" data-testid="generation-progress-hint">{state.message ?? activityHint}</p>
+              {active ? <p className="muted" data-testid="generation-last-output">{secondsSinceOutput == null
+                ? '尚未收到模型输出'
+                : `距上次输出 ${groupDecimal(String(secondsSinceOutput))} 秒`}</p> : null}
             </div>
           </div>
           <dl className="generation-stats" data-testid="generation-progress-stats">
@@ -85,6 +99,8 @@ export function GenerationDialog({
           {active ? <p className="panel-note">停止会请求结束本次生成；远端已产生的用量仍以服务商记录为准。</p> : null}
         </div>
         <div className="modal-actions">
+          {state.canRetryConnection && !active ? <button type="button" className="outline"
+            disabled={contextLoading} onClick={onConfirm}>重试连接并发送</button> : null}
           {active ? <button type="button" className="outline" onClick={generation.stop}
             disabled={phase === 'stopping'} data-testid="generation-progress-cancel">
             {phase === 'stopping' ? '正在停止…' : '停止生成'}

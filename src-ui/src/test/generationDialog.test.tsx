@@ -6,7 +6,7 @@ import { FixtureClient } from '../api/fixtureClient';
 import { TauriClient } from '../api/tauriClient';
 import type { DiagnosisGenerationReceipt, GenerationProgressEvent, TaskCandidateView } from '../api/types';
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -196,16 +196,27 @@ it('期间刷新已在进行时，生成入口和预览确认都不可发送', a
   await waitFor(() => expect(screen.getByTestId('preview-confirm')).toBeEnabled());
 });
 
-it('事件监听失败时仍可按确认编号停止，且不需要首个attempt事件', async () => {
-  vi.stubGlobal('__TAURI__', { event: { listen: vi.fn().mockRejectedValue(new Error('事件不可用')) } });
+it('事件监听失败不派发请求，即使具备按确认编号停止能力；显式重试成功后才发送', async () => {
+  let firstProgressSubscription = true;
+  const listen = vi.fn(async (name: string) => {
+    if (name === 'generation://progress' && firstProgressSubscription) {
+      firstProgressSubscription = false;
+      throw new Error('事件不可用');
+    }
+    return () => {};
+  });
+  vi.stubGlobal('__TAURI__', { event: { listen } });
   const stop = vi.fn(async () => ({ cancelled: true, attempt_id: null, remote_billing_note: '已产生的用量以服务商记录为准' }));
   const client = Object.assign(new FixtureClient(), { generationCancelByConfirmation: stop });
   const pending = deferred<DiagnosisGenerationReceipt>();
   const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm').mockReturnValue(pending.promise);
   await diagnosisPreview(client);
   fireEvent.click(screen.getByTestId('preview-confirm'));
+  await screen.findByText('无法连接实时状态通道，本次请求尚未发送。请重试连接。');
+  expect(confirm).not.toHaveBeenCalled();
+  expect(stop).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '重试连接并发送' }));
   await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
-  expect(screen.getByRole('dialog')).toHaveTextContent('实时状态暂不可用');
   fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
   await waitFor(() => expect(stop).toHaveBeenCalledWith('00000000-0000-4000-8000-0000000000a1', confirm.mock.calls[0][0]));
   expect(screen.getByTestId('workspace-select')).toBeDisabled();
@@ -219,9 +230,46 @@ it('旧客户端既无可用事件通道也无确认编号停止能力时，不�
   const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm');
   await diagnosisPreview(client);
   fireEvent.click(screen.getByTestId('preview-confirm'));
-  await screen.findByText('无法准备实时状态通道，请重试后再发送。');
+  await screen.findByText('无法连接实时状态通道，本次请求尚未发送。请重试连接。');
   expect(confirm).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: '关闭' })).toBeEnabled();
+});
+
+it('仅新的接收活动重置距上次输出时间，长时间无新块明确等待且不自动停止', async () => {
+  const emit = events();
+  const client = new FixtureClient();
+  const pending = deferred<DiagnosisGenerationReceipt>();
+  const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm').mockReturnValue(pending.promise);
+  const cancel = vi.spyOn(client, 'generationCancel');
+  await diagnosisPreview(client);
+  vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+  fireEvent.click(screen.getByTestId('preview-confirm'));
+  await act(async () => { await Promise.resolve(); });
+  const id = confirm.mock.calls[0][0];
+  emit(progress(id, { stage: 'receiving', bytes: 100, chunk_seq: 1 }));
+  expect(screen.getByTestId('generation-progress-stage')).toHaveTextContent('正在接收');
+  expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 0 秒');
+  act(() => vi.advanceTimersByTime(3000));
+  emit(progress(id, { stage: 'receiving', bytes: 100, chunk_seq: 1 }));
+  emit(progress('another-request', { stage: 'receiving', bytes: 500, chunk_seq: 2 }));
+  expect(screen.getByTestId('generation-progress-stage')).toHaveTextContent('等待后续输出');
+  expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 3 秒');
+  emit(progress(id, { stage: 'waiting', bytes: 200, chunk_seq: 2 }));
+  expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 3 秒');
+  emit(progress(id, { stage: 'receiving', bytes: 150, chunk_seq: 1 }));
+  expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 0 秒');
+  act(() => vi.advanceTimersByTime(3_600_000));
+  expect(screen.getByTestId('generation-progress-stage')).toHaveTextContent('等待后续输出');
+  expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 3,600 秒');
+  expect(screen.getByRole('button', { name: '停止生成' })).toBeEnabled();
+  expect(screen.getByTestId('workspace-select')).toBeDisabled();
+  expect(cancel).not.toHaveBeenCalled();
+  emit(progress(id, { stage: 'validating', bytes: 150, chunk_seq: 1 }));
+  expect(screen.getByTestId('generation-progress-hint')).toHaveTextContent('正在校验生成结果');
+  expect(screen.getByTestId('generation-progress-hint')).not.toHaveTextContent('正在接收');
+  emit(progress(id, { stage: 'saving', bytes: 150, chunk_seq: 1 }));
+  expect(screen.getByTestId('generation-progress-hint')).toHaveTextContent('正在保存结果');
+  await act(async () => pending.resolve(receipt));
 });
 
 it('桌面停止辅助按企业和确认编号调用本地命令并解包回执', async () => {
@@ -232,4 +280,38 @@ it('桌面停止辅助按企业和确认编号调用本地命令并解包回执'
   expect(invoke).toHaveBeenCalledWith('generation_cancel_by_confirmation', {
     workspaceId: 'workspace-1', confirmationId: 'confirmation-1',
   });
+});
+
+it('真实桌面客户端缺少事件API时，不把空订阅当作连接成功', async () => {
+  vi.stubGlobal('__TAURI__', { core: { invoke: vi.fn() } });
+  const client = new FixtureClient();
+  Object.defineProperty(client, 'kind', { value: 'tauri' });
+  const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm');
+  await diagnosisPreview(client);
+  fireEvent.click(screen.getByTestId('preview-confirm'));
+  await screen.findByText('无法连接实时状态通道，本次请求尚未发送。请重试连接。');
+  expect(confirm).not.toHaveBeenCalled();
+});
+
+it('停止终态事件到达后，迟到取消IPC错误不能把界面改回运行', async () => {
+  const emit = events();
+  const client = new FixtureClient();
+  const pending = deferred<DiagnosisGenerationReceipt>();
+  const cancelPending = deferred<Awaited<ReturnType<FixtureClient['generationCancel']>>>();
+  const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm').mockReturnValue(pending.promise);
+  const cancel = vi.spyOn(client, 'generationCancel').mockReturnValue(cancelPending.promise);
+  await diagnosisPreview(client);
+  fireEvent.click(screen.getByTestId('preview-confirm'));
+  await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  const id = confirm.mock.calls[0][0];
+  emit(progress(id));
+  fireEvent.click(screen.getByRole('button', { name: '停止生成' }));
+  await waitFor(() => expect(cancel).toHaveBeenCalledOnce());
+  emit(progress(id, { stage: 'cancelled' }));
+  await act(async () => cancelPending.reject(new Error('取消回执迟到错误')));
+  expect(screen.getByTestId('generation-progress-hint')).toHaveTextContent('停止已确认');
+  expect(screen.queryByText('停止失败：取消回执迟到错误')).toBeNull();
+  expect(screen.getByRole('button', { name: '正在停止…' })).toBeDisabled();
+  await act(async () => pending.resolve(receipt));
+  expect(screen.getByTestId('generation-progress-stage')).toHaveTextContent('已停止');
 });
