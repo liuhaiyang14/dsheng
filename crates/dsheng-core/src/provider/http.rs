@@ -34,6 +34,23 @@ use std::{future::Future, pin::Pin, time::Instant};
 
 type TransportResult<T> = Result<T, (CliErrorCode, String)>;
 
+fn run_transport<T>(future: impl Future<Output = TransportResult<T>>) -> TransportResult<T> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| {
+            (
+                CliErrorCode::NetworkError,
+                format!("网络运行时启动失败: {error}"),
+            )
+        })?;
+    let result = runtime.block_on(future);
+    // 系统 DNS 解析可能运行于 spawn_blocking；future 已被取消后不能再在 runtime
+    // 析构等待 OS resolver。剩余 OS 查询自行退出，不会恢复已丢弃的 HTTP 请求。
+    runtime.shutdown_background();
+    result
+}
+
 fn cancelled() -> (CliErrorCode, String) {
     (
         CliErrorCode::Cancelled,
@@ -170,19 +187,11 @@ pub fn send_once_cancellable(
         )
     })?;
     let body = wire_body_with_stream(request, stream)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| {
-            (
-                CliErrorCode::NetworkError,
-                format!("网络运行时启动失败: {error}"),
-            )
-        })?;
-    runtime.block_on(async {
+    run_transport(async {
         // reqwest async Client 的 connect/read/total timeout 默认均为 None。
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
+            .retry(reqwest::retry::never())
             .build()
             .map_err(classify_reqwest_error_pair)?;
         let started_at = Instant::now();
@@ -771,6 +780,32 @@ impl ReadToEndLimited for reqwest::blocking::Response {
 mod tests {
     // 纯逻辑测试（构造/分类/上限；非 Provider 调用、无网络请求）。
     use super::*;
+
+    #[test]
+    fn cancelled_transport_does_not_wait_for_a_blocking_os_resolver() {
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            let result = run_transport(async {
+                tokio::task::spawn_blocking(move || {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                });
+                started_rx.recv().unwrap();
+                cancellable_wait(std::future::pending::<()>(), &|| true).await
+            });
+            finished_tx.send(result).unwrap();
+        });
+        let finished = finished_rx.recv_timeout(Duration::from_secs(2));
+        // 即使回归失败也释放本地阻塞线程，避免测试自身留下永久等待。
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        assert_eq!(
+            finished.expect("取消不能等阻塞resolver结束").unwrap_err().0,
+            CliErrorCode::Cancelled
+        );
+    }
 
     /// 模拟异步字节到达，不打开socket、不模拟Provider或重放模型输出。
     struct AsyncBody {
