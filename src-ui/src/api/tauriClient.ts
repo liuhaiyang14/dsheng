@@ -165,6 +165,16 @@ export class TauriClient implements DshengClient {
   }
 
   // ---- 诊断（dsheng diagnosis generate/continue/list/show/export） ----
+  diagnosisEvidence(
+    workspaceId: string,
+    runId: string,
+    analysisRevisionNo: number,
+    metricId?: string,
+  ): Promise<string[]> {
+    return this.invoke('diagnosis_evidence', {
+      workspaceId, runId, revisionNo: analysisRevisionNo, metricId: metricId ?? null,
+    });
+  }
   diagnosisGeneratePreview(
     request: DiagnosisGenerateRequest,
   ): Promise<import('./types').ConfirmationPreview> {

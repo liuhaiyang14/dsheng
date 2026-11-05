@@ -153,6 +153,13 @@ export interface DshengClient {
   analyze(input: AnalyzeInput): Promise<AnalysisRunView>;
 
   // ---- 诊断（显式按钮 → preview → confirm；绝不自动触发） ----
+  /** 桌面只读辅助：按分析版本取来源证据，不依赖环比/同比可比性。 */
+  diagnosisEvidence?(
+    workspaceId: string,
+    runId: string,
+    analysisRevisionNo: number,
+    metricId?: string,
+  ): Promise<string[]>;
   diagnosisGeneratePreview(
     request: DiagnosisGenerateRequest,
   ): Promise<ConfirmationPreview>;

@@ -6,7 +6,7 @@
  * 诊断不创建、不修改任务。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
@@ -80,6 +80,11 @@ export function DiagnosisScreen() {
   const app = useApp();
   const hasData = workspaceHasData(app.data);
   const continuationUnavailable = app.mode === 'tauri';
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const detail = app.data.currentDetail;
   const historical = detail != null && app.data.history.some((h) => h.run_id === detail.run_id && h.current_revision_no !== detail.analysis_revision_no);
 
@@ -181,25 +186,31 @@ export function DiagnosisScreen() {
 
   /** 显式按钮：生成诊断报告 → 预览。 */
   const requestGenerate = async () => {
-    if (!app.client || !app.activeWorkspaceId || !runId || historical) return;
-    const evidenceMetrics = activeMetric ? [activeMetric] : (detail?.metrics ?? []);
-    const evidenceIds = [...new Set(evidenceMetrics.flatMap((metric) => [
-      ...(metric.mom?.evidence_ids ?? []), ...(metric.yoy?.evidence_ids ?? []),
-    ]))];
-    if (evidenceIds.length === 0) {
-      setNotice('本期间暂无可用来源证据，请先核对数据来源并重新运行本地分析。');
-      return;
-    }
+    if (!app.client || !app.activeWorkspaceId || !runId || !detail || historical) return;
     setBusy(true);
     setNotice(null);
     try {
+      const useEvidenceHelper = app.mode === 'tauri' && app.client.diagnosisEvidence != null;
+      const evidenceMetrics = activeMetric ? [activeMetric] : (detail?.metrics ?? []);
+      const evidenceIds = [...new Set(useEvidenceHelper
+        ? await app.client.diagnosisEvidence!(app.activeWorkspaceId, runId, detail.analysis_revision_no, activeMetric?.metric_id)
+        : evidenceMetrics.flatMap((metric) => [
+            ...(metric.mom?.evidence_ids ?? []), ...(metric.yoy?.evidence_ids ?? []),
+          ]))];
+      if (!mounted.current) return;
+      if (evidenceIds.length === 0) {
+        setNotice(useEvidenceHelper
+          ? '该版本未保留可用的来源证据，请使用同一数据目录重新运行本地分析后再生成诊断'
+          : '本期间暂无可用来源证据，请先核对数据来源并重新运行本地分析。');
+        return;
+      }
       const preview = await app.client.diagnosisGeneratePreview({
         workspace_id: app.activeWorkspaceId,
         run_id: runId,
         framework,
         problem: problemText,
         focus_metric_id: activeMetric?.metric_id,
-        // 核心比较视图投影的当前指标来源证据；不编造单元格定位。
+        // 核心返回的当前分析版本证据；不编造单元格定位。
         evidence_ids: evidenceIds,
       });
       setPending({ preview, kind: 'generate', label: '确认生成诊断报告（发送 1 次请求）' });
