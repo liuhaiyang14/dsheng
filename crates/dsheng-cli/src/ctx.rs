@@ -54,8 +54,11 @@ pub fn open_db_at(path: &std::path::Path) -> CliResult<Connection> {
     .map_err(CliError::from)?;
     let version =
         dsheng_core::repository::migration::read_schema_version(&conn).map_err(CliError::from)?;
-    if version.is_none() {
-        // 首启建库：最小应用器按序执行冻结 migration（完整协议在桌面端首启）。
+    let current = dsheng_core::repository::CURRENT_SCHEMA_VERSION;
+    if version.is_none() || version.unwrap_or(0) < current {
+        // 首启建库或旧版升级：最小应用器按序执行冻结 migration。
+        // 完整协议（备份/排他锁/协商）在桌面端首启时执行；CLI 每次打开
+        // 也补齐 pending migration（轻量路径，单事务）。
         dsheng_core::repository::apply_migrations(&conn, dsheng_core::APP_VERSION)
             .map_err(|e| CliError::new(CliErrorCode::DbMigrationFailed, e.to_string()))?;
     }

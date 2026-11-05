@@ -25,7 +25,7 @@ export function ProviderScreen() {
   const [model, setModel] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [stream, setStream] = useState(false);
-  const [ctxWindow, setCtxWindow] = useState(65536);
+  const [ctxWindow, setCtxWindow] = useState(524288);
   const [outReserve, setOutReserve] = useState(8192);
   const [replaceKey, setReplaceKey] = useState(false);
   const [busy, setBusy] = useState(false);
