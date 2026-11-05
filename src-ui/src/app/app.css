@@ -544,3 +544,38 @@ tr:last-child td { border-bottom: 0; }
 @media (prefers-reduced-motion: reduce) {
   .dropzone.interactive { transition: none; }
 }
+
+/* 全页面共享的期间上下文；浏览已存结果与本地重算分别呈现。 */
+.analysis-period-bar {
+  margin-bottom: 24px; padding: 16px 18px;
+  border: 1px solid var(--line); background: var(--panel);
+}
+.period-current { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; font-size: .9375rem; }
+.period-current strong { font-weight: 600; }
+.period-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.period-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: .8125rem; color: var(--muted); }
+.period-field .select, .period-field .input { min-height: 38px; max-width: 100%; }
+.period-field:first-child { flex: 1 1 310px; }
+.period-field input[type="date"] { width: 154px; }
+.period-help { margin: 10px 0 0; color: var(--muted); font-size: .8125rem; line-height: 1.7; overflow-wrap: anywhere; }
+.analysis-period-bar details { margin-top: 12px; }
+.analysis-period-bar summary { width: fit-content; cursor: pointer; color: var(--blue); font-size: .875rem; }
+.analysis-period-bar details[open] > summary { margin-bottom: 12px; }
+@media (max-width: 680px) {
+  .analysis-period-bar { padding: 14px; }
+  .period-field { flex: 1 1 140px; }
+  .period-field input[type="date"] { width: 100%; }
+}
+
+/* 数据来源是一条连续流程：选择目录 → 解析状态 → 文件结果。 */
+.source-intake-panel { margin-bottom: 18px; }
+.source-intake-panel .import-panel { border: 0; margin: 0; }
+.source-intake-panel .import-row { padding: 16px; }
+.source-intake-panel .dropzone.interactive { margin: 0; }
+.source-directory-summary { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--line); background: #fafbf9; font-size: .875rem; overflow-wrap: anywhere; }
+.source-directory-summary .path { flex: 1 1 100%; margin: 0; background: white; }
+.source-technical-details { margin: 12px 16px; color: var(--muted); font-size: .8125rem; }
+.source-technical-details > summary { cursor: pointer; width: fit-content; }
+.source-technical-details[open] > summary { margin-bottom: 10px; }
+.source-intake-panel .manual-path { margin: 0; padding: 0 16px 16px; }
+.source-intake-panel .file-list { max-height: 420px; overflow-y: auto; }
