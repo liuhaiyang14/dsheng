@@ -1119,8 +1119,89 @@ struct CellSnap {
     merged_range: Option<String>,
 }
 
+/// 来源必须绑定到不可变分析版本；历史空 source_id 仅允许同企业 content_hash 匹配。
+/// 基期只展开当前版本显式引用的 revision，不递归引入基期的其他来源。
+fn revision_source_scope(
+    conn: &Connection,
+    workspace_id: Uuid,
+    run_id: &str,
+    revision: u32,
+) -> CliResult<std::collections::BTreeSet<(String, String)>> {
+    #[derive(serde::Deserialize)]
+    struct BaseRevision {
+        run_id: String,
+        revision_no: u32,
+    }
+
+    let invalid_snapshot = || {
+        CliError::new(
+            CliErrorCode::DataValidationFailed,
+            "该分析版本的来源范围快照缺失或不可用，请使用同一数据目录重新运行本地分析",
+        )
+    };
+    let read_snapshot = |id: &str, rev: u32| -> CliResult<(String, String)> {
+        conn.query_row(
+            "SELECT rr.source_selection_snapshot_json, rr.comparison_base_refs_json
+             FROM run_revisions rr JOIN analysis_runs ar ON ar.run_id = rr.run_id
+             WHERE ar.workspace_id = ?1 AND rr.run_id = ?2 AND rr.revision_no = ?3",
+            params![workspace_id.to_string(), id, rev],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => invalid_snapshot(),
+            other => CliError::from(other),
+        })
+    };
+    let (current_sources, base_refs) = read_snapshot(run_id, revision)?;
+    let mut snapshots = vec![current_sources];
+    let bases: Vec<BaseRevision> =
+        serde_json::from_str(&base_refs).map_err(|_| invalid_snapshot())?;
+    for base in bases {
+        snapshots.push(read_snapshot(&base.run_id, base.revision_no)?.0);
+    }
+
+    let mut allowed = std::collections::BTreeSet::new();
+    let mut stmt = conn.prepare(
+        "SELECT source_id FROM source_files
+         WHERE workspace_id = ?1 AND content_hash = ?2
+           AND (?3 = '' OR source_id = ?3) AND (?4 IS NOT NULL OR kind = 'csv')",
+    )?;
+    for snapshot in snapshots {
+        let selections: Vec<dsheng_core::analysis::fingerprint::SourceSelection> =
+            serde_json::from_str(&snapshot).map_err(|_| invalid_snapshot())?;
+        // [] 是合法的纯手工输入分析；保持空来源白名单，绝不扩大到整个工作区。
+        for selection in selections {
+            if selection.content_hash.is_empty()
+                || selection.sheet.as_deref().is_some_and(str::is_empty)
+            {
+                return Err(invalid_snapshot());
+            }
+            let ids: Vec<String> = stmt
+                .query_map(
+                    params![
+                        workspace_id.to_string(),
+                        selection.content_hash,
+                        selection.source_id,
+                        selection.sheet,
+                    ],
+                    |r| r.get(0),
+                )?
+                .collect::<Result<_, _>>()?;
+            if ids.is_empty() {
+                return Err(invalid_snapshot());
+            }
+            let sheet = selection.sheet.unwrap_or_else(|| "csv".to_string());
+            for id in ids {
+                allowed.insert((id, sheet.clone()));
+            }
+        }
+    }
+    Ok(allowed)
+}
+
 /// “相关行/列”选定范围计算（确定性：同一 DB 状态 → 同一范围/记录/指纹）：
 ///
+/// - 文件与 sheet 先限制为所选 revision＋其显式比较基期的来源快照；
 /// - 标准表（核算/推移，有表头块）：选定行＝表头块行 ∪ 标签列命中已注册指标
 ///   的行（metric_key/label/别名精确匹配）∪ 分析快照观察（mom/yoy evidence）
 ///   所在行 ∪ 冲突候选 evidence 所在行 ∪ 用户 --evidence 指向的行；
@@ -1138,6 +1219,7 @@ pub fn trimmed_source_selection(
     extra_evidence: &[String],
 ) -> CliResult<TrimmedSourceSelection> {
     crate::store::sources::ensure_sidecar_tables(conn)?;
+    let source_scope = revision_source_scope(conn, workspace_id, run_id, revision)?;
     // 工作区指标名全集（行/列识别口径与扫描期一致）
     let metric_names: std::collections::HashSet<String> =
         crate::store::sources::metric_label_names(conn, workspace_id)?
@@ -1163,7 +1245,10 @@ pub fn trimmed_source_selection(
                 content_hash: r.get(3)?,
             })
         })?;
-        rows.collect::<Result<_, _>>().map_err(CliError::from)?
+        rows.collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .filter(|source| source_scope.iter().any(|(id, _)| id == &source.source_id))
+            .collect()
     };
     // 布局快照（按 source 分组；sheet 有序）
     let mut layouts: std::collections::BTreeMap<String, std::collections::BTreeMap<String, Value>> =
@@ -1171,19 +1256,24 @@ pub fn trimmed_source_selection(
     {
         let mut stmt = conn.prepare(
             "SELECT source_id, sheet, layout_json FROM cli_source_sheet_layouts
-             WHERE workspace_id = ?1",
+             WHERE workspace_id = ?1 AND source_id = ?2 AND sheet = ?3",
         )?;
-        let rows = stmt.query_map(params![workspace_id.to_string()], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })?;
-        for row in rows {
-            let (sid, sheet, raw) = row?;
-            let layout: Value = serde_json::from_str(&raw).unwrap_or(json!({}));
-            layouts.entry(sid).or_default().insert(sheet, layout);
+        for (source_id, selected_sheet) in &source_scope {
+            let rows = stmt.query_map(
+                params![workspace_id.to_string(), source_id, selected_sheet],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                    ))
+                },
+            )?;
+            for row in rows {
+                let (sid, sheet, raw) = row?;
+                let layout: Value = serde_json::from_str(&raw).unwrap_or(json!({}));
+                layouts.entry(sid).or_default().insert(sheet, layout);
+            }
         }
     }
     // 单元格快照（按 source/sheet/行/列有序）
@@ -1193,33 +1283,38 @@ pub fn trimmed_source_selection(
         let mut stmt = conn.prepare(
             "SELECT source_id, sheet, row_no, col_no, raw_text, cell_kind, value_state,
                     typed_value, formula, merged_range
-             FROM cli_source_cells WHERE workspace_id = ?1
+             FROM cli_source_cells WHERE workspace_id = ?1 AND source_id = ?2 AND sheet = ?3
              ORDER BY source_id, sheet, row_no, col_no",
         )?;
-        let rows = stmt.query_map(params![workspace_id.to_string()], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                CellSnap {
-                    row_no: r.get::<_, i64>(2)? as usize,
-                    col_no: r.get::<_, i64>(3)? as usize,
-                    raw_text: r.get(4)?,
-                    cell_kind: r.get(5)?,
-                    value_state: r.get(6)?,
-                    typed_value: r.get(7)?,
-                    formula: r.get(8)?,
-                    merged_range: r.get(9)?,
+        for (source_id, selected_sheet) in &source_scope {
+            let rows = stmt.query_map(
+                params![workspace_id.to_string(), source_id, selected_sheet],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        CellSnap {
+                            row_no: r.get::<_, i64>(2)? as usize,
+                            col_no: r.get::<_, i64>(3)? as usize,
+                            raw_text: r.get(4)?,
+                            cell_kind: r.get(5)?,
+                            value_state: r.get(6)?,
+                            typed_value: r.get(7)?,
+                            formula: r.get(8)?,
+                            merged_range: r.get(9)?,
+                        },
+                    ))
                 },
-            ))
-        })?;
-        for row in rows {
-            let (sid, sheet, snap) = row?;
-            cells
-                .entry((sid, sheet))
-                .or_default()
-                .entry(snap.row_no)
-                .or_default()
-                .push(snap);
+            )?;
+            for row in rows {
+                let (sid, sheet, snap) = row?;
+                cells
+                    .entry((sid, sheet))
+                    .or_default()
+                    .entry(snap.row_no)
+                    .or_default()
+                    .push(snap);
+            }
         }
     }
     // 证据锚点（file_label, sheet, row 1 基, col 0 基）：观察/补0/冲突候选/用户
