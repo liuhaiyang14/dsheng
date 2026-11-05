@@ -77,7 +77,7 @@ describe('数据导入双入口（fixture 通道）', () => {
     });
   });
 
-  it('HTML5 拖入文件（测试通道）触发扫描并显示导入说明', async () => {
+  it('浏览器只有文件名时要求真实目录，不伪造路径扫描', async () => {
     render(<App runtime={{ mode: 'fixture', client: new FixtureClient() }} />);
     await screen.findByTestId('import-dropzone');
     const file = new File(['x'], '两表一单.xlsx', { type: 'application/vnd.ms-excel' });
@@ -85,7 +85,7 @@ describe('数据导入双入口（fixture 通道）', () => {
       dataTransfer: { files: [file] },
     });
     await waitFor(() => {
-      expect(screen.getByTestId('scan-note')).toBeTruthy();
+      expect(screen.getByText('当前环境无法取得文件的真实路径，请填写文件所在目录后解析。')).toBeTruthy();
     });
   });
 });

@@ -13,7 +13,7 @@ export function SourceScreen() {
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [diag, setDiag] = useState<string[]>([]);
-  const [lastDir, setLastDir] = useState<string | null>(null);
+  const lastDir = app.sourceDirectory;
   const hasData = workspaceHasData(app.data);
   const workspaceName = app.activeWorkspace?.name ?? '当前企业';
 
@@ -115,7 +115,6 @@ export function SourceScreen() {
     setScanBusy(true);
     setScanError(null);
     setScanNote(note ?? `已选择：${path}；本地解析中…`);
-    setLastDir(path);
     pushDiag(`scan 调用：workspace=${app.activeWorkspaceId} dir=${path}`);
     try {
       const summary = await Promise.race([
@@ -124,11 +123,13 @@ export function SourceScreen() {
           setTimeout(() => rej(new Error('核心未在 15 秒内返回（scan 挂起）')), 15000),
         ),
       ]);
+      app.rememberSourceDirectory(path);
       pushDiag(`scan 返回：${summary.files.length} 文件 / ${summary.total_rows} 行`);
       setScanNote(`解析完成：${summary.files.length} 个文件 / ${summary.total_rows} 行。待核对的表可在下方确认；完成后到「经营分析」运行分析。`);
       // 刷新时显式携带真实摘要（闭包竞态修复：不再依赖先 setState 再读旧 state）
       await app.reloadWorkspaceData({ keepScan: summary });
     } catch (err) {
+      setScanNote(null);
       setScanError(err instanceof Error ? err.message : String(err));
     } finally {
       setScanBusy(false);
@@ -199,25 +200,9 @@ export function SourceScreen() {
               : `${workspaceName} · 尚未选择数据目录，请先导入文件并确认字段映射。`}
           </div>
         </div>
-        {hasData ? (
-          <div className="head-controls">
-            <button
-              type="button"
-              className="outline"
-              onClick={() => void downloadTemplate()}
-              disabled={scanBusy}
-            >
-              下载导入模板
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => void app.reloadWorkspaceData()}
-            >
-              重新扫描
-            </button>
-          </div>
-        ) : null}
+        <div className="head-controls">
+          <button type="button" className="outline" onClick={() => void downloadTemplate()} disabled={scanBusy}>下载导入模板</button>
+        </div>
       </div>
 
       {app.mode === 'fixture' ? (
@@ -231,40 +216,36 @@ export function SourceScreen() {
       ) : null}
 
       {app.activeWorkspace ? (
-        <>
-          <ImportDropzone
-            busy={scanBusy}
-            onPath={(path, note) => void runScan(path, note)}
-            onDiag={pushDiag}
-          />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', margin: '8px 0' }}>
-            <button type="button" className="outline" onClick={() => void runSelfTest()} data-testid="self-test-button">
-              桥接自检
-            </button>
-            {diag.length > 0 ? (
-              <div
-                style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.9, flex: 1 }}
-                data-testid="diag-lines"
-              >
-                {diag.map((l, i) => (
-                  <div key={i}>{l}</div>
-                ))}
-              </div>
-            ) : null}
+        <div className="panel source-intake-panel">
+          <div className="panel-head">
+            <span className="panel-title">导入经营数据</span>
+            <span className="panel-note" data-testid="source-scan-status">{scanBusy ? '正在扫描…' : scanError ? '本次扫描失败' : scan ? '已扫描 · 本地解析' : '未扫描'}</span>
           </div>
-          {scanNote ? (
-            <div className="notice" data-testid="scan-note" style={{ marginTop: 12 }}>
-              <b>导入说明</b>
-              <span>{scanNote}</span>
+          <ImportDropzone busy={scanBusy} onPath={(path, note) => void runScan(path, note)} onDiag={pushDiag} />
+          <div className="source-directory-summary">
+            <div data-testid="source-directory">{lastDir ? `有效数据目录：${lastDir}` : '尚未成功扫描数据目录'}</div>
+            {lastDir ? <button type="button" className="outline" disabled={scanBusy} onClick={() => void runScan(lastDir)}>重新扫描</button> : null}
+            {scan ? <p>数据覆盖：{scan.coverage.from} 至 {scan.coverage.to} · {scan.files.length} 个文件 · {scan.total_rows} 行{scanError ? '（上次成功扫描）' : ''}</p> : <p>选择目录或拖入文件夹后，识别结果会显示在这里。</p>}
+          </div>
+          {scanNote ? <div className="notice" data-testid="scan-note"><b>导入说明</b><span>{scanNote}</span></div> : null}
+          {scanError ? <div className="notice" role="alert" data-testid="scan-error"><b>扫描失败</b><span>{scanError}</span></div> : null}
+          {scan ? <>
+            <div className="panel-head"><span className="panel-title">已识别文件</span><span className="panel-note">{scan.files.length} 个文件 · {scan.total_rows} 行</span></div>
+            <div className="file-list">
+              {scan.files.length === 0 ? <p className="panel-note">此目录未识别到可导入的文件。</p> : scan.files.map((f) => (
+                <div className="file" key={f.file_id}>
+                  <div><div className="file-name">{f.file_label}</div><div className="file-meta">{f.note} · {f.row_count} 行</div></div>
+                  {f.mapping_status === 'mapped' ? <Tag tone="green">映射完成</Tag> : <Tag tone="gold">待核对</Tag>}
+                </div>
+              ))}
             </div>
-          ) : null}
-          {scanError ? (
-            <div className="notice" data-testid="scan-error" style={{ marginTop: 12 }}>
-              <b>扫描失败</b>
-              <span>{scanError}</span>
-            </div>
-          ) : null}
-        </>
+          </> : null}
+          <details className="source-technical-details">
+            <summary>技术诊断</summary>
+            <button type="button" className="outline" onClick={() => void runSelfTest()} data-testid="self-test-button">运行桥接自检</button>
+            <div data-testid="diag-lines">{diag.map((line, i) => <div key={i}>{line}</div>)}</div>
+          </details>
+        </div>
       ) : null}
 
       {scan && (scan.files ?? []).some((f) => f.mapping_status === 'pending_review') ? (
@@ -296,62 +277,10 @@ export function SourceScreen() {
         />
       ) : (
         <>
-          <div className="source-grid">
-            <div className="panel">
-              <div className="panel-head">
-                <span className="panel-title">本地目录</span>
-                <span className="panel-note">
-                  <span className="status-dot" />
-                  已扫描 · 只读
-                </span>
-              </div>
-              <div className="dropzone">
-                <div>
-                  <div className="folder">⌂</div>
-                  <p>{scan?.directory_label}</p>
-                  <small>
-                    核算周期：{scan?.coverage.granularity === 'day' ? '日度' : scan?.coverage.granularity} ·
-                    数据覆盖：{scan?.coverage.from} 至 {scan?.coverage.to}
-                  </small>
-                </div>
-              </div>
-              <div className="path">
-                {app.mode === 'fixture'
-                  ? `示例路径：~/Documents/经营复盘/${workspaceName}/2026-10（演示值）`
-                  : '文件保留在原位置，不复制进数据库；重扫使用当前目录内容。'}
-              </div>
-            </div>
-            <div className="panel">
-              <div className="panel-head">
-                <span className="panel-title">已识别文件</span>
-                <span className="panel-note">
-                  {scan?.files.length ?? 0} 个文件 · {scan?.total_rows ?? 0} 行
-                </span>
-              </div>
-              <div className="file-list">
-                {(scan?.files ?? []).map((f) => (
-                  <div className="file" key={f.file_id}>
-                    <div>
-                      <div className="file-name">{f.file_label}</div>
-                      <div className="file-meta">
-                        {f.note} · {f.row_count} 行
-                      </div>
-                    </div>
-                    {f.mapping_status === 'mapped' ? (
-                      <Tag tone="green">映射完成</Tag>
-                    ) : (
-                      <Tag tone="gold">待核对</Tag>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
           <div className="panel" style={{ marginTop: 14 }}>
             <div className="panel-head">
               <span className="panel-title">字段映射</span>
-              <span className="panel-note">自动识别 · 可手动修正 · 由核心保存版本化草稿</span>
+              <span className="panel-note">所选分析期间的字段识别结果</span>
             </div>
             <div className="table-wrap">
               <table className="data-table">
@@ -381,7 +310,7 @@ export function SourceScreen() {
                 </tbody>
               </table>
               <div className="table-foot">
-                缺失工时为「待补」，不会按 0 参与计算。映射修改走核心 mapping set（版本化草稿），重算才进入新分析版本。
+                缺失数据保持待补，不会按 0 参与计算。修改数据口径后，运行本地分析才会形成新版本。
               </div>
             </div>
           </div>

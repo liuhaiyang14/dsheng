@@ -1,6 +1,6 @@
 // 测试层次：UI 纯组件/状态测试（FixtureClient 注入，无网络、无 Tauri、无 canvas）。
 // S4 经营分析屏：指标呈现、decimal 字符串原样展示、不可比原因、缺桶断线、粒度切换。
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
@@ -42,7 +42,7 @@ describe('S4 经营分析屏', () => {
     await openAnalysis();
     const cards = screen.getByTestId('metric-cards');
     expect(within(cards).getByText('184,600')).toBeTruthy();
-    expect(within(cards).getByText('92.4%')).toBeTruthy();
+    expect(Array.from(cards.querySelectorAll('.value')).map((node) => node.textContent)).toContain('92.4%');
     const table = screen.getByTestId('metric-table');
     // 表内保留目标 210000 → 分组展示，不重算
     expect(within(table).getAllByText('210,000').length).toBeGreaterThan(0);
@@ -65,14 +65,18 @@ describe('S4 经营分析屏', () => {
     expect(screen.getByText(/环比／同比说明/)).toBeTruthy();
   });
 
-  it('粒度切换调用核心 analyze（UI 不自行聚合）', async () => {
+  it('粒度选择只修改草稿，显式运行本地分析才调用核心', async () => {
+    window.localStorage.setItem(`dsheng.source-directory.${DEMO}`, '/tmp/dsheng-demo');
     const { calls } = await openAnalysis();
     const select = screen.getByTestId('grain-select') as HTMLSelectElement;
     select.value = 'week';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
+    fireEvent.change(select, { target: { value: 'week' } });
+    expect(calls).toEqual([]);
+    fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
     await waitFor(() => {
       expect(calls).toContain('analyze');
     });
+    window.localStorage.removeItem(`dsheng.source-directory.${DEMO}`);
   });
 
   it('空档案显示空状态且不调用 analyze', async () => {

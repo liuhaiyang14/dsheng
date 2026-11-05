@@ -2,6 +2,7 @@ import { AppProvider, useApp, SCREEN_LABELS, workspaceHasData, type ScreenId } f
 import { useState } from 'react';
 import { CoreMissingState } from '../components/EmptyState';
 import { Onboarding } from '../components/Onboarding';
+import { AnalysisPeriodBar } from '../components/AnalysisPeriodBar';
 import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ErrorBanner } from '../components/bits';
 import { SourceScreen } from '../pages/SourceScreen';
@@ -50,6 +51,7 @@ function Shell() {
               type="button"
               className={app.screen === item.id ? 'active' : ''}
               onClick={() => app.setScreen(item.id)}
+              disabled={app.contextLockReason != null}
               aria-current={app.screen === item.id ? 'page' : undefined}
             >
               <span className="icon">{item.icon}</span>
@@ -64,6 +66,7 @@ function Shell() {
                 type="button"
                 className={`nav-subitem${app.screen === item.id ? ' active' : ''}`}
                 onClick={() => app.setScreen(item.id)}
+              disabled={app.contextLockReason != null}
                 aria-current={app.screen === item.id ? 'page' : undefined}
               >
                 <span className="icon">{item.icon}</span>
@@ -85,7 +88,7 @@ function Shell() {
             : '数据仅保存在本机；模型发送前逐次确认范围。'}
           <br />
           <span className="foot-version" data-testid="foot-version">
-            v0.1.1 · powered by 海洋
+            v0.1.2 · powered by 海洋
           </span>
         </div>
       </aside>
@@ -98,7 +101,7 @@ function Shell() {
               aria-label="切换企业档案"
               value={app.activeWorkspaceId ?? ''}
               onChange={(e) => void app.switchWorkspace(e.target.value)}
-              disabled={app.loading}
+              disabled={app.loading || app.contextLockReason != null}
               data-testid="workspace-select"
             >
               {app.workspaces.map((w) => (
@@ -113,6 +116,7 @@ function Shell() {
             <button
               className="outline"
               onClick={() => setShowCreate(true)}
+              disabled={app.contextLockReason != null}
               data-testid="create-workspace-button"
             >
               ＋ 新建档案
@@ -127,6 +131,7 @@ function Shell() {
         </header>
         <section className="content">
           <ErrorBanner />
+          <AnalysisPeriodBar key={app.activeWorkspaceId} />
           {!hasData && app.screen !== 'provider' && app.screen !== 'system-settings' ? (
             <div className="notice workspace-empty" data-testid="workspace-empty-notice">
               <b>当前企业档案还没有数据</b>
@@ -136,7 +141,7 @@ function Shell() {
               </span>
             </div>
           ) : null}
-          <PageErrorBoundary key={`${app.screen}:${app.activeWorkspaceId}:${app.data.currentDetail?.run_id ?? ''}`}>
+          <PageErrorBoundary key={`${app.screen}:${app.activeWorkspaceId}:${app.selectedRun?.runId ?? ''}:${app.selectedRun?.revision ?? 'current'}:${app.data.currentDetail?.analysis_revision_no ?? ''}`}>
             {app.screen === 'source' ? <SourceScreen /> : null}
             {app.screen === 'analysis' ? <AnalysisScreen /> : null}
             {app.screen === 'diagnosis' ? <DiagnosisScreen /> : null}

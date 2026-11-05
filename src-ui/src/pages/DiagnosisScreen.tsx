@@ -79,7 +79,9 @@ function friendlyError(err: unknown): string {
 export function DiagnosisScreen() {
   const app = useApp();
   const hasData = workspaceHasData(app.data);
+  const continuationUnavailable = app.mode === 'tauri';
   const detail = app.data.currentDetail;
+  const historical = detail != null && app.data.history.some((h) => h.run_id === detail.run_id && h.current_revision_no !== detail.analysis_revision_no);
 
   const [reports, setReports] = useState<DiagnosisReportSummaryView[]>([]);
   const [reportDetail, setReportDetail] = useState<DiagnosisReport | null>(null);
@@ -99,6 +101,11 @@ export function DiagnosisScreen() {
   const [sending, setSending] = useState(false);
   const [stoppedLocal, setStoppedLocal] = useState<Set<string>>(new Set());
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    app.setContextLock(sending ? '正在生成诊断；请等待完成或在进度面板取消后再切换企业、期间或页面。' : null);
+    return () => app.setContextLock(null);
+  }, [app.setContextLock, sending]);
 
   const runId = detail?.run_id ?? null;
 
@@ -174,7 +181,15 @@ export function DiagnosisScreen() {
 
   /** 显式按钮：生成诊断报告 → 预览。 */
   const requestGenerate = async () => {
-    if (!app.client || !app.activeWorkspaceId || !runId) return;
+    if (!app.client || !app.activeWorkspaceId || !runId || historical) return;
+    const evidenceMetrics = activeMetric ? [activeMetric] : (detail?.metrics ?? []);
+    const evidenceIds = [...new Set(evidenceMetrics.flatMap((metric) => [
+      ...(metric.mom?.evidence_ids ?? []), ...(metric.yoy?.evidence_ids ?? []),
+    ]))];
+    if (evidenceIds.length === 0) {
+      setNotice('本期间暂无可用来源证据，请先核对数据来源并重新运行本地分析。');
+      return;
+    }
     setBusy(true);
     setNotice(null);
     try {
@@ -184,8 +199,8 @@ export function DiagnosisScreen() {
         framework,
         problem: problemText,
         focus_metric_id: activeMetric?.metric_id,
-        // CLI 合同必填：当前 run 的来源证据（演示取指标关联单元格）
-        evidence_ids: [`cell:demo:${activeMetric?.metric_key ?? '核算表'}:C7`],
+        // 核心比较视图投影的当前指标来源证据；不编造单元格定位。
+        evidence_ids: evidenceIds,
       });
       setPending({ preview, kind: 'generate', label: '确认生成诊断报告（发送 1 次请求）' });
     } catch (err) {
@@ -197,7 +212,7 @@ export function DiagnosisScreen() {
 
   /** 显式按钮：继续分析 → 预览（含补充事实）。 */
   const requestContinue = async () => {
-    if (!app.client || !app.activeWorkspaceId || !selected) return;
+    if (!app.client || !app.activeWorkspaceId || !selected || continuationUnavailable) return;
     if (supplement.trim().length === 0) {
       setNotice('请先补充一条现场事实或核实结果。');
       return;
@@ -327,7 +342,7 @@ export function DiagnosisScreen() {
             type="button"
             className="primary"
             onClick={() => void requestGenerate()}
-            disabled={busy}
+            disabled={busy || historical}
             data-testid="generate-diagnosis-button"
           >
             生成诊断报告
@@ -441,7 +456,9 @@ export function DiagnosisScreen() {
                     {selected.revision_no} 版 · 分析 revision {selected.analysis_revision_no}
                   </div>
                 </div>
-                {isStopped ? (
+                {continuationUnavailable ? (
+                  <Tag tone="blue">报告已保存</Tag>
+                ) : isStopped ? (
                   <Tag tone="blue">已停止 · 保留报告</Tag>
                 ) : (
                   <Tag tone="gold">进行中 · 可继续</Tag>
@@ -506,19 +523,19 @@ export function DiagnosisScreen() {
                   placeholder="写入核实到的新事实、记录来源或现场反馈（将作为未核实的用户陈述记录）"
                   value={supplement}
                   onChange={(e) => setSupplement(e.target.value)}
-                  disabled={isStopped}
+                  disabled={isStopped || continuationUnavailable}
                 />
                 <div className="diagnosis-actions">
                   <button
                     type="button"
                     className="primary"
                     onClick={() => void requestContinue()}
-                    disabled={busy || isStopped}
+                    disabled={busy || isStopped || continuationUnavailable}
                     data-testid="continue-diagnosis-button"
                   >
                     继续分析
                   </button>
-                  <button type="button" className="outline" onClick={stopReport} disabled={isStopped}>
+                  <button type="button" className="outline" onClick={stopReport} disabled={isStopped || continuationUnavailable}>
                     停止并保留报告
                   </button>
                   <button type="button" className="outline" onClick={() => void download('md')}>
@@ -528,7 +545,9 @@ export function DiagnosisScreen() {
                     下载 JSON
                   </button>
                   <span className="diagnosis-status">
-                    {isStopped
+                    {continuationUnavailable
+                      ? '当前版本暂不支持对已保存报告继续追问，已有内容可查看和下载。'
+                      : isStopped
                       ? '本报告已停止；内容仍可查看与下载'
                       : '每轮续问都会先预览发送范围，确认后才发送'}
                   </span>

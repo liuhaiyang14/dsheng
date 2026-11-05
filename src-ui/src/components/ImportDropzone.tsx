@@ -82,25 +82,23 @@ export function ImportDropzone(props: {
   const [manualMode, setManualMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const dropRef = useRef<HTMLDivElement | null>(null);
+  const propsRef = useRef(props);
+  propsRef.current = props;
 
   const handlePaths = (paths: string[]) => {
-    if (paths.length === 0) return;
+    if (paths.length === 0 || propsRef.current.busy) return;
     const first = paths[0];
-    // scan 以目录为单位：拖入文件夹→直接用；拖入文件→取其所在目录
-    const guessDir = first.split('/').slice(0, -1).join('/') || '/';
-    const note =
-      paths.length > 1
-        ? `收到 ${paths.length} 项，扫描其所在目录：${guessDir}`
-        : first.endsWith('.xlsx') || first.endsWith('.xls') || first.endsWith('.csv')
-          ? `扫描文件所在目录：${guessDir}`
-          : undefined;
-    props.onPath(guessDir, note);
+    const isFile = /\.(xlsx|xls|csv)$/i.test(first);
+    const directory = isFile ? first.replace(/[\\/][^\\/]+$/, '') || '/' : first;
+    propsRef.current.onPath(directory, isFile ? `扫描文件所在目录：${directory}` : undefined);
   };
 
   // Tauri 桌面：窗口级拖放事件（真实路径）——onDragDropEvent 与 event.listen 双通道
   useEffect(() => {
     let unlisteners: Array<() => void> = [];
     let alive = true;
+    const env = envCheck();
+    propsRef.current.onDiag?.(`环境：__TAURI__ ${env.tauri ? '✓' : '✗'} · 目录选择器 ${env.dialog ? '✓' : '✗'} · 拖放 ${env.dragDrop ? '✓' : '✗'}`);
     const onEvent = (event: TauriDragDropEvent) => {
       if (event.type === 'enter' || event.type === 'over') setHover(true);
       if (event.type === 'leave') setHover(false);
@@ -137,6 +135,7 @@ export function ImportDropzone(props: {
   }, []);
 
   const pickDirectory = async () => {
+    if (props.busy) return;
     setError(null);
     // 第 1 层：直连插件命令（最低层，返回值不经全局桥）
     try {
@@ -169,19 +168,13 @@ export function ImportDropzone(props: {
     }
     // 第 3 层：手动路径输入
     setManualMode(true);
-    setError('系统选择器返回值未达界面（见诊断行）；请在下方手动输入目录路径后点「解析此目录」。');
+    setError('暂时无法打开目录选择器，请在下方填写真实目录路径后点击“解析此目录”。');
   };
 
   const env = envCheck();
 
   return (
-    <div className="panel import-panel" data-testid="import-panel">
-      <div className="panel-head">
-        <span className="panel-title">导入经营数据</span>
-        <span className="panel-note" data-testid="import-env">
-          环境：__TAURI__ {env.tauri ? '✓' : '✗'} · 目录选择器 {env.dialog ? '✓' : '✗'} · 拖放 {env.dragDrop ? '✓' : '✗'}
-        </span>
-      </div>
+    <div className="import-panel" data-testid="import-panel">
       <div className="import-row">
         <div
           ref={dropRef}
@@ -205,12 +198,13 @@ export function ImportDropzone(props: {
             if (tauriWindow()) return;
             e.preventDefault();
             setHover(false);
-            const names = Array.from(e.dataTransfer?.files ?? []).map((f) => f.name);
-            if (names.length > 0) {
-              props.onPath(
-                `/演示路径/${names[0]}`,
-                `测试通道收到文件：${names.join('、')}（桌面版拖拽使用真实路径）`,
-              );
+            if (props.busy) return;
+            const files = Array.from(e.dataTransfer?.files ?? []);
+            const paths = files.map((f) => (f as File & { path?: string }).path).filter((p): p is string => Boolean(p));
+            if (paths.length > 0) handlePaths(paths);
+            else if (files.length > 0) {
+              setManualMode(true);
+              setError('当前环境无法取得文件的真实路径，请填写文件所在目录后解析。');
             }
           }}
         >
@@ -239,6 +233,7 @@ export function ImportDropzone(props: {
           <input
             className="select"
             value={manual}
+            aria-label="数据目录路径"
             placeholder="输入数据目录绝对路径，例如 /Users/你/Documents/经营复盘/2026-10"
             onChange={(e) => setManual(e.target.value)}
             data-testid="manual-path-input"

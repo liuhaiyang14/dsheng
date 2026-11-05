@@ -5,7 +5,7 @@
  * 诊断报告等任何事件都不自动触发任务生成。任务页不提供根因追问。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
@@ -27,9 +27,9 @@ import {
   type TimelineEntryView,
 } from '../api';
 
-function cycleRoleOf(task: TaskView): 'review' | 'plan' {
+function cycleRoleOf(task: TaskView, periodEnd: string): 'review' | 'plan' {
   if (!task.target_period) return 'review';
-  return task.target_period.from >= '2026-11-01' ? 'plan' : 'review';
+  return task.target_period.from > periodEnd ? 'plan' : 'review';
 }
 
 function friendlyError(err: unknown): string {
@@ -48,6 +48,7 @@ export function TaskScreen() {
   const hasData = workspaceHasData(app.data);
   const tasks = app.data.tasks;
   const detail = app.data.currentDetail;
+  const historical = detail != null && app.data.history.some((h) => h.run_id === detail.run_id && h.current_revision_no !== detail.analysis_revision_no);
   const runId = detail?.run_id ?? null;
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
@@ -64,11 +65,18 @@ export function TaskScreen() {
   /** confirm 发送进行中（进度面板渲染窗口；终态或异常即关闭）。 */
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [timelineGrain, setTimelineGrain] = useState<Cadence>('day');
-  const [timelineFrom, setTimelineFrom] = useState('');
-  const [timelineTo, setTimelineTo] = useState('');
+  const [timelineGrain, setTimelineGrain] = useState<Cadence>(detail?.grain ?? 'day');
+  const [timelineFrom, setTimelineFrom] = useState(detail?.period.from ?? '');
+  const [timelineTo, setTimelineTo] = useState(detail?.period.to ?? '');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntryView[]>([]);
+
+  useEffect(() => {
+    app.setContextLock(sending
+      ? '正在生成任务；请等待完成或在进度面板取消后再切换企业、期间或页面。'
+      : candidate ? '本页有待应用的任务候选，请先应用或全部忽略，再切换企业、期间或页面。' : null);
+    return () => app.setContextLock(null);
+  }, [app.setContextLock, sending, candidate]);
 
   // 进入页面：只读加载诊断报告列表（供生成预览选择），绝不触发生成。
   useEffect(() => {
@@ -93,36 +101,22 @@ export function TaskScreen() {
     };
   }, [app.client, app.activeWorkspaceId, runId]);
 
-  const loadTimeline = useCallback(async () => {
-    if (!app.client || !app.activeWorkspaceId) {
-      setTimelineEntries([]);
-      return;
-    }
-    try {
-      const from = timelineFrom || '2000-01-01';
-      const to = timelineTo || '2999-12-31';
-      const entries = await app.client.taskTimeline({
-        workspace_id: app.activeWorkspaceId,
-        from,
-        to,
-        grain: timelineGrain,
-      });
-      setTimelineEntries(
-        statusFilter === 'all'
-          ? entries
-          : entries.filter((e) => {
-              const task = tasks.find((t) => t.task_id === e.task_id);
-              return task != null && task.status === statusFilter;
-            }),
-      );
-    } catch {
-      setTimelineEntries([]);
-    }
-  }, [app.client, app.activeWorkspaceId, timelineFrom, timelineTo, timelineGrain, statusFilter, tasks]);
-
   useEffect(() => {
-    void loadTimeline();
-  }, [loadTimeline]);
+    let cancelled = false;
+    setTimelineEntries([]);
+    if (!app.client || !app.activeWorkspaceId || !runId || !timelineFrom || !timelineTo) return;
+    void app.client.taskTimeline({
+      workspace_id: app.activeWorkspaceId,
+      from: timelineFrom, to: timelineTo, grain: timelineGrain,
+    }).then((entries) => {
+      if (cancelled) return;
+      setTimelineEntries(entries.filter((entry) => {
+        const task = tasks.find((t) => t.task_id === entry.task_id);
+        return task != null && (statusFilter === 'all' || task.status === statusFilter);
+      }));
+    }).catch(() => { if (!cancelled) setTimelineEntries([]); });
+    return () => { cancelled = true; };
+  }, [app.client, app.activeWorkspaceId, runId, timelineFrom, timelineTo, timelineGrain, statusFilter, tasks]);
 
   const selectedTask = useMemo(
     () => tasks.find((t) => t.task_id === selectedTaskId) ?? null,
@@ -131,7 +125,8 @@ export function TaskScreen() {
 
   /** 显式按钮第一步：打开生成参数（可选引用诊断报告）。 */
   const openGenerate = () => {
-    if (!hasData) {
+    if (historical) return;
+    if (!hasData || !detail) {
       setNotice('请先为当前企业档案导入数据并完成字段映射。');
       return;
     }
@@ -140,7 +135,7 @@ export function TaskScreen() {
 
   /** 显式按钮第二步：请求发送预览。 */
   const requestPreview = async () => {
-    if (!app.client || !app.activeWorkspaceId || !runId) return;
+    if (!app.client || !app.activeWorkspaceId || !runId || historical) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -190,7 +185,7 @@ export function TaskScreen() {
 
   /** 本地差异确认（reconcile）：用户逐项选择 new/ignore 后应用。 */
   const applyCandidate = async () => {
-    if (!app.client || !app.activeWorkspaceId || !candidate || !runId || !detail) return;
+    if (!app.client || !app.activeWorkspaceId || !candidate || !runId || !detail || historical) return;
     setBusy(true);
     setNotice(null);
     try {
@@ -225,7 +220,7 @@ export function TaskScreen() {
     }
   };
 
-  if (!hasData) {
+  if (!hasData || !detail) {
     return (
       <div>
         <div className="screen-head">
@@ -265,6 +260,7 @@ export function TaskScreen() {
             type="button"
             className="primary"
             onClick={openGenerate}
+            disabled={busy || historical}
             data-testid="generate-task-button"
           >
             生成任务单
@@ -298,7 +294,7 @@ export function TaskScreen() {
             </thead>
             <tbody>
               {tasks.map((task) => {
-                const role = cycleRoleOf(task);
+                const role = cycleRoleOf(task, detail.period.to);
                 return (
                   <tr
                     key={task.task_id}

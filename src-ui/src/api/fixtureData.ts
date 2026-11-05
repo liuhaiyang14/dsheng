@@ -255,8 +255,8 @@ export const fixtureAnalysisRun: AnalysisRunView = {
       actual_value: '184600',
       delta: '-25400',
       direction: 'up',
-      mom: { comparison_type: 'mom', label: '环比', base_from: '2026-09-01', base_to: '2026-09-30', base_value: '196000', absolute_change: '-1500', change_rate: '-0.42', availability_status: 'available', reason: null, base_refs: [], evidence_ids: [] },
-      yoy: { comparison_type: 'yoy', label: '同比', base_from: '2025-10-01', base_to: '2025-10-31', base_value: '196000', absolute_change: '1500', change_rate: '0.87', availability_status: 'available', reason: null, base_refs: [], evidence_ids: [] },
+      mom: { comparison_type: 'mom', label: '环比', base_from: '2026-09-01', base_to: '2026-09-30', base_value: '196000', absolute_change: '-1500', change_rate: '-0.42', availability_status: 'available', reason: null, base_refs: [], evidence_ids: ['cell:demo:核算表:C7'] },
+      yoy: { comparison_type: 'yoy', label: '同比', base_from: '2025-10-01', base_to: '2025-10-31', base_value: '196000', absolute_change: '1500', change_rate: '0.87', availability_status: 'available', reason: null, base_refs: [], evidence_ids: ['cell:demo:核算表:C7'] },
       status_tag: 'focus',
     },
     {

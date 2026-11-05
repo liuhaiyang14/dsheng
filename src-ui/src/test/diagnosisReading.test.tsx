@@ -1,5 +1,5 @@
 // 本地读侧回归：列表摘要与完整报告分离；不调用或模拟 Provider。
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
@@ -37,7 +37,7 @@ it('真实摘要列表通过 show 加载完整 5WHY，重新进入仍显示已�
   const detail = await screen.findByTestId('diagnosis-report-detail');
   expect(detail.textContent).toContain(report.findings[0].answer);
   expect(show).toHaveBeenCalledWith(report.workspace_id, report.report_id, report.revision_no);
-  fireEvent.click(screen.getByRole('button', { name: /数据源/ }));
+  fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /数据源/ }));
   fireEvent.click(screen.getByRole('button', { name: /经营问题诊断/ }));
   expect((await screen.findByTestId('diagnosis-report-detail')).textContent).toContain(report.findings[0].answer);
 });
@@ -109,6 +109,6 @@ it('页面渲染异常被隔离并记入日志，重试可恢复且无需重启�
   expect(nativeLog).toHaveBeenCalledWith('js_log', expect.objectContaining({ message: expect.stringContaining('page-render:') }));
   fireEvent.click(screen.getByRole('button', { name: '重新加载页面' }));
   expect(await screen.findByTestId('diagnosis-report-detail')).toHaveTextContent(fixtureDiagnosisReports[0].summary);
-  fireEvent.click(screen.getByRole('button', { name: /数据源/ }));
+  fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /数据源/ }));
   expect(screen.getByTestId('crumb-screen')).toHaveTextContent('数据源');
 });

@@ -25,7 +25,6 @@ import type {
 } from './client';
 import type {
   AnalysisRunView,
-  Cadence,
   DiagnosisReport,
   DiagnosisReportSummaryView,
   DiagnosisGenerationReceipt,
@@ -124,6 +123,7 @@ export class FixtureClient implements DshengClient {
   private scans: Record<string, ScanSummaryView>;
   private tasks: TaskView[];
   private reports: DiagnosisReport[];
+  private analyzedRuns = new Map<string, AnalysisRunView>();
   private history: typeof fixtureHistory;
   private pendingConfirmations = new Map<
     string,
@@ -454,11 +454,23 @@ export class FixtureClient implements DshengClient {
         details: null,
       });
     }
-    const run = structuredClone(fixtureAnalysisRun);
-    if (input.grain !== 'auto' && input.grain !== 'day') {
-      run.grain = input.grain as Cadence;
+    const grain = input.grain === 'auto' ? 'day' : input.grain;
+    let entry = this.history.find((h) => h.workspace_id === input.workspace_id && h.period.from === input.from && h.period.to === input.to && h.cadence === grain);
+    if (!entry) {
+      entry = {
+        run_id: nextUuid(), workspace_id: input.workspace_id, period: { from: input.from, to: input.to },
+        period_key: input.from, cadence: grain, policy_version: 1, current_revision_no: 0,
+        updated_at: DEMO_NOW, summary: { metric_count: fixtureAnalysisRun.metrics.length, task_count: 0, chart_count: fixtureAnalysisRun.series.length }, task_snapshot_no: 1,
+      };
+      this.history.push(entry);
     }
-    return run;
+    entry.current_revision_no += 1;
+    const run: AnalysisRunView = {
+      ...structuredClone(fixtureAnalysisRun), workspace_id: input.workspace_id,
+      run_id: entry.run_id, period: entry.period, grain, current_revision_no: entry.current_revision_no,
+    };
+    this.analyzedRuns.set(run.run_id, run);
+    return structuredClone(run);
   }
 
   // ---- 诊断（显式 preview → confirm；不自动触发） ----
@@ -1416,8 +1428,8 @@ export class FixtureClient implements DshengClient {
       analysis_revision_no: revision ?? entry.current_revision_no,
       task_snapshot_no: entry.task_snapshot_no,
       captured_at: entry.updated_at,
-      metrics: structuredClone(fixtureAnalysisRun.metrics),
-      series: structuredClone(fixtureAnalysisRun.series),
+      metrics: structuredClone(this.analyzedRuns.get(runId)?.metrics ?? fixtureAnalysisRun.metrics),
+      series: structuredClone(this.analyzedRuns.get(runId)?.series ?? fixtureAnalysisRun.series),
       grain: entry.cadence,
       period: entry.period,
       tasks,

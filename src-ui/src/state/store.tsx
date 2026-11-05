@@ -20,6 +20,7 @@ import {
 import {
   createRuntimeClient,
   type DshengClient,
+  type Cadence,
   type HistoryDetailView,
   type HistoryEntryView,
   type PeriodPolicyView,
@@ -75,6 +76,12 @@ const EMPTY_WORKSPACE_DATA: WorkspaceData = {
   loaded: false,
 };
 
+interface RunSelection {
+  runId: string;
+  /** undefined 表示跟随该期间当前版本；数字表示明确的历史快照。 */
+  revision?: number;
+}
+
 interface AppState {
   mode: RuntimeClientMode;
   client: DshengClient | null;
@@ -87,6 +94,13 @@ interface AppState {
   activeWorkspace: WorkspaceView | null;
   data: WorkspaceData;
   screen: ScreenId;
+  selectedRun: RunSelection | null;
+  sourceDirectory: string | null;
+  contextLockReason: string | null;
+  setContextLock: (reason: string | null) => void;
+  rememberSourceDirectory: (path: string) => void;
+  selectRun: (runId: string, revision?: number) => Promise<void>;
+  runLocalAnalysis: (period: { from: string; to: string; grain: Cadence }) => Promise<void>;
   error: UiError | null;
   loading: boolean;
   setScreen: (screen: ScreenId) => void;
@@ -118,12 +132,20 @@ function toUiError(err: unknown): UiError {
   return { code: 'UNKNOWN', message: String(err) };
 }
 
+function sourceDirectoryKey(workspaceId: string) {
+  return `dsheng.source-directory.${workspaceId}`;
+}
+
+function savedSourceDirectory(workspaceId: string): string | null {
+  try { return window.localStorage.getItem(sourceDirectoryKey(workspaceId)) || null; }
+  catch { return null; }
+}
+
 export function AppProvider({
   children,
   runtime,
 }: {
   children: ReactNode;
-  /** 测试可注入 mock/fixture client。 */
   runtime?: { mode: RuntimeClientMode; client: DshengClient | null };
 }) {
   const [mode, setMode] = useState<RuntimeClientMode>('none');
@@ -132,11 +154,30 @@ export function AppProvider({
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
   const [dataMap, setDataMap] = useState<Record<string, WorkspaceData>>({});
-  const [screen, setScreen] = useState<ScreenId>('source');
+  const [selectionMap, setSelectionMap] = useState<Record<string, RunSelection | null>>({});
+  const [directoryMap, setDirectoryMap] = useState<Record<string, string>>({});
+  const [screen, setScreenState] = useState<ScreenId>('source');
+  const [contextLockReason, setContextLockReason] = useState<string | null>(null);
+  const contextLockRef = useRef<string | null>(null);
+  const setContextLock = useCallback((reason: string | null) => {
+    contextLockRef.current = reason;
+    setContextLockReason(reason);
+  }, []);
+  const setScreen = useCallback((next: ScreenId) => {
+    if (!contextLockRef.current) setScreenState(next);
+  }, []);
   const [error, setError] = useState<UiError | null>(null);
   const [loading, setLoading] = useState(false);
+  // 跨页面使用同一选择；过期的企业/期间/刷新结果不得覆盖新选择。
+  const requestEpoch = useRef(0);
+  const activeWorkspaceRef = useRef<string | null>(null);
+  const dataRef = useRef(dataMap);
+  dataRef.current = dataMap;
+  const selectionRef = useRef(selectionMap);
+  selectionRef.current = selectionMap;
+  const directoryRef = useRef(directoryMap);
+  directoryRef.current = directoryMap;
 
-  // runtime 只在挂载时取一次，避免每次渲染重建 client 导致的循环。
   const runtimeRef = useRef(runtime);
   useEffect(() => {
     const rt = runtimeRef.current ?? createRuntimeClient();
@@ -149,178 +190,213 @@ export function AppProvider({
     [workspaces, activeWorkspaceId],
   );
 
-  const loadWorkspaceData = useCallback(
-    async (
-      target: DshengClient,
-      workspaceId: string,
-      /** 保留既有扫描摘要：真实扫描结果来自用户显式操作，刷新不得用空目录扫描覆盖。 */
-      keepScan?: ScanSummaryView | null,
-    ): Promise<WorkspaceData> => {
-      // 只读取该档案自己的数据；跨档案隔离由核心保证，这里不合并其他档案缓存。
-      const [policies, providers, tasks, history] = await Promise.all([
-        target.periodList(workspaceId).catch(() => []),
-        target.providerList(workspaceId).catch(() => []),
-        target.taskList(workspaceId).catch(() => []),
-        target.historyList(workspaceId).catch(() => []),
-      ]);
-      let currentDetail: HistoryDetailView | null = null;
-      if (history.length > 0) {
-        currentDetail = await target
-          .historyShow(workspaceId, history[0].run_id)
-          .catch(() => null);
-      }
-      return {
-        scan: keepScan ?? null,
-        policies,
-        providers,
-        tasks,
-        history,
-        currentDetail,
-        loaded: true,
-      };
-    },
-    [],
-  );
+  const rememberSelection = useCallback((workspaceId: string, selection: RunSelection | null) => {
+    selectionRef.current = { ...selectionRef.current, [workspaceId]: selection };
+    setSelectionMap(selectionRef.current);
+  }, []);
 
-  // 初始加载：workspace 列表 + 默认档案数据
+  const loadWorkspaceData = useCallback(async (
+    target: DshengClient,
+    workspaceId: string,
+    preferred: RunSelection | null | undefined,
+    keepScan?: ScanSummaryView | null,
+  ) => {
+    const [policies, providers, history] = await Promise.all([
+      target.periodList(workspaceId).catch(() => []),
+      target.providerList(workspaceId).catch(() => []),
+      target.historyList(workspaceId),
+    ]);
+    // 缺省选期间日期最大的已保存结果，绝不按更新时间冒充“当期”。
+    const newest = [...history].sort((a, b) =>
+      b.period.to.localeCompare(a.period.to) || b.period.from.localeCompare(a.period.from) || a.run_id.localeCompare(b.run_id),
+    )[0];
+    const entry = history.find((h) => h.run_id === preferred?.runId) ?? newest;
+    const selection = entry
+      ? { runId: entry.run_id, revision: preferred?.runId === entry.run_id ? preferred.revision : undefined }
+      : null;
+    const [currentDetail, tasks] = entry
+      ? await Promise.all([
+          target.historyShow(workspaceId, entry.run_id, selection?.revision),
+          target.taskList(workspaceId, entry.run_id),
+        ])
+      : [null, []];
+    const data: WorkspaceData = {
+      scan: keepScan ?? null, policies, providers, history, tasks, currentDetail, loaded: true,
+    };
+    return { data, selection };
+  }, []);
+
+  const applyLoaded = useCallback((workspaceId: string, loaded: Awaited<ReturnType<typeof loadWorkspaceData>>) => {
+    setDataMap((prev) => ({ ...prev, [workspaceId]: loaded.data }));
+    rememberSelection(workspaceId, loaded.selection);
+  }, [rememberSelection]);
+
   useEffect(() => {
+    if (!client) return;
     let cancelled = false;
-    (async () => {
-      if (!client) return;
-      setLoading(true);
+    const epoch = ++requestEpoch.current;
+    setLoading(true);
+    void (async () => {
       try {
         const list = await client.workspaceList();
-        if (cancelled) return;
+        if (cancelled || epoch !== requestEpoch.current) return;
         setWorkspaces(list);
         setBootstrapped(true);
         if (list.length > 0) {
           const first = list[0].workspace_id;
+          activeWorkspaceRef.current = first;
           setActiveWorkspaceId(first);
-          const loaded = await loadWorkspaceData(client, first);
-          if (cancelled) return;
-          setDataMap({ [first]: loaded });
+          const loaded = await loadWorkspaceData(client, first, null);
+          if (!cancelled && epoch === requestEpoch.current) applyLoaded(first, loaded);
         }
       } catch (err) {
-        if (!cancelled) setError(toUiError(err));
-        if (!cancelled) setBootstrapped(true);
+        if (!cancelled && epoch === requestEpoch.current) setError(toUiError(err));
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && epoch === requestEpoch.current) {
+          setBootstrapped(true);
+          setLoading(false);
+        }
       }
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [client, loadWorkspaceData]);
+    return () => { cancelled = true; };
+  }, [client, loadWorkspaceData, applyLoaded]);
 
-  const reloadWorkspaceData = useCallback(
-    async (opts?: { keepScan?: ScanSummaryView | null }) => {
-    if (!client || !activeWorkspaceId) return;
+  const reloadWorkspaceData = useCallback(async (opts?: { keepScan?: ScanSummaryView | null }) => {
+    const workspaceId = activeWorkspaceId;
+    if (!client || !workspaceId || activeWorkspaceRef.current !== workspaceId) return;
+    const epoch = ++requestEpoch.current;
     setLoading(true);
+    setError(null);
     try {
       const loaded = await loadWorkspaceData(
-        client,
-        activeWorkspaceId,
-        opts?.keepScan !== undefined ? opts.keepScan : (dataMap[activeWorkspaceId]?.scan ?? null),
+        client, workspaceId, selectionRef.current[workspaceId],
+        opts?.keepScan !== undefined ? opts.keepScan : dataRef.current[workspaceId]?.scan,
       );
-      setDataMap((prev) => ({ ...prev, [activeWorkspaceId]: loaded }));
       const fresh = await client.workspaceList();
+      if (epoch !== requestEpoch.current || activeWorkspaceRef.current !== workspaceId) return;
+      applyLoaded(workspaceId, loaded);
       setWorkspaces(fresh);
     } catch (err) {
-      setError(toUiError(err));
+      if (epoch === requestEpoch.current) setError(toUiError(err));
     } finally {
-      setLoading(false);
+      if (epoch === requestEpoch.current) setLoading(false);
     }
-  },
-  [client, activeWorkspaceId, loadWorkspaceData, dataMap]);
+  }, [client, activeWorkspaceId, loadWorkspaceData, applyLoaded]);
 
-  const createWorkspace = useCallback(
-    async (input: {
-      name: string;
-      cadence: 'day' | 'week' | 'month' | 'quarter';
-      effective_from: string;
-      timezone_id: string;
-      week_start_day: number;
-      fiscal_year_start_month: number;
-    }): Promise<WorkspaceView> => {
-      if (!client) throw new Error('未连接核心，无法创建企业档案');
-      setError(null);
-      setLoading(true);
-      try {
-        const view = await client.workspaceCreate({
-          schema_version: '1',
-          operation: 'workspace_create',
-          name: input.name,
-          initial_period_policy: {
-            cadence: input.cadence,
-            week_start_day: input.week_start_day,
-            fiscal_year_start_month: input.fiscal_year_start_month,
-            timezone_id: input.timezone_id,
-            effective_from: input.effective_from,
-          },
-        });
-        const list = await client.workspaceList();
+  const selectRun = useCallback(async (runId: string, revision?: number) => {
+    const workspaceId = activeWorkspaceId;
+    if (!client || !workspaceId || activeWorkspaceRef.current !== workspaceId || contextLockRef.current) return;
+    if (!dataRef.current[workspaceId]?.history.some((h) => h.run_id === runId)) return;
+    const selection = { runId, revision };
+    const epoch = ++requestEpoch.current;
+    rememberSelection(workspaceId, selection);
+    setDataMap((prev) => ({ ...prev, [workspaceId]: { ...prev[workspaceId], currentDetail: null, tasks: [] } }));
+    setError(null);
+    setLoading(true);
+    try {
+      const loaded = await loadWorkspaceData(client, workspaceId, selection, dataRef.current[workspaceId]?.scan);
+      if (epoch === requestEpoch.current && activeWorkspaceRef.current === workspaceId) applyLoaded(workspaceId, loaded);
+    } catch (err) {
+      if (epoch === requestEpoch.current) setError(toUiError(err));
+    } finally {
+      if (epoch === requestEpoch.current) setLoading(false);
+    }
+  }, [client, activeWorkspaceId, loadWorkspaceData, applyLoaded, rememberSelection]);
+
+  const rememberSourceDirectory = useCallback((path: string) => {
+    if (!activeWorkspaceId) return;
+    directoryRef.current = { ...directoryRef.current, [activeWorkspaceId]: path };
+    setDirectoryMap(directoryRef.current);
+    // 仅保存用户选择的目录路径，不保存表内容、Provider 或 Key。
+    try { window.localStorage.setItem(sourceDirectoryKey(activeWorkspaceId), path); } catch { /* 受限环境仍保留内存状态 */ }
+  }, [activeWorkspaceId]);
+
+  const runLocalAnalysis = useCallback(async (period: { from: string; to: string; grain: Cadence }) => {
+    const workspaceId = activeWorkspaceId;
+    if (!client || !workspaceId || activeWorkspaceRef.current !== workspaceId || contextLockRef.current) return;
+    const directory = directoryRef.current[workspaceId] ?? savedSourceDirectory(workspaceId);
+    if (!directory) {
+      setError({ code: 'DIRECTORY_REQUIRED', message: '请先到数据源选择并成功扫描真实目录，再运行本地分析。' });
+      return;
+    }
+    if (!period.from || !period.to || period.from > period.to) {
+      setError({ code: 'INVALID_PERIOD', message: '请填写有效的起止日期，开始日期不能晚于结束日期。' });
+      return;
+    }
+    const epoch = ++requestEpoch.current;
+    setError(null);
+    setLoading(true);
+    try {
+      const run = await client.analyze({ workspace_id: workspaceId, directory_label: directory, ...period });
+      if (epoch !== requestEpoch.current || activeWorkspaceRef.current !== workspaceId) return;
+      const loaded = await loadWorkspaceData(client, workspaceId, { runId: run.run_id }, dataRef.current[workspaceId]?.scan);
+      if (epoch === requestEpoch.current && activeWorkspaceRef.current === workspaceId) applyLoaded(workspaceId, loaded);
+    } catch (err) {
+      if (epoch === requestEpoch.current) setError(toUiError(err));
+    } finally {
+      if (epoch === requestEpoch.current) setLoading(false);
+    }
+  }, [client, activeWorkspaceId, loadWorkspaceData, applyLoaded]);
+
+  const createWorkspace = useCallback(async (input: {
+    name: string; cadence: Cadence; effective_from: string; timezone_id: string;
+    week_start_day: number; fiscal_year_start_month: number;
+  }): Promise<WorkspaceView> => {
+    if (!client) throw new Error('未连接核心，无法创建企业档案');
+    if (contextLockRef.current) throw new Error(contextLockRef.current);
+    const epoch = ++requestEpoch.current;
+    setError(null);
+    setLoading(true);
+    try {
+      const view = await client.workspaceCreate({ schema_version: '1', operation: 'workspace_create', name: input.name,
+        initial_period_policy: { cadence: input.cadence, week_start_day: input.week_start_day,
+          fiscal_year_start_month: input.fiscal_year_start_month, timezone_id: input.timezone_id, effective_from: input.effective_from } });
+      const list = await client.workspaceList();
+      const loaded = await loadWorkspaceData(client, view.workspace_id, null);
+      if (epoch === requestEpoch.current) {
         setWorkspaces(list);
-        const loaded = await loadWorkspaceData(client, view.workspace_id);
+        activeWorkspaceRef.current = view.workspace_id;
         setActiveWorkspaceId(view.workspace_id);
-        setDataMap((prev) => ({ ...prev, [view.workspace_id]: loaded }));
-        setScreen('source');
-        return view;
-      } catch (err) {
-        setError(toUiError(err));
-        throw err;
-      } finally {
-        setLoading(false);
+        applyLoaded(view.workspace_id, loaded);
+        setScreenState('source');
       }
-    },
-    [client, loadWorkspaceData],
-  );
+      return view;
+    } catch (err) {
+      if (epoch === requestEpoch.current) setError(toUiError(err));
+      throw err;
+    } finally {
+      if (epoch === requestEpoch.current) setLoading(false);
+    }
+  }, [client, loadWorkspaceData, applyLoaded]);
 
-  const switchWorkspace = useCallback(
-    async (workspaceId: string) => {
-      if (!client || workspaceId === activeWorkspaceId) return;
-      setError(null);
-      setLoading(true);
-      try {
-        await client.workspaceUse({
-          schema_version: '1',
-          operation: 'workspace_use',
-          workspace_id: workspaceId,
-        });
-        // 切换后只呈现目标档案自己的数据（无缓存跨用）。
-        const loaded = await loadWorkspaceData(client, workspaceId);
-        setActiveWorkspaceId(workspaceId);
-        setDataMap((prev) => ({ ...prev, [workspaceId]: loaded }));
-      } catch (err) {
-        setError(toUiError(err));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [client, activeWorkspaceId, loadWorkspaceData],
-  );
+  const switchWorkspace = useCallback(async (workspaceId: string) => {
+    if (!client || workspaceId === activeWorkspaceRef.current || contextLockRef.current) return;
+    const epoch = ++requestEpoch.current;
+    // 立即隔离旧页面、预览和候选，再读取目标企业数据。
+    activeWorkspaceRef.current = workspaceId;
+    setActiveWorkspaceId(workspaceId);
+    setError(null);
+    setLoading(true);
+    try {
+      await client.workspaceUse({ schema_version: '1', operation: 'workspace_use', workspace_id: workspaceId });
+      const loaded = await loadWorkspaceData(client, workspaceId, selectionRef.current[workspaceId], dataRef.current[workspaceId]?.scan);
+      if (epoch === requestEpoch.current) applyLoaded(workspaceId, loaded);
+    } catch (err) {
+      if (epoch === requestEpoch.current) setError(toUiError(err));
+    } finally {
+      if (epoch === requestEpoch.current) setLoading(false);
+    }
+  }, [client, loadWorkspaceData, applyLoaded]);
 
   const value: AppState = {
-    mode,
-    client,
-    connected: client != null,
-    bootstrapped,
-    workspaces,
-    activeWorkspaceId,
-    activeWorkspace,
-    data: activeWorkspaceId
-      ? dataMap[activeWorkspaceId] ?? EMPTY_WORKSPACE_DATA
-      : EMPTY_WORKSPACE_DATA,
-    screen,
-    error,
-    loading,
-    setScreen,
-    createWorkspace,
-    switchWorkspace,
-    refresh: reloadWorkspaceData,
-    clearError: () => setError(null),
-    reloadWorkspaceData,
+    mode, client, connected: client != null, bootstrapped, workspaces, activeWorkspaceId, activeWorkspace,
+    data: activeWorkspaceId ? dataMap[activeWorkspaceId] ?? EMPTY_WORKSPACE_DATA : EMPTY_WORKSPACE_DATA,
+    selectedRun: activeWorkspaceId ? selectionMap[activeWorkspaceId] ?? null : null,
+    sourceDirectory: activeWorkspaceId ? directoryMap[activeWorkspaceId] ?? savedSourceDirectory(activeWorkspaceId) : null,
+    rememberSourceDirectory, selectRun, runLocalAnalysis, contextLockReason, setContextLock,
+    screen, error, loading, setScreen, createWorkspace, switchWorkspace,
+    refresh: reloadWorkspaceData, clearError: () => setError(null), reloadWorkspaceData,
   };
-
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 }
 

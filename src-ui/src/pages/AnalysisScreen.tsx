@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
+import { PERIOD_GRAIN_LABELS as GRAIN_LABELS } from '../components/AnalysisPeriodBar';
 import { ChartPanel } from '../components/ChartPanel';
 import {
   buildChartOption,
@@ -16,17 +17,8 @@ import {
   groupDecimal,
   diffTone,
   favorableOf,
-  type AnalysisRunView,
-  type Cadence,
   type MetricRowView,
 } from '../api';
-
-const GRAIN_LABELS: Record<Cadence, string> = {
-  day: '日度',
-  week: '周度',
-  month: '月度',
-  quarter: '季度',
-};
 
 /** 核心不返回 status_tag；按 favorable/可比性本地推导（§1.1 语义）。 */
 function deriveStatusTag(m: MetricRowView): NonNullable<MetricRowView['status_tag']> {
@@ -89,40 +81,10 @@ function CompareCell({
 export function AnalysisScreen() {
   const app = useApp();
   const hasData = workspaceHasData(app.data);
-  const historyDetail = app.data.currentDetail;
+  const detail = app.data.currentDetail;
   const [metricKey, setMetricKey] = useState<string>('');
   const [chartType, setChartType] = useState<ChartType>('trend');
   const [showDataTable, setShowDataTable] = useState(false);
-  /** 粒度切换后的本地重算结果（由核心 analyze 计算；UI 不聚合）。 */
-  const [analyzed, setAnalyzed] = useState<AnalysisRunView | null>(null);
-
-  const detail = analyzed ?? historyDetail;
-  const activeGrain = detail?.grain ?? 'day';
-
-  // 切换企业/期间后丢弃旧档案的重算结果，避免跨档案混用。
-  useEffect(() => {
-    setAnalyzed(null);
-  }, [historyDetail?.run_id, app.activeWorkspaceId]);
-
-  const changeGrain = (next: Cadence) => {
-    if (!app.client || !app.activeWorkspaceId || !historyDetail) return;
-    if (next === historyDetail.grain && analyzed == null) return;
-    // 粒度切换 = 显式本地重算（analyze 无 Provider 调用），由核心返回新聚合。
-    app.client
-      .analyze({
-        workspace_id: app.activeWorkspaceId,
-        directory_label: '',
-        from: historyDetail.period.from,
-        to: historyDetail.period.to,
-        grain: next,
-      })
-      .then((run) => setAnalyzed(run))
-      .catch((err: unknown) => {
-        app.clearError();
-        // 展示核心错误 envelope 的 message
-        window.alert(err instanceof Error ? err.message : String(err));
-      });
-  };
   const series = useMemo(() => {
     if (!detail) return null;
     return detail.series.find((s) => s.metric_key === metricKey) ?? detail.series[0] ?? null;
@@ -336,19 +298,6 @@ export function AnalysisScreen() {
               </option>
             ))}
           </select>
-          <select
-            className="select"
-            aria-label="聚合粒度"
-            value={activeGrain}
-            onChange={(e) => changeGrain(e.target.value as Cadence)}
-            data-testid="grain-select"
-          >
-            {(Object.keys(GRAIN_LABELS) as Cadence[]).map((g) => (
-              <option key={g} value={g}>
-                {GRAIN_LABELS[g]}
-              </option>
-            ))}
-          </select>
           <button
             type="button"
             className="outline"
@@ -365,7 +314,7 @@ export function AnalysisScreen() {
         ) : series ? (
           <ChartPanel
             option={buildChartOption(series, chartType)}
-            ariaLabel={`${series.metric_label}${CHART_TYPE_LABELS[chartType]}（${GRAIN_LABELS[activeGrain]}）`}
+            ariaLabel={`${series.metric_label}${CHART_TYPE_LABELS[chartType]}（${GRAIN_LABELS[detail.grain]}）`}
           />
         ) : null}
         {showDataTable && series ? (
@@ -383,9 +332,9 @@ export function AnalysisScreen() {
                 {series.buckets.map((b, i) => (
                   <tr key={b}>
                     <td>{b}</td>
-                    <td>{series.actual[i] ?? '缺桶'}</td>
-                    <td>{series.plan[i] ?? '—'}</td>
-                    <td>{series.delta ? (series.delta[i] ?? '缺桶') : '—'}</td>
+                    <td>{series.actual[i] == null ? '缺桶' : groupDecimal(series.actual[i]!)}</td>
+                    <td>{series.plan[i] == null ? '—' : groupDecimal(series.plan[i]!)}</td>
+                    <td>{series.delta ? (series.delta[i] == null ? '缺桶' : groupDecimal(series.delta[i]!)) : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -406,7 +355,7 @@ function ScreenHead({ hasData }: { hasData: boolean }) {
         <h2 className="screen-title">经营分析</h2>
         <div className="sub">
           {hasData
-            ? `${app.activeWorkspace?.name} · ${app.data.currentDetail?.period.from} 至 ${app.data.currentDetail?.period.to} · ${GRAIN_LABELS[app.data.currentDetail?.grain ?? 'day']}聚合，可切换粒度`
+            ? `${app.activeWorkspace?.name} · ${app.data.currentDetail?.period.from} 至 ${app.data.currentDetail?.period.to} · ${GRAIN_LABELS[app.data.currentDetail?.grain ?? 'day']}聚合，范围与粒度由上方统一选择`
             : `${app.activeWorkspace?.name} · 尚无分析期间`}
         </div>
       </div>

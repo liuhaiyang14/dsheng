@@ -11,7 +11,6 @@ import { Tag } from '../components/bits';
 import {
   TASK_STATUS_LABELS,
   groupDecimal,
-  type HistoryDetailView,
 } from '../api';
 
 const CADENCE_LABELS: Record<string, string> = {
@@ -25,7 +24,7 @@ export function HistoryScreen() {
   const app = useApp();
   const hasData = workspaceHasData(app.data);
   const history = app.data.history;
-  const [detail, setDetail] = useState<HistoryDetailView | null>(null);
+  const detail = app.data.currentDetail;
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -37,8 +36,7 @@ export function HistoryScreen() {
     setBusy(true);
     setNotice(null);
     try {
-      const d = await app.client.historyShow(app.activeWorkspace!.workspace_id, runId, revision);
-      setDetail(d);
+      await app.selectRun(runId, revision);
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     } finally {
