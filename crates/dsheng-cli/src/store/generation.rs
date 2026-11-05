@@ -482,42 +482,24 @@ impl RequestDispatch for HttpDispatch {
         request: &ChatCompletionsRequest,
         on_chunk: &mut dyn FnMut(u64, u64, i64),
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
-        match dispatch_path(runtime.stream) {
-            DispatchPath::Streaming => {
-                let (client, endpoint) = dsheng_core::provider::http::build_streaming_client(
-                    &runtime.base_url,
-                    &runtime.timeouts,
-                    &runtime.budget,
-                )?;
-                // total 起点＝本次派发开始（preparing→终态的近似锚点；
-                // 确认消费/校验耗时不计入，见已知限制）
-                let started_at = dsheng_core::provider::deadline::MonotonicClock::now_millis(
-                    &dsheng_core::provider::deadline::SystemClock,
-                );
-                dsheng_core::provider::http::send_once_streaming(
-                    &client,
-                    &endpoint,
-                    &runtime.api_key,
-                    request,
-                    &runtime.timeouts,
-                    started_at,
-                    on_chunk,
-                )
-            }
-            DispatchPath::NonStreaming => {
-                let (client, endpoint) = dsheng_core::provider::http::build_client(
-                    &runtime.base_url,
-                    &runtime.timeouts,
-                    &runtime.budget,
-                )?;
-                dsheng_core::provider::http::send_once(
-                    &client,
-                    &endpoint,
-                    &runtime.api_key,
-                    request,
-                )
-            }
-        }
+        self.dispatch_cancellable(runtime, request, on_chunk, &|| false)
+    }
+
+    fn dispatch_cancellable(
+        &mut self,
+        runtime: &ProviderRuntime,
+        request: &ChatCompletionsRequest,
+        on_chunk: &mut dyn FnMut(u64, u64, i64),
+        should_cancel: &dyn Fn() -> bool,
+    ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
+        dsheng_core::provider::http::send_once_cancellable(
+            &runtime.base_url,
+            &runtime.api_key,
+            request,
+            runtime.stream,
+            on_chunk,
+            should_cancel,
+        )
     }
 }
 
