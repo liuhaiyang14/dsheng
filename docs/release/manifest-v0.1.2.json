@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "product": "dsheng",
+  "identifier": "com.dsheng.desktop",
+  "version": "0.1.2",
+  "generated_at": "2026-11-05T06:57:05+00:00",
+  "git": {
+    "commit": "0dfe9e84f6f976c5e8feeb38b8dc08a871444e35",
+    "branch": "codex/fix-5why-white-screen",
+    "dirty": false
+  },
+  "versions": {
+    "cargo_workspace": "0.1.2",
+    "tauri_conf": "0.1.2",
+    "tauri_cargo": "0.1.2",
+    "ui_package": "0.1.2"
+  },
+  "signing": {
+    "signed": false,
+    "note": "unsigned：不签名、不绕过 Gatekeeper/SmartScreen；见 docs/release/UNSIGNED.md"
+  },
+  "artifacts": [
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "arm64",
+      "file": "dsheng_0.1.2_macos_arm64.dmg",
+      "size_bytes": 11329703,
+      "sha256": "a8f2e1abb0bc4587f13092ae6861f995538a471f9ee2b1580fba26979f7aa46c"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "file": "dsheng_0.1.2_macos_arm64_portable.zip",
+      "size_bytes": 17550775,
+      "sha256": "52c0814d1e77792c3810750482b798ad45c8ae2976e3125a017a016be4e76460",
+      "zip": {
+        "entries": 33,
+        "top_level": [
+          "dsheng_0.1.2_macos_arm64_portable"
+        ],
+        "includes_migrations": true,
+        "includes_cli_binary": true
+      }
+    }
+  ],
+  "coverage": [
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "present"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "present"
+    },
+    {
+      "category": "desktop",
+      "kind": "dmg",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "msi",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "desktop",
+      "kind": "portable-zip",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "macos",
+      "arch": "arm64",
+      "status": "missing"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "macos",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "cli",
+      "kind": "cli-zip",
+      "platform": "windows",
+      "arch": "x64",
+      "status": "missing"
+    },
+    {
+      "category": "skill",
+      "kind": "skill-zip",
+      "platform": null,
+      "arch": null,
+      "status": "missing"
+    },
+    {
+      "category": "manual",
+      "kind": "manual-pdf",
+      "platform": null,
+      "arch": null,
+      "status": "missing"
+    }
+  ],
+  "components": {
+    "cli_install_helpers": [
+      {
+        "kind": "install-helper",
+        "platform": "macos",
+        "file": "install/macos-user-install.sh",
+        "size_bytes": 2955,
+        "sha256": "10fb6f5a42a39fc99df218a69fa63d9079f6c3cf0901d9b3721405ce8a129ab5"
+      },
+      {
+        "kind": "install-helper",
+        "platform": "windows",
+        "file": "install/windows-user-install.ps1",
+        "size_bytes": 3100,
+        "sha256": "1d1e7d948c59b59bb1e65c3c66abba1f60d00298142c23a1bd6b4e095b15e1a3"
+      }
+    ],
+    "migrations": [
+      {
+        "name": "0001_init.sql",
+        "sha256": "c3b9b4ff9c282a57a9840669c9c825d16833c3dd627d2ec7b3476e394536f841"
+      },
+      {
+        "name": "0002_stable_metric_identity.sql",
+        "sha256": "235f0b70e79643d7cd30d5edd7b001a8a30a4ef3f29e134465d774df7cd18046"
+      },
+      {
+        "name": "0003_stream_flag.sql",
+        "sha256": "af7a4c498a636c35ccc2ab2c1d66bb30ce185386b58a37891588f725fc9bcc8e"
+      }
+    ],
+    "db_schema_version": 3
+  }
+}
