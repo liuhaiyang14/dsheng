@@ -615,19 +615,38 @@ fn s3_candidate_saving_is_pure_local() {
     let mut conn = rusqlite::Connection::open(&f.db).unwrap();
     let material = material_of_fixture(&f);
     // save_task_candidate：落库候选（输出原样；不经 Provider）
-    let output = json!({
-        "summary": "合成候选（本地落库函数测试）",
-        "tasks": [{
-            "task_key": "k1", "title": "t", "summary": "s", "category": "其他事项",
-            "steps": [{"step_id": "s1", "order": 1, "action": "a"}],
-            "evidence_ids": [], "assumptions": [], "needs_review": []
-        }]
-    });
+    let output =
+        json!({"schema_version":"2", "summary":"合成候选（本地落库函数测试）", "tasks":[]});
+    let provider = gen::provider_snapshot(&conn, f.workspace, f.provider).unwrap();
+    let preview = gen::create_preview(
+        &mut conn,
+        f.workspace,
+        &provider,
+        &material,
+        dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
+        "2.3",
+        "2",
+    )
+    .unwrap();
+    let confirmation_id = preview["confirmation_id"]
+        .as_str()
+        .unwrap()
+        .parse()
+        .unwrap();
+    let attempt_id = dsheng_core::provider::confirm::ConfirmationGate
+        .consume_and_create_attempt(
+            &mut gen::SqliteGenerationStore { conn: &mut conn },
+            confirmation_id,
+            chrono::Utc::now(),
+        )
+        .unwrap()
+        .attempt()
+        .attempt_id;
     let candidate_id = gen::save_task_candidate(
         &mut conn,
         f.workspace,
         &material,
-        uuid::Uuid::new_v4(),
+        attempt_id,
         &output,
         false,
     )

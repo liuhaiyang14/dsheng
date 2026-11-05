@@ -142,6 +142,17 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
         vec![
             StreamProgressEvent {
                 attempt_id: attempt,
+                confirmation_id,
+                workspace_id: f.workspace,
+                chunk_seq: 0,
+                bytes: 0,
+                elapsed_ms: 0,
+                stage: "waiting",
+            },
+            StreamProgressEvent {
+                attempt_id: attempt,
+                confirmation_id,
+                workspace_id: f.workspace,
                 chunk_seq: 1,
                 bytes: 128,
                 elapsed_ms: 40,
@@ -149,6 +160,8 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
             },
             StreamProgressEvent {
                 attempt_id: attempt,
+                confirmation_id,
+                workspace_id: f.workspace,
                 chunk_seq: 2,
                 bytes: 4_096,
                 elapsed_ms: 30_050,
@@ -156,6 +169,8 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
             },
             StreamProgressEvent {
                 attempt_id: attempt,
+                confirmation_id,
+                workspace_id: f.workspace,
                 chunk_seq: 3,
                 bytes: 9_216,
                 elapsed_ms: 60_900,

@@ -24,7 +24,7 @@ use dsheng_core::generation::input::*;
 use dsheng_core::provider::confirm::{
     AttemptRecord, ConfirmationGate, ConsumeOutcome as GateConsume, GenerationStore, SendSnapshot,
 };
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -132,106 +132,12 @@ impl GenerationStore for SqliteGenerationStore<'_> {
         let binding = self
             .load_confirmation(id)
             .ok_or_else(|| CliError::new(CliErrorCode::ConfirmationRequired, "确认不存在"))?;
-        if let Some(attempt) = self.load_attempt_by_confirmation(id) {
-            return Ok(GateConsume::Existing(attempt));
-        }
         let tx = self
             .conn
-            .transaction()
-            .map_err(|e| CliError::new(CliErrorCode::LocalSaveFailed, e.to_string()))?;
-        // 会话：按 generation_input_fingerprint 定位/创建（预览时已建）
-        let session_id: String = {
-            let existing: Option<String> = tx
-                .query_row(
-                    "SELECT session_id FROM generation_sessions
-                     WHERE workspace_id = ?1 AND generation_input_fingerprint = ?2",
-                    params![
-                        binding.workspace_id.to_string(),
-                        binding.generation_input_fingerprint
-                    ],
-                    |r| r.get(0),
-                )
-                .map(Some)
-                .or_else(|e| match e {
-                    rusqlite::Error::QueryReturnedNoRows => Ok(None),
-                    other => Err(other),
-                })
-                .map_err(CliError::from)?;
-            match existing {
-                Some(id) => id,
-                None => {
-                    // 预览应已建会话；此兜底仅防御异常路径。diagnosis 的 CHECK
-                    // 要求非空 framework，故从最近同指纹确认的快照推导不出时
-                    // 直接报错而非写入 NULL。
-                    return Err(CliError::new(
-                        CliErrorCode::LocalSaveFailed,
-                        "generation session 缺失（预览未建立会话；须重新预览）",
-                    ));
-                }
-            }
-        };
-        let attempt_id = Uuid::new_v4();
-        let attempt_seq: i64 = tx.query_row(
-            "SELECT COALESCE(MAX(attempt_seq), 0) + 1 FROM generation_attempts WHERE session_id = ?1",
-            params![session_id],
-            |r| r.get(0),
-        )
-        .map_err(CliError::from)?;
-        let provider_snapshot = json!({
-            "provider_id": binding.provider_id.to_string(),
-            "revision": binding.provider_revision,
-            "timeouts": binding.timeouts,
-            "budget": binding.budget,
-        });
-        tx.execute(
-            "INSERT INTO generation_attempts (attempt_id, workspace_id, session_id, workflow,
-                    operation, confirmation_id, provider_id, provider_revision,
-                    provider_snapshot_json, request_stage, request_count, prompt_version,
-                    schema_version, input_hash, request_bytes, conservative_input_tokens,
-                    attempt_seq, retry_of_attempt_id, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'preparing', 0, ?10, ?11, ?12, ?13,
-                     ?14, ?15, NULL, ?16)",
-            params![
-                attempt_id.to_string(),
-                binding.workspace_id.to_string(),
-                session_id,
-                serde_json::to_value(binding.workflow)
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
-                serde_json::to_value(binding.operation)
-                    .unwrap()
-                    .as_str()
-                    .unwrap(),
-                binding.confirmation_id.to_string(),
-                binding.provider_id.to_string(),
-                binding.provider_revision as i64,
-                serde_json::to_string(&provider_snapshot).unwrap(),
-                binding.prompt_version,
-                binding.schema_version,
-                binding.input_hash,
-                binding.request_bytes as i64,
-                binding.conservative_input_tokens as i64,
-                attempt_seq,
-                now_iso()
-            ],
-        )
-        .map_err(CliError::from)?;
-        tx.execute(
-            "UPDATE confirmations SET consumed_at = ?2, consumed_by_attempt_id = ?3
-             WHERE confirmation_id = ?1",
-            params![
-                binding.confirmation_id.to_string(),
-                dsheng_core::repository::utc_iso(now),
-                attempt_id.to_string()
-            ],
-        )
-        .map_err(CliError::from)?;
-        tx.commit()
-            .map_err(|e| CliError::new(CliErrorCode::LocalSaveFailed, e.to_string()))?;
-        Ok(GateConsume::Created(
-            self.load_attempt(attempt_id).expect("刚插入"),
-        ))
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let outcome = consume_confirmation_record(&tx, &binding, now)?;
+        tx.commit()?;
+        Ok(outcome)
     }
 
     fn load_attempt(&self, attempt_id: Uuid) -> Option<AttemptRecord> {
@@ -259,14 +165,17 @@ impl GenerationStore for SqliteGenerationStore<'_> {
     }
 
     fn update_attempt(&mut self, attempt: &AttemptRecord) -> Result<(), Self::Error> {
-        self.conn
+        let changed = self
+            .conn
             .execute(
                 "UPDATE generation_attempts SET request_stage = ?2, request_count = ?3,
                         terminal_state = ?4,
                         dispatched_at = CASE WHEN ?2 = 'dispatched' AND dispatched_at IS NULL
                                              THEN ?5 ELSE dispatched_at END,
                         finished_at = CASE WHEN ?4 IS NOT NULL THEN ?5 ELSE finished_at END
-                 WHERE attempt_id = ?1",
+                 WHERE attempt_id = ?1 AND terminal_state IS NULL
+                   AND ((?2 = 'dispatched' AND request_count = 0)
+                        OR (?2 != 'dispatched' AND request_count = ?3))",
                 params![
                     attempt.attempt_id.to_string(),
                     serde_json::to_value(attempt.stage)
@@ -283,8 +192,134 @@ impl GenerationStore for SqliteGenerationStore<'_> {
                 ],
             )
             .map_err(CliError::from)?;
+        if changed != 1 {
+            return Err(CliError::new(
+                CliErrorCode::IdempotencyConflict,
+                "attempt 已终止或已派发，拒绝覆盖并发状态",
+            ));
+        }
         Ok(())
     }
+}
+
+/// Caller holds an IMMEDIATE transaction: consumption and pre-dispatch cancellation
+/// use the same lock, including the check for an already-created attempt.
+fn consume_confirmation_record(
+    conn: &Connection,
+    binding: &ConfirmationBinding,
+    now: DateTime<Utc>,
+) -> CliResult<GateConsume> {
+    let existing = conn
+        .query_row(
+            "SELECT attempt_id, confirmation_id, workflow, operation, workspace_id, provider_id,
+            provider_revision, request_stage, request_count, terminal_state,
+            created_at, COALESCE(finished_at, dispatched_at, created_at)
+         FROM generation_attempts WHERE confirmation_id = ?1",
+            [binding.confirmation_id.to_string()],
+            map_attempt_row,
+        )
+        .optional()?;
+    if let Some(attempt) = existing {
+        return Ok(GateConsume::Existing(attempt));
+    }
+    // 会话：按 generation_input_fingerprint 定位/创建（预览时已建）
+    let session_id: String = {
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT session_id FROM generation_sessions
+                     WHERE workspace_id = ?1 AND generation_input_fingerprint = ?2",
+                params![
+                    binding.workspace_id.to_string(),
+                    binding.generation_input_fingerprint
+                ],
+                |r| r.get(0),
+            )
+            .map(Some)
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                other => Err(other),
+            })
+            .map_err(CliError::from)?;
+        match existing {
+            Some(id) => id,
+            None => {
+                // 预览应已建会话；此兜底仅防御异常路径。diagnosis 的 CHECK
+                // 要求非空 framework，故从最近同指纹确认的快照推导不出时
+                // 直接报错而非写入 NULL。
+                return Err(CliError::new(
+                    CliErrorCode::LocalSaveFailed,
+                    "generation session 缺失（预览未建立会话；须重新预览）",
+                ));
+            }
+        }
+    };
+    let attempt_id = Uuid::new_v4();
+    let attempt_seq: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(attempt_seq), 0) + 1 FROM generation_attempts WHERE session_id = ?1",
+            params![session_id],
+            |r| r.get(0),
+        )
+        .map_err(CliError::from)?;
+    let provider_snapshot = json!({
+        "provider_id": binding.provider_id.to_string(),
+        "revision": binding.provider_revision,
+        "timeouts": binding.timeouts,
+        "budget": binding.budget,
+    });
+    conn.execute(
+        "INSERT INTO generation_attempts (attempt_id, workspace_id, session_id, workflow,
+                    operation, confirmation_id, provider_id, provider_revision,
+                    provider_snapshot_json, request_stage, request_count, prompt_version,
+                    schema_version, input_hash, request_bytes, conservative_input_tokens,
+                    attempt_seq, retry_of_attempt_id, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'preparing', 0, ?10, ?11, ?12, ?13,
+                     ?14, ?15, NULL, ?16)",
+        params![
+            attempt_id.to_string(),
+            binding.workspace_id.to_string(),
+            session_id,
+            serde_json::to_value(binding.workflow)
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            serde_json::to_value(binding.operation)
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            binding.confirmation_id.to_string(),
+            binding.provider_id.to_string(),
+            binding.provider_revision as i64,
+            serde_json::to_string(&provider_snapshot).unwrap(),
+            binding.prompt_version,
+            binding.schema_version,
+            binding.input_hash,
+            binding.request_bytes as i64,
+            binding.conservative_input_tokens as i64,
+            attempt_seq,
+            now_iso()
+        ],
+    )
+    .map_err(CliError::from)?;
+    conn.execute(
+        "UPDATE confirmations SET consumed_at = ?2, consumed_by_attempt_id = ?3
+             WHERE confirmation_id = ?1",
+        params![
+            binding.confirmation_id.to_string(),
+            dsheng_core::repository::utc_iso(now),
+            attempt_id.to_string()
+        ],
+    )
+    .map_err(CliError::from)?;
+
+    let attempt = conn.query_row(
+        "SELECT attempt_id, confirmation_id, workflow, operation, workspace_id, provider_id,
+            provider_revision, request_stage, request_count, terminal_state,
+            created_at, COALESCE(finished_at, dispatched_at, created_at)
+         FROM generation_attempts WHERE attempt_id = ?1",
+        [attempt_id.to_string()],
+        map_attempt_row,
+    )?;
+    Ok(GateConsume::Created(attempt))
 }
 
 fn snapshot_json_of(binding: &ConfirmationBinding) -> Value {
@@ -404,6 +439,19 @@ pub trait RequestDispatch {
         request: &ChatCompletionsRequest,
         on_chunk: &mut dyn FnMut(u64, u64, i64),
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)>;
+
+    fn dispatch_cancellable(
+        &mut self,
+        runtime: &ProviderRuntime,
+        request: &ChatCompletionsRequest,
+        on_chunk: &mut dyn FnMut(u64, u64, i64),
+        should_cancel: &dyn Fn() -> bool,
+    ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
+        if should_cancel() {
+            return Err((CliErrorCode::Cancelled, "生成已手动停止".into()));
+        }
+        self.dispatch(runtime, request, on_chunk)
+    }
 }
 
 /// 派发路径选择（纯函数；DI 测试断言用）。
@@ -481,10 +529,12 @@ impl RequestDispatch for HttpDispatch {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamProgressEvent {
     pub attempt_id: Uuid,
+    pub confirmation_id: Uuid,
+    pub workspace_id: Uuid,
     pub chunk_seq: u64,
     pub bytes: u64,
     pub elapsed_ms: i64,
-    /// 阶段（当前恒 receiving：接收响应流）。
+    /// waiting / receiving / validating / saving（不估算模型进度）。
     pub stage: &'static str,
 }
 
@@ -2075,8 +2125,8 @@ pub fn create_preview(
 }
 
 /// 确认发送（双门禁之后）：重验 → 消费建 attempt → 派发（注入）→ 落库 → 终态。
-/// `on_progress`：流式进度事件（attempt_id 关联；非流式/预览不触发）。
-/// 返回 (attempt_id, 终态, 提取后的输出对象)。
+/// `on_progress`：发送阶段与流式进度；预览不触发。
+/// 返回 (attempt_id, 提取后的输出对象)；成功终态由后续保存事务提交。
 #[allow(clippy::too_many_arguments)]
 pub fn send_confirmed(
     conn: &mut Connection,
@@ -2135,8 +2185,22 @@ pub fn send_confirmed(
         .consume_and_create_attempt(&mut store, confirmation_id, Utc::now())
         .map_err(|(code, msg)| CliError::new(code, msg))?;
     let attempt = outcome.attempt().clone();
-    gate.mark_dispatched(&mut store, attempt.attempt_id, Utc::now())
-        .map_err(|(code, msg)| CliError::new(code, msg))?;
+    let started = std::time::Instant::now();
+    ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
+    on_progress(StreamProgressEvent {
+        attempt_id: attempt.attempt_id,
+        confirmation_id,
+        workspace_id,
+        chunk_seq: 0,
+        bytes: 0,
+        elapsed_ms: 0,
+        stage: "waiting",
+    });
+    ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
+    if let Err((code, msg)) = gate.mark_dispatched(&mut store, attempt.attempt_id, Utc::now()) {
+        ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
+        return Err(CliError::new(code, msg));
+    }
     let runtime = ProviderRuntime {
         name: provider.name.clone(),
         base_url: provider.base_url.clone(),
@@ -2146,32 +2210,70 @@ pub fn send_confirmed(
         budget: provider.budget,
         api_key,
     };
-    // 原始 chunk 进度 → 消费端事件（补 attempt 关联与阶段）
-    let attempt_id_for_progress = attempt.attempt_id;
-    let mut chunk_progress = |seq: u64, bytes: u64, ms: i64| {
-        on_progress(StreamProgressEvent {
-            attempt_id: attempt_id_for_progress,
-            chunk_seq: seq,
-            bytes,
-            elapsed_ms: ms,
-            stage: "receiving",
-        });
+    set_attempt_stage(
+        store.conn,
+        workspace_id,
+        attempt.attempt_id,
+        "waiting_response",
+    )?;
+    let mut last_chunk = (0, 0);
+    let response_result = {
+        let should_cancel =
+            || ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id).is_err();
+        let mut chunk_progress = |seq: u64, bytes: u64, ms: i64| {
+            if should_cancel() {
+                return;
+            }
+            last_chunk = (seq, bytes);
+            on_progress(StreamProgressEvent {
+                attempt_id: attempt.attempt_id,
+                confirmation_id,
+                workspace_id,
+                chunk_seq: seq,
+                bytes,
+                elapsed_ms: ms,
+                stage: "receiving",
+            });
+        };
+        dispatcher.dispatch_cancellable(
+            &runtime,
+            &assembled.request,
+            &mut chunk_progress,
+            &should_cancel,
+        )
     };
-    let response = match dispatcher.dispatch(&runtime, &assembled.request, &mut chunk_progress) {
+    // A terminal response racing with manual stop must never enter parsing/saving.
+    ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
+    let response = match response_result {
         Ok(response) => response,
         Err((code, msg)) => {
-            let terminal = match code {
-                CliErrorCode::ConnectTimeout
-                | CliErrorCode::ResponseTimeout
-                | CliErrorCode::TotalTimeout => TerminalState::TimedOut,
-                CliErrorCode::Cancelled | CliErrorCode::Interrupted => TerminalState::Interrupted,
-                _ => TerminalState::Failed,
-            };
-            gate.finish(&mut store, attempt.attempt_id, terminal, Utc::now())
-                .ok();
-            return Err(CliError::new(code, msg));
+            let error = CliError::new(code, msg);
+            finish_attempt_error(
+                store.conn,
+                workspace_id,
+                attempt.attempt_id,
+                &error,
+                "request",
+            )?;
+            return Err(error);
         }
     };
+    set_attempt_stage(
+        store.conn,
+        workspace_id,
+        attempt.attempt_id,
+        "schema_validation",
+    )?;
+    on_progress(StreamProgressEvent {
+        attempt_id: attempt.attempt_id,
+        confirmation_id,
+        workspace_id,
+        chunk_seq: last_chunk.0,
+        bytes: last_chunk.1,
+        elapsed_ms: started.elapsed().as_millis().min(i64::MAX as u128) as i64,
+        stage: "validating",
+    });
+    ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
     // 提取正文（C 方案：严格优先＋唯一裸任务对象本地包装）
     let content = response
         .choices
@@ -2184,17 +2286,18 @@ pub fn send_confirmed(
         .and_then(|c| c.finish_reason.as_deref())
     {
         if reason != "stop" {
-            gate.finish(
-                &mut store,
-                attempt.attempt_id,
-                TerminalState::Failed,
-                Utc::now(),
-            )
-            .ok();
-            return Err(CliError::new(
+            let error = CliError::new(
                 CliErrorCode::IncompleteOutput,
                 format!("finish_reason={reason} 非 stop"),
-            ));
+            );
+            finish_attempt_error(
+                store.conn,
+                workspace_id,
+                attempt.attempt_id,
+                &error,
+                "validation",
+            )?;
+            return Err(error);
         }
     }
     let extraction = dsheng_core::provider::extract::choose(
@@ -2216,42 +2319,33 @@ pub fn send_confirmed(
                 material.analysis_revision_no,
                 &material.analysis_input_fingerprint,
             )?;
-            if material.workflow == Workflow::Diagnosis {
-                // 诊断尚须校验并保存完整报告；success 与保存事务一同提交。
-                let changed = store.conn.execute(
-                    "UPDATE generation_attempts SET request_stage = 'saving'
-                     WHERE attempt_id = ?1 AND terminal_state IS NULL",
-                    [attempt.attempt_id.to_string()],
-                )?;
-                if changed != 1 {
-                    return Err(CliError::new(
-                        CliErrorCode::IdempotencyConflict,
-                        "诊断 attempt 已终止，不提交迟到响应",
-                    ));
-                }
-            } else {
-                gate.finish(
-                    &mut store,
-                    attempt.attempt_id,
-                    TerminalState::Success,
-                    Utc::now(),
-                )
-                .map_err(|(code, msg)| CliError::new(code, msg))?;
-            }
+            // Both workflows commit success only alongside their locally saved output.
+            set_attempt_stage(store.conn, workspace_id, attempt.attempt_id, "saving")?;
+            on_progress(StreamProgressEvent {
+                attempt_id: attempt.attempt_id,
+                confirmation_id,
+                workspace_id,
+                chunk_seq: last_chunk.0,
+                bytes: last_chunk.1,
+                elapsed_ms: started.elapsed().as_millis().min(i64::MAX as u128) as i64,
+                stage: "saving",
+            });
+            ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
             Ok((attempt.attempt_id, obj))
         }
         None => {
-            gate.finish(
-                &mut store,
-                attempt.attempt_id,
-                TerminalState::Failed,
-                Utc::now(),
-            )
-            .ok();
-            Err(CliError::new(
+            let error = CliError::new(
                 CliErrorCode::InvalidJson,
                 format!("响应无可提取 JSON 对象（stage={:?}）", extraction.stage),
-            ))
+            );
+            finish_attempt_error(
+                store.conn,
+                workspace_id,
+                attempt.attempt_id,
+                &error,
+                "validation",
+            )?;
+            Err(error)
         }
     }
 }
@@ -2405,29 +2499,131 @@ pub fn attempt_status(conn: &Connection, workspace_id: Uuid, attempt_id: Uuid) -
     }))
 }
 
-/// generation cancel：仅本地取消（不保证远端停算）。
+const REMOTE_BILLING_NOTE: &str = "本地已请求停止；不保证远端已停止计费";
+
+fn cancel_inflight(conn: &Connection, workspace_id: Uuid, attempt_id: Uuid) -> CliResult<bool> {
+    let changed = conn.execute(
+        "UPDATE generation_attempts SET terminal_state = 'cancelled', request_stage = 'terminal',
+            error_code = 'CANCELLED', finished_at = ?3
+         WHERE attempt_id = ?1 AND workspace_id = ?2 AND terminal_state IS NULL",
+        params![attempt_id.to_string(), workspace_id.to_string(), now_iso()],
+    )?;
+    Ok(changed == 1)
+}
+
+/// Stop by the preview identity, even if the first progress event has not arrived.
+/// Pre-consumption cancellation atomically creates an unsent, cancelled attempt;
+/// a concurrent sender can only observe that terminal record and cannot dispatch.
+pub fn cancel_by_confirmation(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    confirmation_id: Uuid,
+) -> CliResult<Value> {
+    let binding = SqliteGenerationStore { conn: &mut *conn }
+        .load_confirmation(confirmation_id)
+        .ok_or_else(|| CliError::new(CliErrorCode::ConfirmationRequired, "确认不存在"))?;
+    if binding.workspace_id != workspace_id {
+        return Err(CliError::new(
+            CliErrorCode::WorkspaceMismatch,
+            "确认不属于所选 workspace",
+        ));
+    }
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let attempt = consume_confirmation_record(&tx, &binding, Utc::now())?
+        .attempt()
+        .clone();
+    let cancelled = cancel_inflight(&tx, workspace_id, attempt.attempt_id)?
+        || attempt.terminal == Some(TerminalState::Cancelled);
+    tx.commit()?;
+    Ok(json!({
+        "attempt_id": attempt.attempt_id.to_string(),
+        "cancelled": cancelled,
+        "remote_billing_note": REMOTE_BILLING_NOTE,
+    }))
+}
+
+/// CLI cancellation shares the same terminal CAS as confirmation-based stopping.
 pub fn cancel_attempt(
     conn: &mut Connection,
     workspace_id: Uuid,
     attempt_id: Uuid,
 ) -> CliResult<Value> {
-    let status = attempt_status(conn, workspace_id, attempt_id)?;
-    if status["terminal_state"].is_null() {
-        let mut store = SqliteGenerationStore { conn };
-        ConfirmationGate
-            .finish(&mut store, attempt_id, TerminalState::Cancelled, Utc::now())
-            .map_err(|(code, msg)| CliError::new(code, msg))?;
-        Ok(json!({
-            "attempt_id": attempt_id.to_string(),
-            "cancelled": true,
-            "remote_billing_note": "仅本地取消；不保证远端已停止计费",
-        }))
-    } else {
-        Err(CliError::new(
+    attempt_status(conn, workspace_id, attempt_id)?;
+    if !cancel_inflight(conn, workspace_id, attempt_id)? {
+        return Err(CliError::new(
             CliErrorCode::IdempotencyConflict,
             "attempt 已是终态，无法取消",
-        ))
+        ));
     }
+    Ok(json!({
+        "attempt_id": attempt_id.to_string(),
+        "cancelled": true,
+        "remote_billing_note": REMOTE_BILLING_NOTE,
+    }))
+}
+
+/// Re-read the persisted state at each asynchronous or local commit boundary.
+fn ensure_attempt_active(conn: &Connection, workspace_id: Uuid, attempt_id: Uuid) -> CliResult<()> {
+    let terminal: Option<String> = conn.query_row(
+        "SELECT terminal_state FROM generation_attempts WHERE attempt_id = ?1 AND workspace_id = ?2",
+        params![attempt_id.to_string(), workspace_id.to_string()], |r| r.get(0),
+    )?;
+    match terminal.as_deref() {
+        None => Ok(()),
+        Some("cancelled") => Err(CliError::new(CliErrorCode::Cancelled, "生成已手动停止")),
+        Some(_) => Err(CliError::new(
+            CliErrorCode::IdempotencyConflict,
+            "attempt 已终止，不提交迟到响应",
+        )),
+    }
+}
+
+fn set_attempt_stage(
+    conn: &Connection,
+    workspace_id: Uuid,
+    attempt_id: Uuid,
+    stage: &str,
+) -> CliResult<()> {
+    let changed = conn.execute(
+        "UPDATE generation_attempts SET request_stage = ?3
+         WHERE attempt_id = ?1 AND workspace_id = ?2 AND terminal_state IS NULL",
+        params![attempt_id.to_string(), workspace_id.to_string(), stage],
+    )?;
+    if changed != 1 {
+        ensure_attempt_active(conn, workspace_id, attempt_id)?;
+    }
+    Ok(())
+}
+
+fn finish_attempt_error(
+    conn: &Connection,
+    workspace_id: Uuid,
+    attempt_id: Uuid,
+    error: &CliError,
+    stage: &str,
+) -> CliResult<()> {
+    let terminal = match error.code {
+        CliErrorCode::Cancelled => "cancelled",
+        CliErrorCode::Interrupted => "interrupted",
+        CliErrorCode::ConnectTimeout
+        | CliErrorCode::ResponseTimeout
+        | CliErrorCode::TotalTimeout => "timed_out",
+        _ => "failed",
+    };
+    conn.execute(
+        "UPDATE generation_attempts SET terminal_state = ?3, request_stage = 'terminal',
+            error_code = ?4, error_details_json = ?5, finished_at = ?6
+         WHERE attempt_id = ?1 AND workspace_id = ?2 AND terminal_state IS NULL",
+        params![
+            attempt_id.to_string(),
+            workspace_id.to_string(),
+            terminal,
+            error.code.as_str(),
+            json!({"stage":stage}).to_string(),
+            now_iso()
+        ],
+    )?;
+    Ok(())
 }
 
 /// 供 tests 使用的保守 token 估算重导出（DI 断言用）。
@@ -2435,7 +2631,7 @@ pub fn tokens_of(system_bytes: u64, user_bytes: u64) -> u64 {
     conservative_input_tokens(system_bytes, user_bytes)
 }
 
-/// 保存任务候选（发送成功后；output 原样＋候选身份）。
+/// Save a validated task candidate and its success terminal in the same transaction.
 pub fn save_task_candidate(
     conn: &mut Connection,
     workspace_id: Uuid,
@@ -2444,28 +2640,93 @@ pub fn save_task_candidate(
     output: &Value,
     envelope_locally_reconstructed: bool,
 ) -> CliResult<String> {
-    let candidate_id = Uuid::new_v4().to_string();
-    conn.execute(
-        "INSERT INTO task_candidates (candidate_generation_id, workspace_id, run_id,
+    let result = (|| {
+        dsheng_core::provider::schema::validate_task_output(output).map_err(|errors| {
+            CliError::new(CliErrorCode::SchemaValidationFailed, errors.join("; "))
+        })?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let matches: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM generation_attempts a
+             JOIN generation_sessions s ON s.session_id = a.session_id
+             WHERE a.attempt_id = ?1 AND a.workspace_id = ?2 AND s.workspace_id = ?2
+               AND a.workflow = 'task' AND s.workflow = 'task' AND s.run_id = ?3
+               AND s.analysis_revision_no = ?4 AND s.analysis_input_fingerprint = ?5
+               AND a.input_hash = ?6)",
+            params![
+                attempt_id.to_string(),
+                workspace_id.to_string(),
+                material.run_id.to_string(),
+                material.analysis_revision_no,
+                material.analysis_input_fingerprint,
+                material.input_hash
+            ],
+            |r| r.get(0),
+        )?;
+        if !matches {
+            return Err(CliError::new(
+                CliErrorCode::DataValidationFailed,
+                "任务 attempt 与会话不匹配",
+            ));
+        }
+        ensure_attempt_active(&tx, workspace_id, attempt_id)?;
+        let (revision, fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
+            &tx,
+            &workspace_id.to_string(),
+            &material.run_id.to_string(),
+        )
+        .map_err(CliError::from)?;
+        dsheng_core::repository::tasks::check_generation_commit_gate(
+            revision,
+            &fingerprint,
+            material.analysis_revision_no,
+            &material.analysis_input_fingerprint,
+        )
+        .map_err(|_| {
+            CliError::new(
+                CliErrorCode::InputRevisionChanged,
+                "迟到响应：分析 revision 已变化，不提交任务候选",
+            )
+        })?;
+        let candidate_id = Uuid::new_v4().to_string();
+        tx.execute(
+            "INSERT INTO task_candidates (candidate_generation_id, workspace_id, run_id,
                 analysis_revision_no, analysis_input_fingerprint, generation_input_fingerprint,
                 candidate_revision_no, attempt_id, output_json, envelope_locally_reconstructed,
                 state, prompt_version, schema_version, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, 'candidate', '2.3', '2', ?10)",
-        params![
-            candidate_id,
-            workspace_id.to_string(),
-            material.run_id.to_string(),
-            material.analysis_revision_no as i64,
-            material.analysis_input_fingerprint,
-            material.input_hash,
-            attempt_id.to_string(),
-            serde_json::to_string(output).unwrap(),
-            envelope_locally_reconstructed as i64,
-            now_iso()
-        ],
-    )
-    .map_err(CliError::from)?;
-    Ok(candidate_id)
+            params![
+                candidate_id,
+                workspace_id.to_string(),
+                material.run_id.to_string(),
+                material.analysis_revision_no as i64,
+                material.analysis_input_fingerprint,
+                material.input_hash,
+                attempt_id.to_string(),
+                serde_json::to_string(output).unwrap(),
+                envelope_locally_reconstructed as i64,
+                now_iso()
+            ],
+        )
+        .map_err(CliError::from)?;
+
+        let changed = tx.execute(
+            "UPDATE generation_attempts SET terminal_state = 'success', request_stage = 'terminal',
+                finished_at = ?2 WHERE attempt_id = ?1 AND terminal_state IS NULL",
+            params![attempt_id.to_string(), now_iso()],
+        )?;
+        if changed != 1 {
+            return Err(CliError::new(
+                CliErrorCode::IdempotencyConflict,
+                "attempt 已终止，不提交迟到响应",
+            ));
+        }
+        tx.commit()?;
+        Ok(candidate_id)
+    })();
+    if let Err(error) = &result {
+        finish_attempt_error(conn, workspace_id, attempt_id, error, "task_save")?;
+    }
+    result
 }
 
 /// 保存已经通过 schema 校验的诊断输出；本地事务同时写轮次和完整报告。
@@ -2518,7 +2779,7 @@ fn save_diagnosis_output_transaction(
     };
     dsheng_core::provider::schema::validate_diagnosis_turn(framework, output)
         .map_err(|errors| CliError::new(CliErrorCode::SchemaValidationFailed, errors.join("; ")))?;
-    let tx = conn.transaction()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let (session_id, provider_id, terminal): (String, String, Option<String>) = tx
         .query_row(
             "SELECT a.session_id, a.provider_id, a.terminal_state FROM generation_attempts a
@@ -2540,10 +2801,7 @@ fn save_diagnosis_output_transaction(
             )
         })?;
     if terminal.is_some() {
-        return Err(CliError::new(
-            CliErrorCode::IdempotencyConflict,
-            "诊断 attempt 已终止，不提交迟到响应",
-        ));
+        ensure_attempt_active(&tx, workspace_id, attempt_id)?;
     }
     let (revision, fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
         &tx,
