@@ -100,7 +100,14 @@ pub fn diagnosis_generation_with_progress(
             // 本地发送前校验：focus metric 属于本 run 的指标集合
             let snapshot_metrics = run_metric_ids(&conn, &run)?;
             if let Some(focus) = focus_metric.as_deref() {
-                if !snapshot_metrics.iter().any(|m| m == focus) {
+                // 兼容 stable_metric_id 与版本 metric_id（GUI 可能传来任一种）
+                let all_metric_ids: std::collections::HashSet<String> =
+                    crate::store::generation::workspace_metric_ids(&conn, &ws.workspace_id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .chain(snapshot_metrics.iter().cloned())
+                        .collect();
+                if !all_metric_ids.contains(focus) {
                     return Err(CliError::new(
                         CliErrorCode::InputContractInvalid,
                         "focus metric 不属于该 run 的指标集合",

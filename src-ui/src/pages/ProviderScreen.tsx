@@ -15,7 +15,6 @@ import { Tag } from '../components/bits';
 import type { ProviderView } from '../api';
 
 const DEFAULT_TIMEOUTS = { connect_seconds: 15, response_seconds: 180, total_seconds: 240 };
-const DEFAULT_BUDGET = { context_window_tokens: 32768, output_reserve_tokens: 8192 };
 
 export function ProviderScreen() {
   const app = useApp();
@@ -25,6 +24,9 @@ export function ProviderScreen() {
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [stream, setStream] = useState(false);
+  const [ctxWindow, setCtxWindow] = useState(65536);
+  const [outReserve, setOutReserve] = useState(8192);
   const [replaceKey, setReplaceKey] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -37,12 +39,18 @@ export function ProviderScreen() {
       setName(selected.config.name);
       setBaseUrl(selected.config.base_url);
       setModel(selected.config.model);
+      setStream(selected.config.stream);
+      setCtxWindow(selected.config.budget.context_window_tokens);
+      setOutReserve(selected.config.budget.output_reserve_tokens);
       setApiKeyInput('');
       setReplaceKey(false);
     } else {
       setName('');
       setBaseUrl('');
       setModel('');
+      setStream(false);
+      setCtxWindow(65536);
+      setOutReserve(8192);
       setApiKeyInput('');
       setReplaceKey(false);
     }
@@ -80,9 +88,9 @@ export function ProviderScreen() {
             protocol: 'chat_completions',
             base_url: baseUrl.trim(),
             model: model.trim(),
-            stream: false,
-            timeouts: selected?.config.timeouts ?? DEFAULT_TIMEOUTS,
-            budget: selected?.config.budget ?? DEFAULT_BUDGET,
+            stream: stream,
+            timeouts: selected?.config.timeouts ?? DEFAULT_TIMEOUTS, // 保持已有超时
+            budget: { context_window_tokens: ctxWindow, output_reserve_tokens: outReserve },
           },
           key_action: replaceKey ? 'replace' : 'keep',
         },
@@ -90,6 +98,23 @@ export function ProviderScreen() {
       );
       setApiKeyInput('');
       setReplaceKey(false);
+      // 首个 Provider 自动设为默认
+      if (app.activeWorkspace?.active_provider_id == null) {
+        try {
+          const list = await app.client.providerList(app.activeWorkspace.workspace_id);
+          if (list.length === 1) {
+            await app.client.providerUse({
+              schema_version: '1',
+              operation: 'provider_use',
+              workspace_id: app.activeWorkspace.workspace_id,
+              provider_id: list[0].provider_id,
+              expected_revision: app.activeWorkspace.config_revision,
+            });
+          }
+        } catch {
+          // 自动设默认失败不阻塞保存
+        }
+      }
       setNotice('已保存到当前企业档案（未发起任何连接测试或模型请求）。');
       await app.reloadWorkspaceData();
     } catch (err) {
@@ -304,6 +329,50 @@ export function ProviderScreen() {
               </div>
             </div>
           </div>
+          <div className="mapping-row">
+            <div>
+              <label>流式输出</label>
+              <small className="setting-help">开启后可实时看到模型输出进度（推荐开启，避免长时间等待无响应）。</small>
+            </div>
+            <select
+              className="select"
+              value={stream ? 'true' : 'false'}
+              onChange={(e) => setStream(e.target.value === 'true')}
+              data-testid="provider-stream"
+            >
+              <option value="true">开启（推荐）</option>
+              <option value="false">关闭</option>
+            </select>
+          </div>
+          <div className="mapping-row">
+            <div>
+              <label>上下文窗口（tokens）</label>
+              <small className="setting-help">模型能处理的上下文大小。业务表格较大时建议 65536 以上。</small>
+            </div>
+            <input
+              className="select"
+              type="number"
+              value={ctxWindow}
+              min={8192}
+              max={1048576}
+              onChange={(e) => setCtxWindow(Number(e.target.value))}
+              data-testid="provider-ctx-window"
+            />
+          </div>
+          <div className="mapping-row">
+            <div>
+              <label>输出预留（tokens）</label>
+              <small className="setting-help">为模型输出预留的空间，一般不需要改。</small>
+            </div>
+            <input
+              className="select"
+              type="number"
+              value={outReserve}
+              min={1024}
+              max={65536}
+              onChange={(e) => setOutReserve(Number(e.target.value))}
+            />
+          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <button type="button" className="primary" onClick={() => void save()} disabled={busy}>
               保存 Provider
@@ -323,7 +392,7 @@ export function ProviderScreen() {
                 </button>
               </>
             ) : null}
-            <span className="panel-note">保存不发请求 · 无连接测试</span>
+            <span className="panel-note">保存不发请求 · 首次保存自动设为默认</span>
           </div>
         </div>
       </div>

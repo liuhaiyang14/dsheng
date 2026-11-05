@@ -2397,3 +2397,18 @@ pub fn workspace_of_run(conn: &Connection, run_id: &str) -> CliResult<String> {
     )
     .map_err(|_| CliError::new(CliErrorCode::WorkspaceMismatch, "run 不存在"))
 }
+
+/// 工作区全部指标 ID（stable + 各版本），供 focus metric 校验兼容两种 ID。
+pub fn workspace_metric_ids(
+    conn: &rusqlite::Connection,
+    workspace_id: &uuid::Uuid,
+) -> rusqlite::Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT metric_id FROM metric_definitions WHERE workspace_id = ?1
+         UNION SELECT stable_metric_id FROM metric_definitions WHERE workspace_id = ?1",
+    )?;
+    let ids = stmt
+        .query_map(rusqlite::params![workspace_id.to_string()], |r| r.get(0))?
+        .collect::<Result<_, _>>()?;
+    Ok(ids)
+}
