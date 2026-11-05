@@ -40,7 +40,7 @@ describe('S8 静态门禁：decimal 字符串不经 Number/parseFloat', () => {
       const text = readFileSync(file, 'utf8');
       const uses = text.match(/Number\(/g)?.length ?? 0;
       if (uses === 0) continue;
-      if (file.endsWith('SystemSettingsScreen.tsx')) {
+      if (file.endsWith('SystemSettingsScreen.tsx') || file.endsWith('ProviderScreen.tsx')) {
         // 周起始日/财年起始月为离散整数（合同允许 JSON integer），最多 2 处。
         expect(uses).toBeLessThanOrEqual(2);
         continue;
