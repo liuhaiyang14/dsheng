@@ -971,13 +971,57 @@ pub fn run_analyze(
     let defs = load_metric_defs(conn, workspace_id)?;
     let (obs, conflicts, mut sources, mapping_rows, pending_count, zero_filled) =
         extract_observations(conn, workspace_id, &defs, &files, window, &scope, &coverage)?;
-    // source_id 回填（注册视图含真实 source_id）
+    // 来源范围绑定本次实际扫描的目录，而不只绑定命中核算/推移适配器的 sheet。
+    // generic CSV 等仍可能为生成提供相关行；空 sheet 没有持久化单元格，不入选。
+    for file in &files {
+        let source_id = registered
+            .iter()
+            .find(|v| v["file_label"].as_str() == Some(file.file_label.as_str()))
+            .and_then(|v| v["file_id"].as_str())
+            .ok_or_else(|| {
+                CliError::new(CliErrorCode::DataValidationFailed, "扫描来源未完成注册")
+            })?;
+        for (sheet_data, sheet) in &file.sheets {
+            if sources
+                .iter()
+                .any(|s| s.source_id == file.file_label && s.sheet == sheet.sheet)
+            {
+                continue;
+            }
+            let has_cells: bool = conn.query_row(
+                "SELECT EXISTS (SELECT 1 FROM cli_source_cells
+                 WHERE workspace_id = ?1 AND source_id = ?2 AND sheet = ?3)",
+                params![workspace_id.to_string(), source_id, sheet_data.name],
+                |r| r.get(0),
+            )?;
+            if !has_cells {
+                continue;
+            }
+            let width = sheet_data
+                .rows
+                .iter()
+                .map(|row| row.len())
+                .max()
+                .unwrap_or(1);
+            sources.push(SourceSelection {
+                source_id: file.file_label.clone(),
+                sheet: sheet.sheet.clone(),
+                range: format!(
+                    "A1:{}{}",
+                    dsheng_core::import::headers::column_letter(width.saturating_sub(1)),
+                    sheet_data.rows.len()
+                ),
+                content_hash: file.content_hash.clone(),
+            });
+        }
+    }
+    // 注册视图字段为 file_id；历史版本的空 source_id 不在此重写。
     for sel in sources.iter_mut() {
         if let Some(view) = registered
             .iter()
             .find(|v| v["file_label"].as_str() == Some(sel.source_id.as_str()))
         {
-            sel.source_id = view["source_id"].as_str().unwrap_or_default().to_string();
+            sel.source_id = view["file_id"].as_str().unwrap_or_default().to_string();
         }
     }
 

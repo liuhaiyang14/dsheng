@@ -1119,6 +1119,13 @@ struct CellSnap {
     merged_range: Option<String>,
 }
 
+fn source_scope_unavailable() -> CliError {
+    CliError::new(
+        CliErrorCode::DataValidationFailed,
+        "该分析版本的来源范围快照缺失或不可用，请使用同一数据目录重新运行本地分析",
+    )
+}
+
 /// 来源必须绑定到不可变分析版本；历史空 source_id 仅允许同企业 content_hash 匹配。
 /// 基期只展开当前版本显式引用的 revision，不递归引入基期的其他来源。
 fn revision_source_scope(
@@ -1133,12 +1140,6 @@ fn revision_source_scope(
         revision_no: u32,
     }
 
-    let invalid_snapshot = || {
-        CliError::new(
-            CliErrorCode::DataValidationFailed,
-            "该分析版本的来源范围快照缺失或不可用，请使用同一数据目录重新运行本地分析",
-        )
-    };
     let read_snapshot = |id: &str, rev: u32| -> CliResult<(String, String)> {
         conn.query_row(
             "SELECT rr.source_selection_snapshot_json, rr.comparison_base_refs_json
@@ -1148,14 +1149,14 @@ fn revision_source_scope(
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => invalid_snapshot(),
+            rusqlite::Error::QueryReturnedNoRows => source_scope_unavailable(),
             other => CliError::from(other),
         })
     };
     let (current_sources, base_refs) = read_snapshot(run_id, revision)?;
     let mut snapshots = vec![current_sources];
     let bases: Vec<BaseRevision> =
-        serde_json::from_str(&base_refs).map_err(|_| invalid_snapshot())?;
+        serde_json::from_str(&base_refs).map_err(|_| source_scope_unavailable())?;
     for base in bases {
         snapshots.push(read_snapshot(&base.run_id, base.revision_no)?.0);
     }
@@ -1168,13 +1169,13 @@ fn revision_source_scope(
     )?;
     for snapshot in snapshots {
         let selections: Vec<dsheng_core::analysis::fingerprint::SourceSelection> =
-            serde_json::from_str(&snapshot).map_err(|_| invalid_snapshot())?;
+            serde_json::from_str(&snapshot).map_err(|_| source_scope_unavailable())?;
         // [] 是合法的纯手工输入分析；保持空来源白名单，绝不扩大到整个工作区。
         for selection in selections {
             if selection.content_hash.is_empty()
                 || selection.sheet.as_deref().is_some_and(str::is_empty)
             {
-                return Err(invalid_snapshot());
+                return Err(source_scope_unavailable());
             }
             let ids: Vec<String> = stmt
                 .query_map(
@@ -1188,7 +1189,7 @@ fn revision_source_scope(
                 )?
                 .collect::<Result<_, _>>()?;
             if ids.is_empty() {
-                return Err(invalid_snapshot());
+                return Err(source_scope_unavailable());
             }
             let sheet = selection.sheet.unwrap_or_else(|| "csv".to_string());
             for id in ids {
@@ -1271,7 +1272,11 @@ pub fn trimmed_source_selection(
             )?;
             for row in rows {
                 let (sid, sheet, raw) = row?;
-                let layout: Value = serde_json::from_str(&raw).unwrap_or(json!({}));
+                let layout: Value =
+                    serde_json::from_str(&raw).map_err(|_| source_scope_unavailable())?;
+                if !layout.is_object() {
+                    return Err(source_scope_unavailable());
+                }
                 layouts.entry(sid).or_default().insert(sheet, layout);
             }
         }
@@ -1315,6 +1320,19 @@ pub fn trimmed_source_selection(
                     .or_default()
                     .push(snap);
             }
+        }
+    }
+    // 来源已被版本快照选中，但其旁表快照不完整时必须让用户重算，不能静默丢弃。
+    // 不要求最终裁剪有记录：有效 sheet 仍可按原有相关行/列规则不入选。
+    for (source_id, sheet) in &source_scope {
+        let has_layout = layouts
+            .get(source_id)
+            .is_some_and(|sheets| sheets.contains_key(sheet));
+        let has_cells = cells
+            .get(&(source_id.clone(), sheet.clone()))
+            .is_some_and(|rows| !rows.is_empty());
+        if !has_layout || !has_cells {
+            return Err(source_scope_unavailable());
         }
     }
     // 证据锚点（file_label, sheet, row 1 基, col 0 基）：观察/补0/冲突候选/用户

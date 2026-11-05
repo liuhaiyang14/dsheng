@@ -283,3 +283,102 @@ fn csv_snapshots_accept_named_or_null_sheet_without_selecting_other_sheets() {
             .all(|r| r.sheet.is_none() && r.evidence_id.contains(":csv:")));
     }
 }
+
+#[test]
+fn missing_or_malformed_sidecars_cannot_silently_drop_selected_sources() {
+    let f = Fixture::new("generation-source-sidecars");
+    let conn = Connection::open(&f.db).unwrap();
+    for corrupt in [
+        "DELETE FROM cli_source_sheet_layouts",
+        "DELETE FROM cli_source_cells",
+        "UPDATE cli_source_sheet_layouts SET layout_json = 'not-json'",
+        "UPDATE cli_source_sheet_layouts SET layout_json = '[]'",
+    ] {
+        conn.execute_batch("SAVEPOINT corrupt_sidecar").unwrap();
+        conn.execute_batch(corrupt).unwrap();
+        let result = trimmed_source_selection(&conn, f.workspace, &f.run_id, 1, &[]);
+        assert!(
+            matches!(result, Err(e) if e.code == CliErrorCode::DataValidationFailed),
+            "{corrupt}"
+        );
+        conn.execute_batch("ROLLBACK TO corrupt_sidecar; RELEASE corrupt_sidecar")
+            .unwrap();
+    }
+}
+
+#[test]
+fn real_csv_scan_is_version_bound_and_blank_sheets_are_not_selected() {
+    let f = Fixture::new("generation-source-real-csv");
+    std::fs::write(
+        f.dir.join("核算.csv"),
+        "科目,月度实绩\n销售额,11500.25\n无关科目,1\n",
+    )
+    .unwrap();
+    let mut blank = rust_xlsxwriter::Workbook::new();
+    blank.add_worksheet().set_name("空白").unwrap();
+    blank.save(f.dir.join("空白.xlsx")).unwrap();
+    std::fs::write(f.dir.join("不支持.pptx"), "synthetic unsupported file").unwrap();
+    let args = vec![
+        "analyze".to_string(),
+        "--db".to_string(),
+        f.db.clone(),
+        "--workspace".to_string(),
+        f.workspace.to_string(),
+        "--dir".to_string(),
+        f.dir.to_string_lossy().to_string(),
+        "--from".to_string(),
+        "2026-10-01".to_string(),
+        "--to".to_string(),
+        "2026-10-31".to_string(),
+        "--grain".to_string(),
+        "auto".to_string(),
+        "--json".to_string(),
+    ];
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    assert_eq!(
+        dsheng_cli::run_with_output(&args, &mut out, &mut err),
+        0,
+        "{}",
+        String::from_utf8_lossy(&out)
+    );
+
+    let conn = Connection::open(&f.db).unwrap();
+    let (revision, raw): (u32, String) = conn
+        .query_row(
+            "SELECT ar.current_revision_no, rr.source_selection_snapshot_json
+         FROM analysis_runs ar JOIN run_revisions rr ON rr.run_id = ar.run_id
+            AND rr.revision_no = ar.current_revision_no WHERE ar.run_id = ?1",
+            params![f.run_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    let snapshot: Vec<Value> = serde_json::from_str(&raw).unwrap();
+    assert_eq!(
+        snapshot.len(),
+        2,
+        "only the populated workbook and CSV are selected"
+    );
+    assert!(snapshot
+        .iter()
+        .all(|s| Uuid::parse_str(s["source_id"].as_str().unwrap()).is_ok()));
+    assert!(snapshot.iter().any(|s| s["sheet"] == "csv"));
+    let selected = trimmed_source_selection(&conn, f.workspace, &f.run_id, revision, &[]).unwrap();
+    let csv_records: Vec<_> = selected
+        .records
+        .iter()
+        .filter(|r| r.file_label == "核算.csv")
+        .collect();
+    assert_eq!(
+        csv_records.len(),
+        4,
+        "CSV retains only header and registered metric rows"
+    );
+    assert!(csv_records
+        .iter()
+        .all(|r| r.sheet.is_none() && r.evidence_id.contains(":csv:")));
+    assert!(selected
+        .manifest
+        .iter()
+        .all(|m| m.file_label != "空白.xlsx" && m.file_label != "不支持.pptx"));
+}
