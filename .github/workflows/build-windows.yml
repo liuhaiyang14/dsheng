@@ -1,0 +1,75 @@
+name: Build Windows Package
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build-windows-msi:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: rust-windows-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build frontend
+        run: npm --prefix src-ui install && npm --prefix src-ui run build
+
+      - name: Build CLI (release)
+        run: cargo build --release -p dsheng-cli --target x86_64-pc-windows-msvc
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: .
+          tauriScript: npx tauri
+          args: |
+            build
+            --config src-tauri/tauri.conf.json
+            --target x86_64-pc-windows-msvc
+            --bundles msi
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          $dist = "release-dist"
+          New-Item -ItemType Directory -Force -Path $dist
+          # MSI
+          Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi" | Copy-Item -Destination $dist
+          # CLI exe
+          Copy-Item "target/x86_64-pc-windows-msvc/release/dsheng.exe" -Destination $dist
+          # Portable zip (app + CLI + migrations)
+          $portable = "dsheng-portable"
+          New-Item -ItemType Directory -Force -Path "$portable/bin"
+          Copy-Item "src-tauri/target/x86_64-pc-windows-msvc/release/dsheng-app.exe" -Destination "$portable/"
+          Copy-Item "target/x86_64-pc-windows-msvc/release/dsheng.exe" -Destination "$portable/bin/"
+          Copy-Item -Recurse "crates/dsheng-core/migrations" -Destination "$portable/migrations"
+          Compress-Archive -Path $portable -DestinationPath "$dist/dsheng_0.1.1_windows_x64_portable.zip"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsheng-windows
+          path: release-dist/
+          retention-days: 30
