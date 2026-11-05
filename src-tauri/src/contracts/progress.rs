@@ -2,10 +2,10 @@
 //!
 //! 桌面壳把服务层流式进度（`dsheng_cli::store::generation::StreamProgressEvent`）
 //! 经 tauri `Emitter` 以 `generation://progress` 事件广播给 UI：
-//! payload = { attempt_id, chunk_seq, bytes, elapsed_ms, stage }。
+//! payload 绑定 workspace / confirmation / attempt，包含阶段、字节和耗时。
 //! UI（诊断/任务确认后的状态面板）订阅本事件展示 阶段/字节/块数/耗时，
 //! 并以 payload 中的 attempt_id 调用既有 cancel 语义取消。
-//! 无流式数据（非流式 Provider/预览路径）不产生事件。
+//! 网络请求前即产生等待事件，流式和非流式均可观察并手动停止。
 
 use dsheng_cli::store::generation::{ProgressSink, StreamProgressEvent};
 use serde_json::{json, Value};
@@ -17,6 +17,8 @@ pub const GENERATION_PROGRESS_EVENT: &str = "generation://progress";
 pub fn progress_payload(event: &StreamProgressEvent) -> Value {
     json!({
         "attempt_id": event.attempt_id.to_string(),
+        "confirmation_id": event.confirmation_id.to_string(),
+        "workspace_id": event.workspace_id.to_string(),
         "chunk_seq": event.chunk_seq,
         "bytes": event.bytes,
         "elapsed_ms": event.elapsed_ms,

@@ -122,6 +122,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "generation_cancel",
         args: &["workspaceId", "attemptId"],
     },
+    CommandSpec {
+        name: "generation_cancel_by_confirmation",
+        args: &["workspaceId", "confirmationId"],
+    },
     // ---- 任务生成 / 合并 ----
     CommandSpec {
         name: "task_generate_preview",

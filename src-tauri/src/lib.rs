@@ -54,6 +54,7 @@ pub fn run() {
             contracts::commands::diagnosis_generate_preview,
             contracts::commands::diagnosis_generate_confirm,
             contracts::commands::generation_cancel,
+            contracts::commands::generation_cancel_by_confirmation,
             contracts::commands::diagnosis_continue_preview,
             contracts::commands::diagnosis_continue_confirm,
             contracts::commands::diagnosis_list,

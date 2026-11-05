@@ -10,6 +10,18 @@ use crate::contracts::core;
 use crate::contracts::env::DesktopEnv;
 use serde_json::Value;
 
+/// 生成服务拥有同步 SQLite 连接及独立网络 runtime，须离开 Tauri async
+/// executor 执行；停止命令仍可并行使用另一个短连接更新同一 attempt。
+async fn run_generation_blocking(work: impl FnOnce() -> Value + Send + 'static) -> Value {
+    match tauri::async_runtime::spawn_blocking(work).await {
+        Ok(value) => value,
+        Err(_) => core::envelope(Err(dsheng_cli::error::CliError::new(
+            dsheng_core::contracts::cli::CliErrorCode::LocalSaveFailed,
+            "生成工作线程意外中断，请查看本地错误日志",
+        ))),
+    }
+}
+
 // ---- workspace / period ----
 
 #[tauri::command(async)]
@@ -117,18 +129,21 @@ pub fn diagnosis_generate_preview(state: tauri::State<'_, DesktopEnv>, request: 
     core::diagnosis::diagnosis_generate_preview(&state, request)
 }
 
-#[tauri::command(async)]
-pub fn diagnosis_generate_confirm(
+#[tauri::command]
+pub async fn diagnosis_generate_confirm(
     app: tauri::AppHandle,
     state: tauri::State<'_, DesktopEnv>,
     confirmation_id: String,
-) -> Value {
-    // 流式进度经事件桥广播（generation://progress）；非流式不产生事件
-    core::diagnosis::diagnosis_generate_confirm(
-        &state,
-        confirmation_id,
-        Some(crate::contracts::progress::emitting_sink(&app)),
-    )
+) -> Result<Value, ()> {
+    let env = state.inner().clone();
+    Ok(run_generation_blocking(move || {
+        core::diagnosis::diagnosis_generate_confirm(
+            &env,
+            confirmation_id,
+            Some(crate::contracts::progress::emitting_sink(&app)),
+        )
+    })
+    .await)
 }
 
 #[tauri::command(async)]
@@ -136,17 +151,21 @@ pub fn diagnosis_continue_preview(state: tauri::State<'_, DesktopEnv>, request: 
     core::diagnosis::diagnosis_continue_preview(&state, request)
 }
 
-#[tauri::command(async)]
-pub fn diagnosis_continue_confirm(
+#[tauri::command]
+pub async fn diagnosis_continue_confirm(
     app: tauri::AppHandle,
     state: tauri::State<'_, DesktopEnv>,
     confirmation_id: String,
-) -> Value {
-    core::diagnosis::diagnosis_continue_confirm(
-        &state,
-        confirmation_id,
-        Some(crate::contracts::progress::emitting_sink(&app)),
-    )
+) -> Result<Value, ()> {
+    let env = state.inner().clone();
+    Ok(run_generation_blocking(move || {
+        core::diagnosis::diagnosis_continue_confirm(
+            &env,
+            confirmation_id,
+            Some(crate::contracts::progress::emitting_sink(&app)),
+        )
+    })
+    .await)
 }
 
 #[tauri::command(async)]
@@ -182,6 +201,15 @@ pub fn diagnosis_export(
 // ---- 生成（进度事件经 generation://progress；取消走既有 generation cancel） ----
 
 #[tauri::command(async)]
+pub fn generation_cancel_by_confirmation(
+    state: tauri::State<'_, DesktopEnv>,
+    workspace_id: String,
+    confirmation_id: String,
+) -> Value {
+    core::generation::generation_cancel_by_confirmation(&state, workspace_id, confirmation_id)
+}
+
+#[tauri::command(async)]
 pub fn generation_cancel(
     state: tauri::State<'_, DesktopEnv>,
     workspace_id: String,
@@ -197,17 +225,21 @@ pub fn task_generate_preview(state: tauri::State<'_, DesktopEnv>, request: Value
     core::task::task_generate_preview(&state, request)
 }
 
-#[tauri::command(async)]
-pub fn task_generate_confirm(
+#[tauri::command]
+pub async fn task_generate_confirm(
     app: tauri::AppHandle,
     state: tauri::State<'_, DesktopEnv>,
     confirmation_id: String,
-) -> Value {
-    core::task::task_generate_confirm(
-        &state,
-        confirmation_id,
-        Some(crate::contracts::progress::emitting_sink(&app)),
-    )
+) -> Result<Value, ()> {
+    let env = state.inner().clone();
+    Ok(run_generation_blocking(move || {
+        core::task::task_generate_confirm(
+            &env,
+            confirmation_id,
+            Some(crate::contracts::progress::emitting_sink(&app)),
+        )
+    })
+    .await)
 }
 
 #[tauri::command(async)]
@@ -277,6 +309,23 @@ pub fn template_download(state: tauri::State<'_, DesktopEnv>, out_path: String) 
 }
 
 #[tauri::command(async)]
-pub fn metric_register_defaults(state: tauri::State<'_, DesktopEnv>, workspace_id: String) -> Value {
+pub fn metric_register_defaults(
+    state: tauri::State<'_, DesktopEnv>,
+    workspace_id: String,
+) -> Value {
     core::metric_defaults::register_defaults(&state, workspace_id)
+}
+
+#[cfg(test)]
+mod generation_execution_tests {
+    #[test]
+    fn synchronous_generation_can_enter_runtime_off_the_async_executor() {
+        let value = tauri::async_runtime::block_on(async {
+            super::run_generation_blocking(|| {
+                tauri::async_runtime::block_on(async { serde_json::json!({"ok": true}) })
+            })
+            .await
+        });
+        assert_eq!(value, serde_json::json!({"ok": true}));
+    }
 }

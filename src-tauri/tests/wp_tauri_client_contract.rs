@@ -227,7 +227,8 @@ fn s5_command_param_names_align_with_ui_keys() {
     let src =
         std::fs::read_to_string(repo_path("src/contracts/commands.rs")).expect("读取 commands.rs");
     for spec in COMMANDS {
-        let sig = src
+        let normalized = src.replace("pub async fn ", "pub fn ");
+        let sig = normalized
             .split(&format!("pub fn {}(", spec.name))
             .nth(1)
             .and_then(|rest| rest.split(')').next())

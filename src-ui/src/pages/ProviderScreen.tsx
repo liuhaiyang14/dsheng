@@ -24,7 +24,7 @@ export function ProviderScreen() {
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [stream, setStream] = useState(false);
+  const [stream, setStream] = useState(true);
   const [ctxWindow, setCtxWindow] = useState(524288);
   const [outReserve, setOutReserve] = useState(8192);
   const [replaceKey, setReplaceKey] = useState(false);
@@ -48,7 +48,7 @@ export function ProviderScreen() {
       setName('');
       setBaseUrl('');
       setModel('');
-      setStream(false);
+      setStream(true);
       setCtxWindow(524288);
       setOutReserve(8192);
       setApiKeyInput('');
@@ -89,7 +89,7 @@ export function ProviderScreen() {
             base_url: baseUrl.trim(),
             model: model.trim(),
             stream: stream,
-            timeouts: selected?.config.timeouts ?? DEFAULT_TIMEOUTS, // 保持已有超时
+            timeouts: selected?.config.timeouts ?? DEFAULT_TIMEOUTS, // 兼容旧配置；生成不使用输出时长限制
             budget: { context_window_tokens: ctxWindow, output_reserve_tokens: outReserve },
           },
           key_action: replaceKey ? 'replace' : 'keep',
@@ -332,7 +332,7 @@ export function ProviderScreen() {
           <div className="mapping-row">
             <div>
               <label>流式输出</label>
-              <small className="setting-help">开启后可实时看到模型输出进度（推荐开启，避免长时间等待无响应）。</small>
+              <small className="setting-help">开启后可实时看到输出活动；关闭时服务商可能一次返回结果，期间仍可查看等待状态并手动停止。</small>
             </div>
             <select
               className="select"
@@ -362,7 +362,7 @@ export function ProviderScreen() {
           <div className="mapping-row">
             <div>
               <label>输出预留（tokens）</label>
-              <small className="setting-help">为模型输出预留的空间，一般不需要改。</small>
+              <small className="setting-help">仅用于发送前估算上下文空间，不会作为模型输出长度上限。</small>
             </div>
             <input
               className="select"
