@@ -49,7 +49,7 @@ export function ProviderScreen() {
       setBaseUrl('');
       setModel('');
       setStream(false);
-      setCtxWindow(65536);
+      setCtxWindow(524288);
       setOutReserve(8192);
       setApiKeyInput('');
       setReplaceKey(false);
@@ -347,7 +347,7 @@ export function ProviderScreen() {
           <div className="mapping-row">
             <div>
               <label>上下文窗口（tokens）</label>
-              <small className="setting-help">模型能处理的上下文大小。业务表格较大时建议 65536 以上。</small>
+              <small className="setting-help">模型能处理的上下文大小。默认 512K（524288），业务表格较大时够用。</small>
             </div>
             <input
               className="select"
@@ -369,7 +369,7 @@ export function ProviderScreen() {
               type="number"
               value={outReserve}
               min={1024}
-              max={65536}
+              max={1048576}
               onChange={(e) => setOutReserve(Number(e.target.value))}
             />
           </div>
