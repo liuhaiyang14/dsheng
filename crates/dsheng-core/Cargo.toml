@@ -22,9 +22,11 @@ csv = "1"
 chrono-tz = "0.10"
 # Provider 工作包：HTTP（仅 HTTPS/回环；禁重定向）与 JSON Schema Draft 2020-12 校验
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "gzip"] }
+tokio = { version = "1", features = ["rt", "time", "macros"] }
 jsonschema = { version = "0.60", default-features = false }
 
 [dev-dependencies]
 tempfile = "3"
 # Provider 工作包：S5 错误分类测试需要无网络构造 http::Response（reqwest 同源 1.x）
 http = "1"
+tokio = { version = "1", features = ["test-util"] }

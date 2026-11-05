@@ -25,6 +25,8 @@ pub enum StreamEvent {
     Finish(String),
     /// 流终止（`data: [DONE]`）。
     Done,
+    /// Provider 在 SSE 流中明确返回错误（只保留用户可读的 message）。
+    Error(String),
 }
 
 /// 流收尾结果（EOF 或 [DONE] 后取）。
@@ -50,6 +52,8 @@ pub struct SseDeltaParser {
     skipped_invalid_lines: usize,
     done_marker_seen: bool,
     first_line: bool,
+    error_message: Option<String>,
+    error_event: bool,
 }
 
 const UTF8_BOM: &[u8] = b"\xEF\xBB\xBF";
@@ -63,12 +67,14 @@ impl SseDeltaParser {
             skipped_invalid_lines: 0,
             done_marker_seen: false,
             first_line: true,
+            error_message: None,
+            error_event: false,
         }
     }
 
     /// 喂入一段到达字节（任意切分），返回本段解析出的事件（可为空）。
     pub fn feed(&mut self, chunk: &[u8]) -> Vec<StreamEvent> {
-        if self.done_marker_seen {
+        if self.done_marker_seen || self.error_message.is_some() {
             return Vec::new(); // [DONE] 后迟到数据一律忽略
         }
         let mut events = Vec::new();
@@ -80,7 +86,7 @@ impl SseDeltaParser {
                 line.pop(); // CRLF 兼容
             }
             self.process_line(&line, &mut events);
-            if self.done_marker_seen {
+            if self.done_marker_seen || self.error_message.is_some() {
                 self.buffer.clear();
                 break;
             }
@@ -91,7 +97,7 @@ impl SseDeltaParser {
     /// 流结束（EOF）收尾：残余字节作为最后一行补解析，返回累积结果。
     /// 之后 feed 不再产出（迟到的 EOF 后数据不存在）。
     pub fn finish(&mut self) -> StreamOutcome {
-        if !self.done_marker_seen && !self.buffer.is_empty() {
+        if !self.done_marker_seen && self.error_message.is_none() && !self.buffer.is_empty() {
             let mut line: Vec<u8> = std::mem::take(&mut self.buffer);
             if line.last() == Some(&b'\r') {
                 line.pop();
@@ -116,6 +122,15 @@ impl SseDeltaParser {
         self.done_marker_seen
     }
 
+    /// 网络读取可在显式 finish_reason 处完成，不等待服务器关闭连接或 [DONE]。
+    pub fn is_terminal(&self) -> bool {
+        self.done_marker_seen || self.finish_reason.is_some() || self.error_message.is_some()
+    }
+
+    pub fn provider_error(&self) -> Option<&str> {
+        self.error_message.as_deref()
+    }
+
     /// 已累积正文（进度显示用）。
     pub fn accumulated(&self) -> &str {
         &self.content
@@ -131,7 +146,12 @@ impl SseDeltaParser {
             }
         }
         if line.is_empty() {
+            self.error_event = false;
             return; // 空行 = SSE 事件分隔
+        }
+        if let Some(event) = line.strip_prefix(b"event:") {
+            self.error_event = event.trim_ascii() == b"error";
+            return;
         }
         let Some(payload) = line.strip_prefix(b"data:") else {
             return; // 非 data: 行（event:/id:/:注释等）忽略
@@ -152,9 +172,27 @@ impl SseDeltaParser {
         }
         let parsed: Result<serde_json::Value, _> = serde_json::from_slice(payload);
         let Ok(value) = parsed else {
+            if self.error_event {
+                let message = String::from_utf8_lossy(payload).into_owned();
+                self.error_message = Some(message.clone());
+                events.push(StreamEvent::Error(message));
+                return;
+            }
             self.skipped_invalid_lines += 1;
             return;
         };
+        if value.get("error").is_some_and(|e| !e.is_null()) || self.error_event {
+            let error = value.get("error").unwrap_or(&value);
+            let message = error
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .or_else(|| error.as_str())
+                .unwrap_or("模型服务返回流式错误")
+                .to_owned();
+            self.error_message = Some(message.clone());
+            events.push(StreamEvent::Error(message));
+            return;
+        }
         // usage 块 / 无 choices 的合法 JSON：忽略（不计数）
         let Some(choice) = value.get("choices").and_then(|c| c.get(0)) else {
             return;

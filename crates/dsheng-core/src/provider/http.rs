@@ -1,4 +1,8 @@
-//! HTTP 客户端构造、错误分类与响应体上限（provider-config-delivery.md §1/§3）。
+//! HTTP 客户端构造、取消与响应读取。
+//!
+//! 2026-11-05 用户决策：生产路径 [`send_once_cancellable`] 不施加连接、
+//! 响应、空闲、总时长或响应大小上限；等待模型完成/报错或用户停止。
+//! 旧 blocking / 限额纯函数保留用于兼容历史测试，不再被生产派发调用。
 //!
 //! - 仅 `POST {base_url}/chat/completions`；URL 校验复用
 //!   `contracts::settings::validate_base_url` / `chat_completions_url`
@@ -26,6 +30,188 @@ use crate::provider::stream::SseDeltaParser;
 use std::error::Error as _;
 use std::io::Read;
 use std::time::Duration;
+use std::{future::Future, pin::Pin, time::Instant};
+
+type TransportResult<T> = Result<T, (CliErrorCode, String)>;
+
+fn cancelled() -> (CliErrorCode, String) {
+    (
+        CliErrorCode::Cancelled,
+        "已停止本次生成；远端计费由模型服务决定".into(),
+    )
+}
+
+/// 等待单个网络 future，同时观察取消。取消后 future 被 drop，立即停止本地
+/// 连接/响应读取；100ms 只决定取消检查频率，不是输出超时或闲置终止条件。
+async fn cancellable_wait<F: Future>(
+    future: F,
+    should_cancel: &dyn Fn() -> bool,
+) -> TransportResult<F::Output> {
+    if should_cancel() {
+        return Err(cancelled());
+    }
+    tokio::pin!(future);
+    loop {
+        tokio::select! {
+            biased;
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {
+                if should_cancel() { return Err(cancelled()); }
+            }
+            value = &mut future => {
+                if should_cancel() { return Err(cancelled()); }
+                return Ok(value);
+            }
+        }
+    }
+}
+
+type BodyChunk<'a> = Pin<Box<dyn Future<Output = TransportResult<Option<Vec<u8>>>> + 'a>>;
+
+/// 本地字节流接口：生产实现为 reqwest body，测试只注入内存字节及等待 future。
+trait ResponseBody {
+    fn next_chunk(&mut self) -> BodyChunk<'_>;
+}
+
+impl ResponseBody for reqwest::Response {
+    fn next_chunk(&mut self) -> BodyChunk<'_> {
+        Box::pin(async move {
+            self.chunk()
+                .await
+                .map(|chunk| chunk.map(|bytes| bytes.to_vec()))
+                .map_err(classify_reqwest_error_pair)
+        })
+    }
+}
+
+async fn read_response_cancellable(
+    body: &mut impl ResponseBody,
+    stream: bool,
+    started_at: Instant,
+    on_chunk: &mut StreamProgress<'_>,
+    should_cancel: &dyn Fn() -> bool,
+) -> TransportResult<ChatCompletionsResponse> {
+    let mut parser = SseDeltaParser::new();
+    let mut bytes = Vec::new();
+    let mut total_bytes = 0u64;
+    let mut chunk_seq = 0u64;
+    loop {
+        let chunk = cancellable_wait(body.next_chunk(), should_cancel).await??;
+        let Some(chunk) = chunk else {
+            break;
+        };
+        total_bytes = total_bytes.saturating_add(chunk.len() as u64);
+        chunk_seq = chunk_seq.saturating_add(1);
+        if stream {
+            parser.feed(&chunk);
+        } else {
+            bytes.extend_from_slice(&chunk);
+        }
+        on_chunk(
+            chunk_seq,
+            total_bytes,
+            started_at.elapsed().as_millis().min(i64::MAX as u128) as i64,
+        );
+        if should_cancel() {
+            return Err(cancelled());
+        }
+        if stream && parser.is_terminal() {
+            break;
+        }
+    }
+    if stream {
+        let outcome = parser.finish();
+        if let Some(message) = parser.provider_error() {
+            return Err((CliErrorCode::ProviderRejectedUnknown, message.to_owned()));
+        }
+        stream_result_to_response(StreamingReadResult {
+            content: outcome.content,
+            finish_reason: outcome.finish_reason,
+            total_bytes,
+            chunk_count: chunk_seq,
+            skipped_invalid_lines: outcome.skipped_invalid_lines,
+        })
+    } else {
+        // 非流式成功状态也可能包装 Provider error，而不是 choices。
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            if let Some(error) = value.get("error").filter(|error| !error.is_null()) {
+                let message = error
+                    .get("message")
+                    .and_then(serde_json::Value::as_str)
+                    .or_else(|| error.as_str())
+                    .unwrap_or("模型服务返回错误");
+                return Err((CliErrorCode::ProviderRejectedUnknown, message.to_owned()));
+            }
+        }
+        parse_chat_response(&bytes)
+    }
+}
+
+/// 所有生成共用的生产网络入口。每 attempt 一次 POST，无自动重试。
+///
+/// 必须从普通同步线程或 spawn_blocking 调用。current-thread runtime 在当前
+/// 线程轮询，因此取消检查允许借用非 Send 的 SQLite 连接。异步请求和 body
+/// 读取均可被取消打断，首响应前也不例外。请求输入预算仍由原校验链处理；
+/// 未发送 max_tokens 等输出截断参数，未设置任何本地响应时长/字节上限。
+pub fn send_once_cancellable(
+    base_url: &str,
+    api_key: &str,
+    request: &ChatCompletionsRequest,
+    stream: bool,
+    on_chunk: &mut StreamProgress<'_>,
+    should_cancel: &dyn Fn() -> bool,
+) -> TransportResult<ChatCompletionsResponse> {
+    if should_cancel() {
+        return Err(cancelled());
+    }
+    let endpoint = chat_completions_url(base_url).map_err(|reason| {
+        (
+            CliErrorCode::ProviderUrlInvalid,
+            format!("base_url 非法: {reason}"),
+        )
+    })?;
+    let body = wire_body_with_stream(request, stream)?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| {
+            (
+                CliErrorCode::NetworkError,
+                format!("网络运行时启动失败: {error}"),
+            )
+        })?;
+    runtime.block_on(async {
+        // reqwest async Client 的 connect/read/total timeout 默认均为 None。
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(classify_reqwest_error_pair)?;
+        let started_at = Instant::now();
+        let accept = if stream {
+            "text/event-stream"
+        } else {
+            "application/json"
+        };
+        let send = client
+            .post(endpoint)
+            .header("Authorization", format!("Bearer {api_key}"))
+            .header("Content-Type", "application/json")
+            .header("Accept", accept)
+            .body(body)
+            .send();
+        let mut response = cancellable_wait(send, should_cancel)
+            .await?
+            .map_err(classify_reqwest_error_pair)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err((
+                classify_status(status.as_u16()),
+                format!("HTTP {}", status.as_u16()),
+            ));
+        }
+        // Content-Length 是传输元数据，不是输出限额；按实际 body 完整读取。
+        read_response_cancellable(&mut response, stream, started_at, on_chunk, should_cancel).await
+    })
+}
 
 /// 构造 blocking 客户端（rustls TLS；redirect none；connect/response 超时）。
 ///
