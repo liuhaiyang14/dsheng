@@ -20,7 +20,7 @@ import {
   groupDecimal,
   type Cadence,
   type ConfirmationPreview,
-  type DiagnosisReport,
+  type DiagnosisReportSummaryView,
   type TaskCandidateView,
   type TaskReconcileInput,
   type TaskView,
@@ -51,7 +51,7 @@ export function TaskScreen() {
   const runId = detail?.run_id ?? null;
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
-  const [reports, setReports] = useState<DiagnosisReport[]>([]);
+  const [reports, setReports] = useState<DiagnosisReportSummaryView[]>([]);
   const [useReport, setUseReport] = useState(false);
   const [reportId, setReportId] = useState('');
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
@@ -550,8 +550,8 @@ export function TaskScreen() {
                   >
                     {reports.map((r) => (
                       <option key={r.report_id} value={r.report_id}>
-                        {(r.scope?.problem_statement ?? '（无描述）').slice(0, 24)}… · {r.framework.toUpperCase()} · 第{' '}
-                        {r.revision_no} 版
+                        {r.problem_statement.slice(0, 24)}… · {r.framework.toUpperCase()} · 第{' '}
+                        {r.report_revision_no} 版
                       </option>
                     ))}
                   </select>

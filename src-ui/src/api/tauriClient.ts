@@ -23,6 +23,8 @@ import type {
   AnalysisRunView,
   CliEnvelope,
   DiagnosisReport,
+  DiagnosisReportSummaryView,
+  DiagnosisGenerationReceipt,
   FieldMappingRow,
   HistoryDetailView,
   HistoryEntryView,
@@ -168,7 +170,7 @@ export class TauriClient implements DshengClient {
   ): Promise<import('./types').ConfirmationPreview> {
     return this.invoke('diagnosis_generate_preview', { request });
   }
-  diagnosisGenerateConfirm(confirmationId: string): Promise<DiagnosisReport> {
+  diagnosisGenerateConfirm(confirmationId: string): Promise<DiagnosisGenerationReceipt> {
     return this.invoke('diagnosis_generate_confirm', { confirmationId });
   }
   diagnosisContinuePreview(
@@ -176,15 +178,15 @@ export class TauriClient implements DshengClient {
   ): Promise<import('./types').ConfirmationPreview> {
     return this.invoke('diagnosis_continue_preview', { request });
   }
-  diagnosisContinueConfirm(confirmationId: string): Promise<DiagnosisReport> {
+  diagnosisContinueConfirm(confirmationId: string): Promise<DiagnosisGenerationReceipt> {
     return this.invoke('diagnosis_continue_confirm', { confirmationId });
   }
   diagnosisList(
     workspaceId: string,
     runId: string,
-  ): Promise<DiagnosisReport[]> {
+  ): Promise<DiagnosisReportSummaryView[]> {
     return this
-      .invoke<{ run_id: string; reports: DiagnosisReport[] }>('diagnosis_list', {
+      .invoke<{ run_id: string; reports: DiagnosisReportSummaryView[] }>('diagnosis_list', {
         workspaceId,
         runId,
       })

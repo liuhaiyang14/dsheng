@@ -27,6 +27,8 @@ import type {
   AnalysisRunView,
   Cadence,
   DiagnosisReport,
+  DiagnosisReportSummaryView,
+  DiagnosisGenerationReceipt,
   HistoryDetailView,
   HistoryEntryView,
   PeriodPolicySetInput,
@@ -491,7 +493,7 @@ export class FixtureClient implements DshengClient {
 
   async diagnosisGenerateConfirm(
     confirmationId: string,
-  ): Promise<DiagnosisReport> {
+  ): Promise<DiagnosisGenerationReceipt> {
     const pending = this.consumeConfirmation(confirmationId, 'diagnosis_generate');
     const request = pending.payload as DiagnosisGenerateRequest;
     const template =
@@ -513,7 +515,13 @@ export class FixtureClient implements DshengClient {
     report.analysis_revision_no = fixtureAnalysisRun.current_revision_no;
     report.analysis_input_fingerprint = fixtureAnalysisRun.analysis_input_fingerprint;
     this.reports.unshift(report);
-    return structuredClone(report);
+    return {
+      attempt_id: nextUuid(),
+      session_id: report.generation_session_id,
+      turn_id: nextUuid(),
+      turn_state: 'patched',
+      report_id: report.report_id,
+    };
   }
 
   async diagnosisContinuePreview(
@@ -557,7 +565,7 @@ export class FixtureClient implements DshengClient {
 
   async diagnosisContinueConfirm(
     confirmationId: string,
-  ): Promise<DiagnosisReport> {
+  ): Promise<DiagnosisGenerationReceipt> {
     const pending = this.consumeConfirmation(confirmationId, 'diagnosis_continue');
     const request = pending.payload as DiagnosisContinueRequest;
     const report = this.reports.find(
@@ -574,19 +582,37 @@ export class FixtureClient implements DshengClient {
       confidence: 'unknown',
       reasoning_summary: '用户补充的未核实陈述，仅记录于本报告。',
     });
-    return structuredClone(report);
+    return {
+      attempt_id: nextUuid(),
+      session_id: report.generation_session_id,
+      turn_id: nextUuid(),
+      turn_state: 'patched',
+      report_id: report.report_id,
+    };
   }
 
   async diagnosisList(
     workspaceId: string,
     runId: string,
-  ): Promise<DiagnosisReport[]> {
+  ): Promise<DiagnosisReportSummaryView[]> {
     this.requireWorkspace(workspaceId);
-    return structuredClone(
-      this.reports.filter(
-        (r) => r.workspace_id === workspaceId && r.run_id === runId,
-      ),
-    );
+    return this.reports
+      .filter((r) => r.workspace_id === workspaceId && r.run_id === runId)
+      .map((r) => ({
+        report_id: r.report_id,
+        workspace_id: r.workspace_id,
+        run_id: r.run_id,
+        analysis_revision_no: r.analysis_revision_no,
+        framework: r.framework,
+        problem_statement: r.scope.problem_statement,
+        report_revision_no: r.revision_no,
+        state: r.can_continue ? 'active' : 'stopped',
+        stop_reason: r.stop_reason,
+        can_continue: r.can_continue,
+        active_warning_count: r.warnings.filter((w) => w.status === 'active').length,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+      }));
   }
 
   async diagnosisShow(

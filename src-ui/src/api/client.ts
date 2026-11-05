@@ -20,6 +20,8 @@ import type {
   ConfirmationPreview,
   DiagnosisFramework,
   DiagnosisReport,
+  DiagnosisReportSummaryView,
+  DiagnosisGenerationReceipt,
   GenerationCancelResult,
   HistoryDetailView,
   HistoryEntryView,
@@ -156,14 +158,14 @@ export interface DshengClient {
   ): Promise<ConfirmationPreview>;
   diagnosisGenerateConfirm(
     confirmationId: string,
-  ): Promise<DiagnosisReport>;
+  ): Promise<DiagnosisGenerationReceipt>;
   diagnosisContinuePreview(
     request: DiagnosisContinueRequest,
   ): Promise<ConfirmationPreview>;
   diagnosisContinueConfirm(
     confirmationId: string,
-  ): Promise<DiagnosisReport>;
-  diagnosisList(workspaceId: string, runId: string): Promise<DiagnosisReport[]>;
+  ): Promise<DiagnosisGenerationReceipt>;
+  diagnosisList(workspaceId: string, runId: string): Promise<DiagnosisReportSummaryView[]>;
   diagnosisShow(
     workspaceId: string,
     reportId: string,

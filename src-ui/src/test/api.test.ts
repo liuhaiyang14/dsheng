@@ -90,7 +90,9 @@ describe('S2 FixtureClient：合同行为模拟', () => {
     expect(preview.operation).toBe('diagnosis_generate');
     expect(preview.request_count_maximum).toBe(1);
     const before = await client.diagnosisList(WS_DEMO_ID, RUN_2026_10);
-    const report = await client.diagnosisGenerateConfirm(preview.confirmation_id);
+    const receipt = await client.diagnosisGenerateConfirm(preview.confirmation_id);
+    expect(receipt.turn_state).toBe('patched');
+    const report = await client.diagnosisShow(WS_DEMO_ID, receipt.report_id!);
     expect(report.framework).toBe('5w');
     const after = await client.diagnosisList(WS_DEMO_ID, RUN_2026_10);
     expect(after.length).toBe(before.length + 1);

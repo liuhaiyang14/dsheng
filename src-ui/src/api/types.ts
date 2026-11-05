@@ -670,6 +670,32 @@ export interface DiagnosisSource {
   selection_hash: string;
 }
 
+/** read-views.schema.json: diagnosisReportSummaryView；不含报告正文。 */
+export interface DiagnosisReportSummaryView {
+  report_id: string;
+  workspace_id: string;
+  run_id: string;
+  analysis_revision_no: number;
+  framework: DiagnosisFramework;
+  problem_statement: string;
+  report_revision_no: number;
+  state: string;
+  stop_reason: string | null;
+  can_continue: boolean;
+  active_warning_count: number;
+  created_at: IsoDateTime;
+  updated_at: IsoDateTime;
+}
+
+/** 确认生成返回持久化回执；正文需经 diagnosisShow 读取。 */
+export interface DiagnosisGenerationReceipt {
+  attempt_id: string;
+  session_id: string;
+  turn_id: string;
+  turn_state: string;
+  report_id: string | null;
+}
+
 export interface DiagnosisReport {
   schema_version: '3';
   report_id: string;

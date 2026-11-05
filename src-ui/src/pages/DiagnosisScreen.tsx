@@ -6,7 +6,7 @@
  * 诊断不创建、不修改任务。
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
@@ -21,6 +21,7 @@ import {
   type ConfirmationPreview,
   type DiagnosisFramework,
   type DiagnosisReport,
+  type DiagnosisReportSummaryView,
   type DiagnosisFinding,
 } from '../api';
 
@@ -80,7 +81,14 @@ export function DiagnosisScreen() {
   const hasData = workspaceHasData(app.data);
   const detail = app.data.currentDetail;
 
-  const [reports, setReports] = useState<DiagnosisReport[]>([]);
+  const [reports, setReports] = useState<DiagnosisReportSummaryView[]>([]);
+  const [reportDetail, setReportDetail] = useState<DiagnosisReport | null>(null);
+  const [listLoading, setListLoading] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [listError, setListError] = useState<string | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [listReload, setListReload] = useState(0);
+  const [detailReload, setDetailReload] = useState(0);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [framework, setFramework] = useState<DiagnosisFramework>('5why');
   const [problem, setProblem] = useState('');
@@ -94,32 +102,66 @@ export function DiagnosisScreen() {
 
   const runId = detail?.run_id ?? null;
 
-  // 进入页面：只读加载报告列表；绝不生成。
-  const loadReports = useCallback(async () => {
+  // 列表是摘要，正文必须单独读取；所有请求都只读，不触发生成。
+  useEffect(() => {
+    let cancelled = false;
+    setReports([]);
+    setListError(null);
     if (!app.client || !app.activeWorkspaceId || !runId) {
-      setReports([]);
       setSelectedReportId(null);
+      setListLoading(false);
       return;
     }
-    try {
-      const list = await app.client.diagnosisList(app.activeWorkspaceId, runId);
-      setReports(list);
-      setSelectedReportId((prev) =>
-        prev && list.some((r) => r.report_id === prev) ? prev : (list[0]?.report_id ?? null),
-      );
-    } catch {
-      setReports([]);
-    }
-  }, [app.client, app.activeWorkspaceId, runId]);
+    setListLoading(true);
+    void app.client.diagnosisList(app.activeWorkspaceId, runId)
+      .then((list) => {
+        if (cancelled) return;
+        setReports(list);
+        setSelectedReportId((prev) =>
+          prev && list.some((r) => r.report_id === prev) ? prev : (list[0]?.report_id ?? null),
+        );
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setListError(friendlyError(err));
+      })
+      .finally(() => {
+        if (!cancelled) setListLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [app.client, app.activeWorkspaceId, runId, listReload]);
 
+  const selectedSummary = reports.find((r) => r.report_id === selectedReportId) ?? null;
+  const reportId = selectedSummary?.report_id;
+  const reportRevision = selectedSummary?.report_revision_no;
   useEffect(() => {
-    void loadReports();
-  }, [loadReports]);
+    let cancelled = false;
+    setReportDetail(null);
+    setReportError(null);
+    if (!app.client || !app.activeWorkspaceId || !reportId) {
+      setReportLoading(false);
+      return;
+    }
+    setReportLoading(true);
+    void app.client.diagnosisShow(app.activeWorkspaceId, reportId, reportRevision)
+      .then((report) => {
+        if (cancelled) return;
+        if (report.report_id !== reportId || report.revision_no !== reportRevision || report.workspace_id !== app.activeWorkspaceId || report.run_id !== runId) {
+          throw new Error('报告详情与所选企业、期间或报告不一致，请重新加载。');
+        }
+        setReportDetail(report);
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setReportError(friendlyError(err));
+      })
+      .finally(() => {
+        if (!cancelled) setReportLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [app.client, app.activeWorkspaceId, runId, reportId, reportRevision, detailReload]);
 
-  const selected = useMemo(
-    () => reports.find((r) => r.report_id === selectedReportId) ?? null,
-    [reports, selectedReportId],
-  );
+  // 切换选中项的当次渲染即隐藏旧正文，不等待 effect 清理。
+  const selected = reportDetail?.report_id === reportId && reportDetail?.revision_no === reportRevision
+    ? reportDetail : null;
 
   const activeMetric = detail?.metrics.find((m) => m.delta != null && m.target_value != null);
   const defaultProblem = useMemo(() => {
@@ -192,14 +234,17 @@ export function DiagnosisScreen() {
     setSending(true);
     try {
       if (pending.kind === 'generate') {
-        await app.client.diagnosisGenerateConfirm(pending.preview.confirmation_id);
-        setNotice('诊断报告已生成并保存到当前企业档案。');
+        const receipt = await app.client.diagnosisGenerateConfirm(pending.preview.confirmation_id);
+        if (receipt.report_id) setSelectedReportId(receipt.report_id);
+        setNotice(receipt.report_id
+          ? '诊断报告已生成并保存到当前企业档案。'
+          : '本轮分析已保存，尚未形成报告。');
       } else {
         await app.client.diagnosisContinueConfirm(pending.preview.confirmation_id);
         setSupplement('');
         setNotice('补充事实已随本轮分析发送并记录为用户陈述（未核实）。');
       }
-      await loadReports();
+      setListReload((value) => value + 1);
     } catch (err) {
       setNotice(friendlyError(err));
     } finally {
@@ -211,7 +256,7 @@ export function DiagnosisScreen() {
 
   const stopReport = () => {
     if (!selected) return;
-    if (window.confirm(`停止并保留「${(selected.scope?.problem_statement ?? '').slice(0, 20)}…」？停止后仍可查看与下载。`)) {
+    if (window.confirm(`停止并保留「${selected.scope.problem_statement.slice(0, 20)}…」？停止后仍可查看与下载。`)) {
       setStoppedLocal((prev) => new Set(prev).add(selected.report_id));
       setNotice('已停止并保留报告；现有内容仍可查看与下载。');
     }
@@ -232,7 +277,7 @@ export function DiagnosisScreen() {
     }
   };
 
-  const isStopped = selected ? stoppedLocal.has(selected.report_id) || !selected.can_continue : false;
+  const isStopped = selected ? stoppedLocal.has(selected.report_id) || !selected.can_continue || !selectedSummary?.can_continue : false;
 
   if (!hasData || !detail || !runId) {
     return (
@@ -334,7 +379,14 @@ export function DiagnosisScreen() {
             </span>
           </div>
           <div className="diagnosis-list" data-testid="diagnosis-report-list">
-            {reports.length === 0 ? (
+            {listError ? (
+              <div role="alert" className="panel-body">
+                <p>诊断记录加载失败：{listError}</p>
+                <button type="button" className="outline" onClick={() => setListReload((value) => value + 1)}>重新加载记录</button>
+              </div>
+            ) : listLoading ? (
+              <p role="status" className="panel-note">正在读取诊断记录…</p>
+            ) : reports.length === 0 ? (
               <div className="panel-note" style={{ padding: '12px 0' }}>
                 本期还没有诊断报告。选择框架并确认问题表述后，点击「生成诊断报告」。
               </div>
@@ -351,10 +403,10 @@ export function DiagnosisScreen() {
                   data-testid={`diagnosis-item-${r.report_id.slice(0, 8)}`}
                 >
                   <strong>
-                    {(r.scope?.problem_statement ?? '（无描述）').slice(0, 18)}… · {r.framework.toUpperCase()}
+                    {r.problem_statement.slice(0, 18)}… · {r.framework.toUpperCase()}
                   </strong>
                   <small>
-                    第 {r.revision_no} 版 · 生成于 {r.created_at.slice(0, 10)} ·{' '}
+                    第 {r.report_revision_no} 版 · 生成于 {r.created_at.slice(0, 10)} ·{' '}
                     {r.can_continue ? '可继续' : '已停止'}
                   </small>
                 </button>
@@ -371,11 +423,18 @@ export function DiagnosisScreen() {
         </div>
 
         <div className="panel">
-          {selected ? (
+          {reportError ? (
+            <div className="panel-body" role="alert">
+              <p>诊断报告加载失败：{reportError}</p>
+              <button type="button" className="outline" onClick={() => setDetailReload((value) => value + 1)}>重新加载报告</button>
+            </div>
+          ) : listLoading || reportLoading ? (
+            <div className="panel-body" role="status">正在读取诊断报告…</div>
+          ) : selected ? (
             <>
               <div className="diagnosis-report-head">
                 <div>
-                  <strong>{selected.scope?.problem_statement ?? '（无描述）'}</strong>
+                  <strong>{selected.scope.problem_statement}</strong>
                   <div className="diagnosis-report-meta">
                     {app.activeWorkspace?.name} · {selected.period.from ?? '—'} 至{' '}
                     {selected.period.to ?? '—'} · {selected.framework.toUpperCase()} · 第{' '}

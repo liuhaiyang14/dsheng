@@ -2,6 +2,7 @@ import { AppProvider, useApp, SCREEN_LABELS, workspaceHasData, type ScreenId } f
 import { useState } from 'react';
 import { CoreMissingState } from '../components/EmptyState';
 import { Onboarding } from '../components/Onboarding';
+import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ErrorBanner } from '../components/bits';
 import { SourceScreen } from '../pages/SourceScreen';
 import { AnalysisScreen } from '../pages/AnalysisScreen';
@@ -135,13 +136,15 @@ function Shell() {
               </span>
             </div>
           ) : null}
-          {app.screen === 'source' ? <SourceScreen /> : null}
-          {app.screen === 'analysis' ? <AnalysisScreen /> : null}
-          {app.screen === 'diagnosis' ? <DiagnosisScreen /> : null}
-          {app.screen === 'task' ? <TaskScreen /> : null}
-          {app.screen === 'history' ? <HistoryScreen /> : null}
-          {app.screen === 'provider' ? <ProviderScreen /> : null}
-          {app.screen === 'system-settings' ? <SystemSettingsScreen /> : null}
+          <PageErrorBoundary key={`${app.screen}:${app.activeWorkspaceId}:${app.data.currentDetail?.run_id ?? ''}`}>
+            {app.screen === 'source' ? <SourceScreen /> : null}
+            {app.screen === 'analysis' ? <AnalysisScreen /> : null}
+            {app.screen === 'diagnosis' ? <DiagnosisScreen /> : null}
+            {app.screen === 'task' ? <TaskScreen /> : null}
+            {app.screen === 'history' ? <HistoryScreen /> : null}
+            {app.screen === 'provider' ? <ProviderScreen /> : null}
+            {app.screen === 'system-settings' ? <SystemSettingsScreen /> : null}
+          </PageErrorBoundary>
         </section>
         <Onboarding
           open={
