@@ -211,7 +211,7 @@ export function DiagnosisScreen() {
 
   const stopReport = () => {
     if (!selected) return;
-    if (window.confirm(`停止并保留「${selected.scope.problem_statement.slice(0, 20)}…」？停止后仍可查看与下载。`)) {
+    if (window.confirm(`停止并保留「${(selected.scope?.problem_statement ?? '').slice(0, 20)}…」？停止后仍可查看与下载。`)) {
       setStoppedLocal((prev) => new Set(prev).add(selected.report_id));
       setNotice('已停止并保留报告；现有内容仍可查看与下载。');
     }
@@ -351,7 +351,7 @@ export function DiagnosisScreen() {
                   data-testid={`diagnosis-item-${r.report_id.slice(0, 8)}`}
                 >
                   <strong>
-                    {r.scope.problem_statement.slice(0, 18)}… · {r.framework.toUpperCase()}
+                    {(r.scope?.problem_statement ?? '（无描述）').slice(0, 18)}… · {r.framework.toUpperCase()}
                   </strong>
                   <small>
                     第 {r.revision_no} 版 · 生成于 {r.created_at.slice(0, 10)} ·{' '}
@@ -375,7 +375,7 @@ export function DiagnosisScreen() {
             <>
               <div className="diagnosis-report-head">
                 <div>
-                  <strong>{selected.scope.problem_statement}</strong>
+                  <strong>{selected.scope?.problem_statement ?? '（无描述）'}</strong>
                   <div className="diagnosis-report-meta">
                     {app.activeWorkspace?.name} · {selected.period.from ?? '—'} 至{' '}
                     {selected.period.to ?? '—'} · {selected.framework.toUpperCase()} · 第{' '}

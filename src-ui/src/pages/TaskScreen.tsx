@@ -550,7 +550,7 @@ export function TaskScreen() {
                   >
                     {reports.map((r) => (
                       <option key={r.report_id} value={r.report_id}>
-                        {r.scope.problem_statement.slice(0, 24)}… · {r.framework.toUpperCase()} · 第{' '}
+                        {(r.scope?.problem_statement ?? '（无描述）').slice(0, 24)}… · {r.framework.toUpperCase()} · 第{' '}
                         {r.revision_no} 版
                       </option>
                     ))}
