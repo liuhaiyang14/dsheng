@@ -434,7 +434,7 @@ export function DiagnosisScreen() {
                   </strong>
                   <small>
                     第 {r.report_revision_no} 版 · 生成于 {r.created_at.slice(0, 10)} ·{' '}
-                    {r.can_continue ? '可继续' : '已停止'}
+                    {app.mode === 'tauri' ? '已保存' : r.can_continue ? '可继续' : '已停止'}
                   </small>
                 </button>
               ))
