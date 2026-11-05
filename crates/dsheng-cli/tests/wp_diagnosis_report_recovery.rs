@@ -126,6 +126,7 @@ fn new_output_persists_full_report_and_returns_its_identity() {
     )
     .unwrap();
     assert_eq!(receipt["session_id"], session);
+    assert_eq!(terminal(&conn, attempt_id), (Some("success".into()), None));
     let id = receipt["report_id"].as_str().unwrap();
     let raw: String = conn
         .query_row(
@@ -257,4 +258,169 @@ fn repeated_identical_generation_is_rejected_before_preview() {
             .unwrap(),
         0
     );
+}
+
+fn output() -> Value {
+    json!({"schema_version":"3","framework":"5why","turn_disposition":"on_topic",
+        "accepted_facts":[],"report_patch":patch(),"redirect_message":null,
+        "clarification_questions":[],"stop_reason":null})
+}
+
+fn unsaved_attempt(f: &Fixture, conn: &Connection) -> Uuid {
+    let (old_id, session, _) = insert_legacy(f, conn);
+    conn.execute("DELETE FROM diagnosis_reports WHERE report_id=?1", [old_id])
+        .unwrap();
+    attempt(conn, f, &session)
+}
+
+fn terminal(conn: &Connection, id: Uuid) -> (Option<String>, Option<String>) {
+    conn.query_row(
+        "SELECT terminal_state,error_code FROM generation_attempts WHERE attempt_id=?1",
+        [id.to_string()],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .unwrap()
+}
+
+fn assert_no_saved_output(conn: &Connection) {
+    for table in ["diagnosis_reports", "diagnosis_turns"] {
+        assert_eq!(
+            conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+}
+
+#[test]
+fn validation_failure_marks_attempt_failed_without_saved_output() {
+    let f = Fixture::new("diagnosis-invalid-output");
+    let material = material(&f);
+    let mut conn = Connection::open(&f.db).unwrap();
+    let id = unsaved_attempt(&f, &conn);
+    let error = dsheng_cli::store::generation::save_diagnosis_output(
+        &mut conn,
+        f.workspace,
+        &material,
+        dsheng_core::contracts::provider::Framework::Why5,
+        id,
+        &json!({}),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.code,
+        dsheng_core::contracts::cli::CliErrorCode::SchemaValidationFailed
+    );
+    assert_eq!(
+        terminal(&conn, id),
+        (
+            Some("failed".into()),
+            Some("SCHEMA_VALIDATION_FAILED".into())
+        )
+    );
+    assert_no_saved_output(&conn);
+}
+
+#[test]
+fn save_failure_rolls_back_report_and_marks_attempt_failed() {
+    let f = Fixture::new("diagnosis-save-failure");
+    let material = material(&f);
+    let mut conn = Connection::open(&f.db).unwrap();
+    let id = unsaved_attempt(&f, &conn);
+    conn.execute_batch("CREATE TRIGGER fail_diagnosis_turn BEFORE INSERT ON diagnosis_turns BEGIN SELECT RAISE(ABORT, 'synthetic save failure'); END;").unwrap();
+    let error = dsheng_cli::store::generation::save_diagnosis_output(
+        &mut conn,
+        f.workspace,
+        &material,
+        dsheng_core::contracts::provider::Framework::Why5,
+        id,
+        &output(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.code,
+        dsheng_core::contracts::cli::CliErrorCode::LocalSaveFailed
+    );
+    assert_eq!(
+        terminal(&conn, id),
+        (Some("failed".into()), Some("LOCAL_SAVE_FAILED".into()))
+    );
+    assert_no_saved_output(&conn);
+}
+
+#[test]
+fn cancelled_or_timed_out_diagnosis_never_commits_late_output() {
+    for state in ["cancelled", "timed_out"] {
+        let f = Fixture::new("diagnosis-late-terminal");
+        let material = material(&f);
+        let mut conn = Connection::open(&f.db).unwrap();
+        let id = unsaved_attempt(&f, &conn);
+        conn.execute(
+            "UPDATE generation_attempts SET terminal_state=?2 WHERE attempt_id=?1",
+            params![id.to_string(), state],
+        )
+        .unwrap();
+        assert!(dsheng_cli::store::generation::save_diagnosis_output(
+            &mut conn,
+            f.workspace,
+            &material,
+            dsheng_core::contracts::provider::Framework::Why5,
+            id,
+            &output()
+        )
+        .is_err());
+        assert_eq!(terminal(&conn, id), (Some(state.into()), None));
+        assert_no_saved_output(&conn);
+    }
+}
+
+#[test]
+fn diagnosis_rechecks_revision_at_save_and_rejects_late_output() {
+    let f = Fixture::new("diagnosis-late-revision");
+    let material = material(&f);
+    let mut conn = Connection::open(&f.db).unwrap();
+    let id = unsaved_attempt(&f, &conn);
+    conn.execute(
+        "UPDATE analysis_runs SET current_revision_no=2 WHERE run_id=?1",
+        [&f.run_id],
+    )
+    .unwrap();
+    let error = dsheng_cli::store::generation::save_diagnosis_output(
+        &mut conn,
+        f.workspace,
+        &material,
+        dsheng_core::contracts::provider::Framework::Why5,
+        id,
+        &output(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.code,
+        dsheng_core::contracts::cli::CliErrorCode::InputRevisionChanged
+    );
+    assert_eq!(
+        terminal(&conn, id),
+        (Some("failed".into()), Some("INPUT_REVISION_CHANGED".into()))
+    );
+    assert_no_saved_output(&conn);
+}
+
+#[test]
+fn recovered_report_markdown_includes_summary_answers_warnings_and_questions() {
+    let f = Fixture::new("diagnosis-markdown");
+    let conn = Connection::open(&f.db).unwrap();
+    let (id, _, _) = insert_legacy(&f, &conn);
+    let report = diagnosis::report_show(&conn, f.workspace, &id, None).unwrap();
+    let md = diagnosis::report_markdown(&report);
+    for text in [
+        "合成报告摘要",
+        "为什么下降？",
+        "答复：客流减少",
+        "需补充数据",
+        "待澄清问题",
+        "哪些日期？",
+    ] {
+        assert!(md.contains(text), "missing {text}: {md}");
+    }
 }

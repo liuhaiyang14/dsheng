@@ -203,11 +203,18 @@ pub fn report_markdown(report: &Value) -> String {
     use std::fmt::Write as _;
     let _ = writeln!(out, "# {title}");
     let _ = writeln!(out);
+    if let Some(summary) = report
+        .get("summary")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+    {
+        let _ = writeln!(out, "{summary}\n");
+    }
     for (key, heading) in [
         ("findings", "发现"),
         ("facts_and_hypotheses", "事实与假设"),
         ("warnings", "警告"),
-        ("open_questions", "待澄清问题"),
+        ("clarification_questions", "待澄清问题"),
     ] {
         if let Some(items) = report.get(key).and_then(|v| v.as_array()) {
             if items.is_empty() {
@@ -218,11 +225,15 @@ pub fn report_markdown(report: &Value) -> String {
                 let line = item
                     .get("summary")
                     .or_else(|| item.get("statement"))
+                    .or_else(|| item.get("message"))
                     .or_else(|| item.get("note"))
                     .or_else(|| item.get("question"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("（无摘要）");
                 let _ = writeln!(out, "- {line}");
+                if let Some(answer) = item.get("answer").and_then(Value::as_str) {
+                    let _ = writeln!(out, "  答复：{answer}");
+                }
             }
             let _ = writeln!(out);
         }

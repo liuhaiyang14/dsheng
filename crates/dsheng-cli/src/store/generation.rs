@@ -2103,13 +2103,28 @@ pub fn send_confirmed(
                 material.analysis_revision_no,
                 &material.analysis_input_fingerprint,
             )?;
-            gate.finish(
-                &mut store,
-                attempt.attempt_id,
-                TerminalState::Success,
-                Utc::now(),
-            )
-            .map_err(|(code, msg)| CliError::new(code, msg))?;
+            if material.workflow == Workflow::Diagnosis {
+                // 诊断尚须校验并保存完整报告；success 与保存事务一同提交。
+                let changed = store.conn.execute(
+                    "UPDATE generation_attempts SET request_stage = 'saving'
+                     WHERE attempt_id = ?1 AND terminal_state IS NULL",
+                    [attempt.attempt_id.to_string()],
+                )?;
+                if changed != 1 {
+                    return Err(CliError::new(
+                        CliErrorCode::IdempotencyConflict,
+                        "诊断 attempt 已终止，不提交迟到响应",
+                    ));
+                }
+            } else {
+                gate.finish(
+                    &mut store,
+                    attempt.attempt_id,
+                    TerminalState::Success,
+                    Utc::now(),
+                )
+                .map_err(|(code, msg)| CliError::new(code, msg))?;
+            }
             Ok((attempt.attempt_id, obj))
         }
         None => {
@@ -2350,15 +2365,50 @@ pub fn save_diagnosis_output(
     attempt_id: Uuid,
     output: &Value,
 ) -> CliResult<Value> {
+    let result = save_diagnosis_output_transaction(
+        conn,
+        workspace_id,
+        material,
+        framework,
+        attempt_id,
+        output,
+    );
+    if let Err(error) = &result {
+        // 失败事务已经回滚；仅推进在途 attempt，绝不覆盖取消/超时等终态。
+        conn.execute(
+            "UPDATE generation_attempts SET terminal_state = 'failed', request_stage = 'terminal',
+                error_code = ?3, error_details_json = ?4, finished_at = ?5
+             WHERE attempt_id = ?1 AND workspace_id = ?2 AND workflow = 'diagnosis'
+               AND terminal_state IS NULL",
+            params![
+                attempt_id.to_string(),
+                workspace_id.to_string(),
+                error.code.as_str(),
+                json!({"stage":"diagnosis_save"}).to_string(),
+                now_iso()
+            ],
+        )?;
+    }
+    result
+}
+
+fn save_diagnosis_output_transaction(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    material: &GenerationMaterial,
+    framework: Framework,
+    attempt_id: Uuid,
+    output: &Value,
+) -> CliResult<Value> {
     use dsheng_core::generation::report::{
         apply_report_patch, ReportPatch, ReportPeriod, ReportScope, ReportSeed,
     };
     dsheng_core::provider::schema::validate_diagnosis_turn(framework, output)
         .map_err(|errors| CliError::new(CliErrorCode::SchemaValidationFailed, errors.join("; ")))?;
     let tx = conn.transaction()?;
-    let (session_id, provider_id): (String, String) = tx
+    let (session_id, provider_id, terminal): (String, String, Option<String>) = tx
         .query_row(
-            "SELECT a.session_id, a.provider_id FROM generation_attempts a
+            "SELECT a.session_id, a.provider_id, a.terminal_state FROM generation_attempts a
          JOIN generation_sessions s ON s.session_id = a.session_id
          WHERE a.attempt_id = ?1 AND a.workspace_id = ?2 AND s.workspace_id = ?2
            AND s.run_id = ?3 AND s.workflow = 'diagnosis' AND s.framework = ?4",
@@ -2368,7 +2418,7 @@ pub fn save_diagnosis_output(
                 material.run_id.to_string(),
                 framework_db_str(framework)
             ],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|_| {
             CliError::new(
@@ -2376,6 +2426,30 @@ pub fn save_diagnosis_output(
                 "诊断 attempt 与会话不匹配",
             )
         })?;
+    if terminal.is_some() {
+        return Err(CliError::new(
+            CliErrorCode::IdempotencyConflict,
+            "诊断 attempt 已终止，不提交迟到响应",
+        ));
+    }
+    let (revision, fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
+        &tx,
+        &workspace_id.to_string(),
+        &material.run_id.to_string(),
+    )
+    .map_err(CliError::from)?;
+    dsheng_core::repository::tasks::check_generation_commit_gate(
+        revision,
+        &fingerprint,
+        material.analysis_revision_no,
+        &material.analysis_input_fingerprint,
+    )
+    .map_err(|_| {
+        CliError::new(
+            CliErrorCode::InputRevisionChanged,
+            "迟到响应：分析 revision 已变化，不提交诊断报告",
+        )
+    })?;
     let existing: i64 = tx.query_row(
         "SELECT COUNT(*) FROM diagnosis_reports WHERE session_id = ?1",
         [&session_id],
@@ -2494,6 +2568,17 @@ pub fn save_diagnosis_output(
     // 仅保存已确认的范围元数据，不保存完整 prompt 或原始表内容。
     tx.execute("UPDATE generation_sessions SET scope_snapshot_json = ?2, updated_at = ?3 WHERE session_id = ?1",
         params![session_id, json!({"scope":payload["scope"],"period":payload["period"],"source_manifest":payload["source_manifest"]}).to_string(), now])?;
+    let changed = tx.execute(
+        "UPDATE generation_attempts SET terminal_state = 'success', request_stage = 'terminal',
+            finished_at = ?2 WHERE attempt_id = ?1 AND terminal_state IS NULL",
+        params![attempt_id.to_string(), now],
+    )?;
+    if changed != 1 {
+        return Err(CliError::new(
+            CliErrorCode::IdempotencyConflict,
+            "诊断 attempt 已终止，不提交迟到响应",
+        ));
+    }
     tx.commit()?;
     Ok(
         json!({"attempt_id":attempt_id.to_string(),"session_id":session_id,
