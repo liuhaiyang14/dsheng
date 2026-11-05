@@ -29,20 +29,20 @@ const bucketLabel = (bucket: string): string => bucket.slice(5).replace('-', '/'
 /** 趋势折线：实绩实线 + 计划虚线；null 断线。 */
 export function buildTrendOption(series: MetricSeriesView) {
   return {
-    grid: { left: 56, right: 18, top: 18, bottom: 46 },
+    grid: { left: 14, right: 22, top: 18, bottom: 32, containLabel: true },
     tooltip: { trigger: 'axis' },
     xAxis: {
       type: 'category',
       data: series.buckets.map(bucketLabel),
-      axisLabel: { color: MUTED, fontSize: 10, interval: 3 },
+      axisLabel: { color: MUTED, fontSize: 12, hideOverlap: true },
       axisLine: { lineStyle: { color: LINE } },
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: MUTED, fontSize: 10 },
+      axisLabel: { color: MUTED, fontSize: 12 },
       splitLine: { lineStyle: { color: LINE } },
       name: series.unit,
-      nameTextStyle: { color: MUTED, fontSize: 10 },
+      nameTextStyle: { color: MUTED, fontSize: 12 },
     },
     series: [
       {
@@ -70,18 +70,18 @@ export function buildTrendOption(series: MetricSeriesView) {
 /** 计划/实绩分组柱状。 */
 export function buildPlanActualOption(series: MetricSeriesView) {
   return {
-    grid: { left: 56, right: 18, top: 26, bottom: 46 },
+    grid: { left: 14, right: 22, top: 26, bottom: 32, containLabel: true },
     tooltip: { trigger: 'axis' },
-    legend: { top: 0, textStyle: { color: MUTED, fontSize: 10 } },
+    legend: { top: 0, textStyle: { color: MUTED, fontSize: 12 } },
     xAxis: {
       type: 'category',
       data: series.buckets.map(bucketLabel),
-      axisLabel: { color: MUTED, fontSize: 10, interval: 3 },
+      axisLabel: { color: MUTED, fontSize: 12, hideOverlap: true },
       axisLine: { lineStyle: { color: LINE } },
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: MUTED, fontSize: 10 },
+      axisLabel: { color: MUTED, fontSize: 12 },
       splitLine: { lineStyle: { color: LINE } },
     },
     series: [
@@ -106,17 +106,17 @@ export function buildPlanActualOption(series: MetricSeriesView) {
 export function buildVarianceOption(series: MetricSeriesView) {
   const diff = series.delta ?? [];
   return {
-    grid: { left: 56, right: 18, top: 18, bottom: 46 },
+    grid: { left: 14, right: 22, top: 18, bottom: 32, containLabel: true },
     tooltip: { trigger: 'axis' },
     xAxis: {
       type: 'category',
       data: series.buckets.map(bucketLabel),
-      axisLabel: { color: MUTED, fontSize: 10, interval: 3 },
+      axisLabel: { color: MUTED, fontSize: 12, hideOverlap: true },
       axisLine: { lineStyle: { color: LINE } },
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: MUTED, fontSize: 10 },
+      axisLabel: { color: MUTED, fontSize: 12 },
       splitLine: { lineStyle: { color: LINE } },
     },
     series: [
@@ -140,7 +140,7 @@ const GREENISH = '#3e705b';
 export function buildCompositionOption(series: MetricSeriesView) {
   return {
     tooltip: { trigger: 'item' },
-    legend: { bottom: 0, textStyle: { color: MUTED, fontSize: 10 } },
+    legend: { bottom: 0, textStyle: { color: MUTED, fontSize: 12 } },
     series: [
       {
         name: series.metric_label,
@@ -148,7 +148,7 @@ export function buildCompositionOption(series: MetricSeriesView) {
         radius: ['36%', '66%'],
         center: ['50%', '44%'],
         data: series.composition ?? [],
-        label: { color: MUTED, fontSize: 10 },
+        label: { color: MUTED, fontSize: 12 },
         itemStyle: { borderColor: '#fff', borderWidth: 1 },
       },
     ],

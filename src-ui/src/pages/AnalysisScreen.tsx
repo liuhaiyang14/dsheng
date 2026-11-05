@@ -164,9 +164,9 @@ export function AnalysisScreen() {
         {topMetrics.map((m) => (
           <div className="metric" key={m.metric_id}>
             <div className="label">{m.metric_label}</div>
-            <div className="value">
-              {m.actual_value == null ? '—' : groupDecimal(m.actual_value)}
-              {m.unit === '%' && m.actual_value != null ? '%' : ''}
+            <div className="value" title={formatMetricValue(m.actual_value, m.unit)}>
+              <span className="value-number">{m.actual_value == null ? '—' : groupDecimal(m.actual_value)}</span>
+              {m.unit && m.actual_value != null ? <span className="metric-unit">{m.unit}</span> : null}
             </div>
             <div className={`delta ${diffTone(favorableOf(m.direction, m.delta))}`}>
               {m.delta != null && m.target_value != null
@@ -200,7 +200,7 @@ export function AnalysisScreen() {
             </span>
           </div>
           <div className="table-wrap">
-            <table className="data-table" data-testid="metric-table">
+            <table className="data-table metric-table" data-testid="metric-table">
               <thead>
                 <tr>
                   <th>指标</th>
@@ -370,7 +370,7 @@ export function AnalysisScreen() {
         ) : null}
         {showDataTable && series ? (
           <div className="table-wrap" style={{ margin: '0 15px 15px' }}>
-            <table className="data-table" data-testid="chart-data-table">
+            <table className="data-table series-table" data-testid="chart-data-table">
               <thead>
                 <tr>
                   <th>期间桶</th>
