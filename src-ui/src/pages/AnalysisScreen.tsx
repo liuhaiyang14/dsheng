@@ -165,8 +165,8 @@ export function AnalysisScreen() {
           <div className="metric" key={m.metric_id}>
             <div className="label">{m.metric_label}</div>
             <div className="value" title={formatMetricValue(m.actual_value, m.unit)}>
-              <span className="value-number">{m.actual_value == null ? '—' : groupDecimal(m.actual_value)}</span>
-              {m.unit && m.actual_value != null ? <span className="metric-unit">{m.unit}</span> : null}
+              <span className="value-number">{m.actual_value == null ? '—' : `${groupDecimal(m.actual_value)}${m.unit === '%' ? '%' : ''}`}</span>
+              {m.unit && m.unit !== '%' && m.actual_value != null ? <span className="metric-unit">{m.unit}</span> : null}
             </div>
             <div className={`delta ${diffTone(favorableOf(m.direction, m.delta))}`}>
               {m.delta != null && m.target_value != null

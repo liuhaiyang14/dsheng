@@ -59,8 +59,8 @@ export function shiftDecimal(value: string, places: number): string {
   if (point >= digits.length) {
     digits = `${digits}${'0'.repeat(point - digits.length)}`;
   }
-  const newInt = digits.slice(0, point);
-  let newFrac = digits.slice(point).replace(/0+$/, '');
+  const newInt = digits.slice(0, point).replace(/^0+(?=\d)/, '') || '0';
+  const newFrac = digits.slice(point).replace(/0+$/, '');
   const out = newFrac ? `${newInt}.${newFrac}` : newInt;
   const zeroed = out === '' || /^0+$/.test(out) ? '0' : out;
   return negative && !/^0+$/.test(zeroed) ? `-${zeroed}` : zeroed;
