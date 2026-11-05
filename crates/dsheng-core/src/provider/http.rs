@@ -772,6 +772,194 @@ mod tests {
     // 纯逻辑测试（构造/分类/上限；非 Provider 调用、无网络请求）。
     use super::*;
 
+    /// 模拟异步字节到达，不打开socket、不模拟Provider或重放模型输出。
+    struct AsyncBody {
+        chunks: std::collections::VecDeque<(Duration, Vec<u8>)>,
+        pending_after_chunks: bool,
+        reads: usize,
+    }
+
+    impl ResponseBody for AsyncBody {
+        fn next_chunk(&mut self) -> BodyChunk<'_> {
+            self.reads += 1;
+            let next = self.chunks.pop_front();
+            let pending = self.pending_after_chunks;
+            Box::pin(async move {
+                match next {
+                    Some((delay, bytes)) => {
+                        tokio::time::sleep(delay).await;
+                        Ok(Some(bytes))
+                    }
+                    None if pending => std::future::pending().await,
+                    None => Ok(None),
+                }
+            })
+        }
+    }
+
+    struct PendingUntilDropped(std::rc::Rc<std::cell::Cell<bool>>);
+    impl Future for PendingUntilDropped {
+        type Output = ();
+        fn poll(self: Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<()> {
+            std::task::Poll::Pending
+        }
+    }
+    impl Drop for PendingUntilDropped {
+        fn drop(&mut self) {
+            self.0.set(true);
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn cancellation_drops_a_pending_network_future_before_any_response() {
+        let dropped = std::rc::Rc::new(std::cell::Cell::new(false));
+        let started = tokio::time::Instant::now();
+        let result = cancellable_wait(PendingUntilDropped(dropped.clone()), &|| {
+            started.elapsed() >= Duration::from_millis(250)
+        })
+        .await;
+        assert_eq!(result.unwrap_err().0, CliErrorCode::Cancelled);
+        assert!(dropped.get(), "取消必须drop未完成的网络future");
+        assert!(started.elapsed() <= Duration::from_millis(350));
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn pre_cancelled_request_never_polls_the_network_future() {
+        let result = cancellable_wait(async { panic!("不能派发已停止请求") }, &|| true).await;
+        assert_eq!(result.unwrap_err().0, CliErrorCode::Cancelled);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn receiving_stream_can_be_stopped_while_its_next_chunk_never_arrives() {
+        let mut body = AsyncBody {
+            chunks: [(Duration::ZERO, sse("part", None))].into(),
+            pending_after_chunks: true,
+            reads: 0,
+        };
+        let started = tokio::time::Instant::now();
+        let mut progress = Vec::new();
+        let result = read_response_cancellable(
+            &mut body,
+            true,
+            Instant::now(),
+            &mut |seq, bytes, _| progress.push((seq, bytes)),
+            &|| started.elapsed() >= Duration::from_millis(250),
+        )
+        .await;
+        assert_eq!(result.unwrap_err().0, CliErrorCode::Cancelled);
+        assert_eq!(progress.len(), 1);
+        assert_eq!(body.reads, 2);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn stream_can_outlast_old_total_and_idle_limits_without_any_size_cap() {
+        let content = "x".repeat(RESPONSE_BODY_MAX_BYTES + 1);
+        let mut body = AsyncBody {
+            chunks: [
+                (Duration::from_secs(2_000), sse(&content, None)),
+                (Duration::from_secs(2_000), sse("tail", Some("stop"))),
+            ]
+            .into(),
+            pending_after_chunks: true,
+            reads: 0,
+        };
+        let started = tokio::time::Instant::now();
+        let mut progress = Vec::new();
+        let result = read_response_cancellable(
+            &mut body,
+            true,
+            Instant::now(),
+            &mut |seq, bytes, _| progress.push((seq, bytes)),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result.choices[0].message.content.as_ref().unwrap(),
+            &(content + "tail")
+        );
+        assert_eq!(body.reads, 2, "finish_reason停止，无需等EOF或DONE");
+        assert!(started.elapsed() >= Duration::from_secs(4_000));
+        assert!(progress.last().unwrap().1 > RESPONSE_BODY_MAX_BYTES as u64);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn non_streaming_large_body_is_complete_and_progress_is_observable() {
+        let content = "x".repeat(RESPONSE_BODY_MAX_BYTES + 1);
+        let json =
+            serde_json::json!({"choices":[{"message":{"content":content},"finish_reason":"stop"}]})
+                .to_string();
+        let mut body = AsyncBody {
+            chunks: [(Duration::ZERO, json.into_bytes())].into(),
+            pending_after_chunks: false,
+            reads: 0,
+        };
+        let mut observed = 0;
+        let result = read_response_cancellable(
+            &mut body,
+            false,
+            Instant::now(),
+            &mut |_, bytes, _| observed = bytes,
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result.choices[0].message.content.as_deref(),
+            Some(content.as_str())
+        );
+        assert!(observed > RESPONSE_BODY_MAX_BYTES as u64);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn explicit_provider_stream_error_finishes_without_waiting_for_disconnect() {
+        for error in [
+            "data: {\"error\":{\"message\":\"provider rejected\"}}\n\n",
+            "event: error\ndata: {\"message\":\"provider rejected\"}\n\n",
+            "event: error\ndata: provider rejected\n\n",
+        ] {
+            let mut body = AsyncBody {
+                chunks: [(Duration::ZERO, error.as_bytes().to_vec())].into(),
+                pending_after_chunks: true,
+                reads: 0,
+            };
+            let err = read_response_cancellable(
+                &mut body,
+                true,
+                Instant::now(),
+                &mut |_, _, _| {},
+                &|| false,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(
+                err,
+                (
+                    CliErrorCode::ProviderRejectedUnknown,
+                    "provider rejected".into()
+                )
+            );
+            assert_eq!(body.reads, 1);
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn provider_length_finish_remains_an_explicit_incomplete_output_error() {
+        let mut body = AsyncBody {
+            chunks: [(Duration::ZERO, sse("partial", Some("length")))].into(),
+            pending_after_chunks: true,
+            reads: 0,
+        };
+        let err =
+            read_response_cancellable(&mut body, true, Instant::now(), &mut |_, _, _| {}, &|| {
+                false
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(err.0, CliErrorCode::IncompleteOutput);
+        assert_eq!(body.reads, 1);
+    }
+
     #[test]
     fn client_construction_validates_url_and_budget() {
         let (client, endpoint) = build_client(
