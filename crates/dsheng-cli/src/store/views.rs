@@ -223,7 +223,7 @@ pub fn task_ids(conn: &Connection, workspace_id: Uuid, run: Option<&str>) -> Cli
     let ids: Vec<String> = match run {
         Some(run_id) => {
             let mut stmt = conn.prepare(
-                "SELECT t.task_id FROM tasks t
+                "SELECT DISTINCT t.task_id FROM tasks t
                  JOIN task_period_links l ON l.task_id = t.task_id
                  WHERE t.workspace_id = ?1 AND l.run_id = ?2
                  ORDER BY t.created_at",

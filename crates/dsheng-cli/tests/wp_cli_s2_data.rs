@@ -779,6 +779,19 @@ fn s2_task_reconcile_and_lifecycle() {
     assert_eq!(task["target_value"], "13000");
     assert_eq!(task["steps"].as_array().unwrap().len(), 1);
     assert_eq!(task["status"], "not_started");
+    // 重算期间会继承任务关联；跨 revision 的多条关联仍只显示一份 live 任务。
+    rusqlite::Connection::open(&f.db)
+        .unwrap()
+        .execute(
+            "INSERT INTO task_period_links (id, workspace_id, task_id, run_id,
+         analysis_revision_no, cycle_role, source_period_from, source_period_to,
+         target_period_from, target_period_to, inherited_from_link_id, created_at)
+         SELECT ?1, workspace_id, task_id, run_id, analysis_revision_no + 1,
+         cycle_role, source_period_from, source_period_to, target_period_from,
+         target_period_to, id, created_at FROM task_period_links WHERE task_id = ?2",
+            rusqlite::params![uuid::Uuid::new_v4().to_string(), task_id],
+        )
+        .unwrap();
     // task list（run 过滤）
     let (out, code) = run(&[
         "task",

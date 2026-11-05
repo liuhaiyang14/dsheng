@@ -1,7 +1,19 @@
 # dsheng（两表一单）工程交接文档
 
-> 生成时间：2026-11-05 14:10 · 生成者：主 Agent（工程实现全程）
-> 状态：macOS 0.1.1 可用（哈希 f35ac121）；Windows CI 骨架已推待启用
+> 更新时间：2026-11-05 · 当前修复版本：0.1.2
+> 本轮为本地修复与 macOS arm64 验证，不包含远端推送或 GitHub Release 发布。
+
+## 0.1.2 修复交接
+
+- **诊断白屏**：列表使用摘要类型，选中后单独加载完整报告；异常由页面恢复边界承接，不再拖垮侧栏和整屏。旧版只保存 `turn.report_patch` 的报告在读取时恢复为完整视图，绑定原分析版本及期间，不改写旧报告。新的生成结果、轮次与成功状态在同一事务保存，保存失败不会显示成功。
+- **期间上下文**：全局选择已保存期间，明确显示起止日期、聚合粒度、分析版本和历史快照。新日期只有显式运行本地分析才生效；首次分析使用成功扫描的真实目录。任务列表按所选 run 过滤并去重。历史版本只能查看；生成中及待应用任务候选期间锁定上下文切换。
+- **数据源页**：导入入口、当前目录、扫描状态、覆盖范围和文件列表合并为一个面板；桥接环境信息收进“技术诊断”。页面不会在未扫描时显示“已扫描”。
+- **字体和数字**：统一系统字体、等宽数字和表格对齐，金额保持完整可读；修复百分比前导零，图表数据表增加千分位。
+- **真实数据核对**：使用现有数据库的私有副本验证旧 5WHY 报告恢复，3 个 findings、6 个 facts、15 个 evidence、3 个澄清问题与原 report patch 一致；原库及原报告内容未改写。本轮没有调用真实 Provider。
+- **兼容边界**：现有数据库不能保存同一报告的多个报告版本；已保存报告的续问及同输入重复生成在发送前明确阻止。旧快照若缺乏真实来源证据，需从同一目录重新运行本地分析，再准备诊断。
+- **冻结资源**：没有修改 `contracts/v1`、冻结提示词、`docs/specs` 或 migration；新增证据查询为桌面内部只读辅助，指标读视图形状保持不变。
+
+下方 0.1.1 工程记录作为历史背景保留，真实模型历史验收不代表本轮重新执行。
 
 ---
 
@@ -52,17 +64,17 @@ cd src-ui && npm install && cd ..
 # 5. 构建桌面应用
 bash scripts/package/macos.sh
 
-# 6. 产物在 target/release-dist/dsheng_0.1.1_macos_arm64.dmg
+# 6. 产物在 target/release-dist/dsheng_0.1.2_macos_arm64.dmg
 ```
 
 ### 日常开发命令
 
 ```bash
-cargo test --workspace                          # Rust 全量测试（363 个）
+cargo test --workspace                          # Rust 全量测试
 cargo clippy --workspace --all-targets          # 静态检查（必须 0 警告）
-cd src-ui && npx vitest run                     # 前端测试（64 个）
+NODE_OPTIONS=--no-experimental-webstorage npm --prefix src-ui test # 前端测试（Node 25 兼容 jsdom）
 cd src-ui && npm run build                      # 前端构建
-cargo test --manifest-path src-tauri/Cargo.toml # Tauri 壳层测试（14 个）
+cargo test --manifest-path src-tauri/Cargo.toml # Tauri 壳层测试
 python3 tools/validate_contracts.py             # 合同校验（必须 PASS）
 bash scripts/package/macos.sh                   # 打 macOS dmg
 ```
@@ -166,7 +178,7 @@ scripts/package/      打包脚本（macos.sh / cli_dist.sh / preflight.sh）
 ### 技术债
 - [ ] 任务单生成载荷仍含全部 source_records（~290K tokens）；应改为仅发指标汇总
 - [ ] Provider 连接测试（轻量 URL 可达检查，不动模型）
-- [ ] 诊断续问 GUI 界面（CLI 已有 `diagnosis continue`）
+- [ ] 已保存诊断的多轮续问（需要先解决同一 report_id 的多版本存储；0.1.2 在发送前明确阻止）
 - [ ] macOS x64 交叉构建验证
 
 ---

@@ -73,6 +73,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         args: &["workspaceId", "directoryLabel"],
     },
     CommandSpec {
+        name: "metric_register_defaults",
+        args: &["workspaceId"],
+    },
+    CommandSpec {
         name: "mapping_show",
         args: &["workspaceId", "runId"],
     },
@@ -81,6 +85,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         args: &["input"],
     },
     // ---- 诊断（双门禁 preview/confirm + 读/导出） ----
+    CommandSpec {
+        name: "diagnosis_evidence",
+        args: &["workspaceId", "runId", "revisionNo", "metricId"],
+    },
     CommandSpec {
         name: "diagnosis_generate_preview",
         args: &["request"],

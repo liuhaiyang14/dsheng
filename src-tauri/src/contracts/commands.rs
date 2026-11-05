@@ -102,6 +102,17 @@ pub fn analyze(state: tauri::State<'_, DesktopEnv>, input: Value) -> Value {
 // ---- 诊断 ----
 
 #[tauri::command(async)]
+pub fn diagnosis_evidence(
+    state: tauri::State<'_, DesktopEnv>,
+    workspace_id: String,
+    run_id: String,
+    revision_no: u32,
+    metric_id: Option<String>,
+) -> Value {
+    core::diagnosis::diagnosis_evidence(&state, workspace_id, run_id, revision_no, metric_id)
+}
+
+#[tauri::command(async)]
 pub fn diagnosis_generate_preview(state: tauri::State<'_, DesktopEnv>, request: Value) -> Value {
     core::diagnosis::diagnosis_generate_preview(&state, request)
 }

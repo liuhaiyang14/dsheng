@@ -549,18 +549,22 @@ tr:last-child td { border-bottom: 0; }
 .analysis-period-bar {
   margin-bottom: 24px; padding: 16px 18px;
   border: 1px solid var(--line); background: var(--panel);
+  display: grid; grid-template-columns: minmax(310px, 1fr) auto; gap: 12px 24px;
 }
-.period-current { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; font-size: .9375rem; }
+.period-current { grid-column: 1 / -1; font-size: .9375rem; }
 .period-current strong { font-weight: 600; }
 .period-controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
 .period-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: .8125rem; color: var(--muted); }
 .period-field .select, .period-field .input { min-height: 38px; max-width: 100%; }
-.period-field:first-child { flex: 1 1 310px; }
+.analysis-period-bar > div.period-controls > .period-field { flex: 1 1 260px; }
 .period-field input[type="date"] { width: 154px; }
-.period-help { margin: 10px 0 0; color: var(--muted); font-size: .8125rem; line-height: 1.7; overflow-wrap: anywhere; }
+.period-help { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: .8125rem; line-height: 1.7; overflow-wrap: anywhere; }
 .analysis-period-bar details { margin-top: 12px; }
 .analysis-period-bar summary { width: fit-content; cursor: pointer; color: var(--blue); font-size: .875rem; }
 .analysis-period-bar details[open] > summary { margin-bottom: 12px; }
+@media (max-width: 1400px) {
+  .analysis-period-bar { grid-template-columns: minmax(0, 1fr); }
+}
 @media (max-width: 680px) {
   .analysis-period-bar { padding: 14px; }
   .period-field { flex: 1 1 140px; }

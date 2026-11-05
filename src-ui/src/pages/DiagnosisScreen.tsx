@@ -179,7 +179,8 @@ export function DiagnosisScreen() {
   const defaultProblem = useMemo(() => {
     if (!activeMetric) return '';
     // 默认问题表述：由指标与差异确定性拼接（呈现层组句，不做计算）。
-    return `${activeMetric.metric_label}本期 ${groupDecimal(activeMetric.actual_value ?? '')} 低于目标 ${groupDecimal(activeMetric.target_value ?? '')}，差异 ${groupDecimal((activeMetric.delta ?? '').replace('-', ''))}${activeMetric.unit ?? ''}，需要定位原因`;
+    const unit = activeMetric.unit ?? '';
+    return `${activeMetric.metric_label}本期 ${groupDecimal(activeMetric.actual_value ?? '')}${unit}，目标 ${groupDecimal(activeMetric.target_value ?? '')}${unit}，差异 ${groupDecimal(activeMetric.delta ?? '')}${unit}，需要分析差异原因`;
   }, [activeMetric]);
 
   const problemText = problem || defaultProblem;

@@ -1,14 +1,14 @@
 # dsheng
 
-两表一单本地经营分析工具的计划与交互原型。
+两表一单本地经营分析工具，包含 Tauri 桌面应用、Rust CLI、Agent Skill 和中文使用手册。
 
-`liuhaiyang14/dsheng` 已是公开仓库，当前处于计划与提示词验收阶段，尚未包含可运行的桌面应用或 CLI 实现。已授权同步的内容包括：
+当前本地修复版本为 0.1.2；功能、构建方法、验证范围和已知限制见 [工程交接文档](HANDOFF.md)。仓库中的计划与设计资料包括：
 
 - [实施计划](两表一单-本地经营分析工具实施计划.md)：产品边界、SQLite、Provider、`dsheng` CLI、Agent Skill、跨平台交付和验收标准。
 - [整体计划复审与交接门禁](docs/plan-readiness-review-2026-10-30.md)：保留问题发现与交接门禁；本次已把数据/周期、任务/历史、Provider/设置/交付及提示词上下文的决策补入专门合同，当前仍有新版真实内容验收门禁。
 - [完整实施规格](docs/specs/) 与 [机器合同/验收算例](contracts/v1/)：工程实现应遵循的字段、算法、生命周期、预算、CLI、平台及验收依据。
 - [交互原型](prototype.html)：使用全量虚构数据展示数据源、经营分析、图表、独立经营问题诊断、任务详情、任务编辑、进度时间线、Provider 和系统设置。
-- [内置提示词与输出契约](crates/dsheng-core/prompts/README.md)：任务单及 5WHY / 5W / 5W2H 的 system/user 模板、JSON Schema、装配方式和逐版本真实测试记录。当前版本仍在验收，不能视为已冻结。
+- [内置提示词与输出契约](crates/dsheng-core/prompts/README.md)：任务单及 5WHY / 5W / 5W2H 的 system/user 模板、JSON Schema、装配方式和逐版本真实测试记录；当前提示词已冻结。
 
 原型中的企业、目录、文件、金额、岗位和 Provider 值均为虚构演示数据，不来自真实业务文件。
 

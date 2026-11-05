@@ -50,6 +50,7 @@ pub fn run() {
             contracts::commands::scan,
             contracts::commands::mapping_show,
             contracts::commands::analyze,
+            contracts::commands::diagnosis_evidence,
             contracts::commands::diagnosis_generate_preview,
             contracts::commands::diagnosis_generate_confirm,
             contracts::commands::generation_cancel,

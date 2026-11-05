@@ -18,6 +18,29 @@ use dsheng_cli::error::CliResult;
 use dsheng_cli::store::generation::ProgressSink;
 use serde_json::Value;
 
+/// 本地只读辅助：从指定分析快照取真实来源，不扩展冻结的指标读视图。
+pub fn diagnosis_evidence(
+    env: &DesktopEnv,
+    workspace_id: String,
+    run_id: String,
+    revision_no: u32,
+    metric_id: Option<String>,
+) -> Value {
+    envelope((|| {
+        let db = env.db_arg()?;
+        let conn = dsheng_cli::ctx::open_db(Some(&db))?;
+        let workspace = dsheng_cli::ctx::resolve_workspace(&conn, Some(&workspace_id))?;
+        let ids = dsheng_cli::store::analysis::diagnosis_evidence_ids(
+            &conn,
+            workspace.workspace_id,
+            &run_id,
+            revision_no,
+            metric_id.as_deref(),
+        )?;
+        Ok(serde_json::json!(ids))
+    })())
+}
+
 /// diagnosis generate（preview=Gate::Preview / confirm=Gate::Send 重建）。
 /// `progress`：流式进度 sink（confirm 注入事件桥；preview 传 None）。
 fn diagnosis_generate_call(
