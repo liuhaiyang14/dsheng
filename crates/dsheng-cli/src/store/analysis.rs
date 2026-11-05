@@ -983,6 +983,9 @@ pub fn run_analyze(
 
     // 指标行/序列
     let mut metrics_rows = Vec::new();
+    // 内部 revision 元数据：与当期 actual 使用同一观察集合，不依赖同比/环比可用性。
+    // 不投影到冻结的 metricRowView；桌面诊断通过只读 helper 单独取证据。
+    let mut diagnosis_evidence_by_metric = serde_json::Map::new();
     let mut series_rows = Vec::new();
     let mut comparisons_obj = serde_json::Map::new();
     let mut base_refs_used: Vec<BaseRef> = Vec::new();
@@ -994,7 +997,15 @@ pub fn run_analyze(
         if relevant.is_empty() {
             continue;
         }
-        let actual = flow_sum_window(&obs_in(&obs, &def.metric_id, MeasureRole::Actual, window));
+        let actual_observations = obs_in(&obs, &def.metric_id, MeasureRole::Actual, window);
+        let actual = flow_sum_window(&actual_observations);
+        let mut evidence_ids: Vec<String> = actual_observations
+            .iter()
+            .map(|o| o.evidence_id.clone())
+            .collect();
+        evidence_ids.sort();
+        evidence_ids.dedup();
+        diagnosis_evidence_by_metric.insert(def.metric_id.clone(), json!(evidence_ids));
         let explicit = flow_sum_window(&obs_in(&obs, &def.metric_id, MeasureRole::Plan, window));
         let annual = flow_sum_window(&obs_in(
             &obs,
@@ -1149,6 +1160,7 @@ pub fn run_analyze(
         "grain": grain_name,
         "period": {"from": window.from.format("%Y-%m-%d").to_string(), "to": window.to.format("%Y-%m-%d").to_string()},
         "metrics": metrics_rows,
+        "diagnosis_evidence_by_metric": diagnosis_evidence_by_metric,
         "series": series_rows,
         "pending_inputs": pending_count,
         "scope": scope,
@@ -1261,6 +1273,86 @@ pub fn run_analyze(
     }
     let run_id = upsert.run_id.clone();
     analysis_run_view(conn, workspace_id, &run_id, upsert.revision_no)
+}
+
+/// 诊断问题可引用的本地证据（指定不可变分析 revision；不读取当前来源或指标定义）。
+/// 新快照使用当期 actual 的内部证据元数据；旧版仅复用已有 comparison 证据。
+/// 旧版缺少证据时返回空集合，由界面提示重新执行本地分析，不补造定位。
+pub fn diagnosis_evidence_ids(
+    conn: &Connection,
+    workspace_id: Uuid,
+    run_id: &str,
+    revision: u32,
+    metric_id: Option<&str>,
+) -> CliResult<Vec<String>> {
+    crate::ctx::ensure_object_in_workspace(
+        conn,
+        "analysis_runs",
+        "run_id",
+        run_id,
+        workspace_id,
+        "run",
+    )?;
+    let raw: String = conn.query_row(
+        "SELECT normalized_metrics_json FROM run_revisions WHERE run_id = ?1 AND revision_no = ?2",
+        params![run_id, revision], |r| r.get(0),
+    ).map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => CliError::new(CliErrorCode::DataValidationFailed, "revision 不存在"),
+        other => CliError::from(other),
+    })?;
+    let snapshot: Value = serde_json::from_str(&raw)
+        .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "normalized 快照损坏"))?;
+    let metrics = snapshot
+        .get("metrics")
+        .and_then(Value::as_array)
+        .ok_or_else(|| CliError::new(CliErrorCode::LocalSaveFailed, "分析快照缺少指标行"))?;
+    if let Some(id) = metric_id {
+        if !metrics
+            .iter()
+            .any(|row| row.get("metric_id").and_then(Value::as_str) == Some(id))
+        {
+            return Err(CliError::new(
+                CliErrorCode::InputContractInvalid,
+                "指标不属于所选分析 revision",
+            )
+            .with_field("metric_id"));
+        }
+    }
+    let metadata = snapshot.get("diagnosis_evidence_by_metric");
+    let mut evidence_ids = Vec::new();
+    for row in metrics {
+        let Some(id) = row.get("metric_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if metric_id.is_some_and(|selected| selected != id) {
+            continue;
+        }
+        let lists: Vec<&Value> = if let Some(metadata) = metadata {
+            metadata.get(id).into_iter().collect()
+        } else {
+            [
+                row.pointer("/mom/evidence_ids"),
+                row.pointer("/yoy/evidence_ids"),
+            ]
+            .into_iter()
+            .flatten()
+            .collect()
+        };
+        for list in lists {
+            if let Some(items) = list.as_array() {
+                evidence_ids.extend(
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .filter(|id| !id.is_empty())
+                        .map(str::to_string),
+                );
+            }
+        }
+    }
+    evidence_ids.sort();
+    evidence_ids.dedup();
+    Ok(evidence_ids)
 }
 
 /// analysisRunView（从 run + revision 快照渲染）。
