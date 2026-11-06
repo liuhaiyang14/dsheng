@@ -3,7 +3,7 @@
 //! 统一元数据：A1 dsheng_template_version/B1 1；A2 workspace_name/B2、C2 currency/D2、
 //! E2 tax_basis/F2；A3 source_from/B3、C3 source_to/D3、E3 grain/F3、
 //! K3 target_from/L3、M3 target_to/N3；A4 timezone/B4、C4 week_start_day/D4、
-//! E4 fiscal_year_start_month/F4、G4 coverage_status/H4、I4 empty_days_are_zero/J4；
+//! E4 fiscal_year_start_month/F4、G4 coverage_status/H4、I4 empty_days_are_zero/J4、K4 month_start_day/L4；
 //! 第 5 行空；第 6 行列名；第 7 行起数据。任务 sheet 名固定（完整期间放第 3 行）；
 //! 多步骤按永久 task_id 分组展开行；task_id/step_id 技术列（隐藏）。
 
@@ -184,7 +184,7 @@ pub fn write_metadata(ws: &mut Worksheet, data: &ExportData) -> ExportResult<()>
 
 /// 空白模板元数据（键有值空；A1/B1 固定）。
 pub fn write_blank_metadata(ws: &mut Worksheet) -> ExportResult<()> {
-    let keys: [(u32, u16, &str); 14] = [
+    let keys: [(u32, u16, &str); 15] = [
         (0, 0, "dsheng_template_version"),
         (1, 0, "workspace_name"),
         (1, 2, "currency"),
@@ -199,6 +199,7 @@ pub fn write_blank_metadata(ws: &mut Worksheet) -> ExportResult<()> {
         (3, 4, "fiscal_year_start_month"),
         (3, 6, "coverage_status"),
         (3, 8, "empty_days_are_zero"),
+        (3, 10, "month_start_day"),
     ];
     for (row, col, key) in keys {
         write_text(ws, row, col, key)?;

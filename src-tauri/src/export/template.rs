@@ -127,6 +127,11 @@ pub fn fields_markdown() -> String {
         ("E4/F4", "fiscal_year_start_month", "1–12（默认 1）"),
         ("G4/H4", "coverage_status", "complete / partial / unknown"),
         ("I4/J4", "empty_days_are_zero", "true / false（默认 false）"),
+        (
+            "K4/L4",
+            "month_start_day",
+            "月度起始日1–31（默认1）；短月取月末，下月仍按原日号",
+        ),
     ] {
         s.push_str(&format!("| {cell} | {key} | {note} |\n"));
     }
