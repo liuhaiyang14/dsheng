@@ -9,7 +9,7 @@ use crate::error::{CliError, CliResult};
 use dsheng_core::contracts::cli::CliErrorCode;
 use dsheng_core::contracts::decimal::to_canonical_string;
 use dsheng_core::contracts::domain::DateRange;
-use dsheng_core::contracts::tasks::ActorSource;
+use dsheng_core::contracts::tasks::{ActorSource, SmartStatus};
 use dsheng_core::generation::task_candidate::{
     CandidateState, TaskCandidateView, TaskCandidateViewEntry, TaskCandidateViewStep,
 };
@@ -185,16 +185,89 @@ pub fn workspace_today(conn: &Connection, workspace_id: Uuid) -> chrono::NaiveDa
 }
 
 fn smart_check_view(task: &TaskRow) -> Value {
-    if let Some(raw) = &task.smart_check_json {
-        if let Ok(v) = serde_json::from_str::<Value>(raw) {
-            return v;
+    project_smart_check(
+        task.smart_check_json.as_deref(),
+        task.smart_status,
+        task.task_revision_no,
+    )
+}
+
+/// 持久化的是模型输出合同，不能直接当作桌面读视图。
+/// SMART 在创建任务时绑定 revision 1，后续编辑只标 stale，不重算评价。
+fn project_smart_check(raw: Option<&str>, smart_status: SmartStatus, revision: u32) -> Value {
+    let saved = raw.and_then(|raw| serde_json::from_str::<Value>(raw).ok());
+    let saved = saved.as_ref().unwrap_or(&Value::Null);
+    let mut checks = Vec::new();
+    let mut assessed_revision = 1;
+    if let Some(legacy_checks) = saved["checks"].as_array() {
+        // 兼容历史已投影数据；读视图外的字段不透传，stale 以任务当前态为准。
+        assessed_revision = saved["assessed_task_revision"]
+            .as_u64()
+            .filter(|n| *n >= 1 && *n <= u64::from(revision))
+            .unwrap_or(1);
+        for check in legacy_checks {
+            let Some(dimension @ ("S" | "M" | "A" | "R" | "T")) = check["dimension"].as_str()
+            else {
+                continue;
+            };
+            let Some(status) = smart_criterion_status(&check["status"]) else {
+                continue;
+            };
+            checks.push(json!({
+                "dimension": dimension,
+                "status": status,
+                "note": check["note"].as_str(),
+            }));
+        }
+    } else if saved["overall_goal"]["criteria"].is_object() {
+        // 每个总目标/子目标的每个维度独立投影，保留原评价；不合并或重算判断。
+        let overall_label = match saved["overall_goal"]["goal_text"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+        {
+            Some(text) => format!("总目标（{text}）"),
+            None => "总目标".into(),
+        };
+        let mut goals = vec![(overall_label, &saved["overall_goal"]["criteria"])];
+        if let Some(subgoals) = saved["subgoals"].as_array() {
+            goals.extend(subgoals.iter().enumerate().map(|(index, subgoal)| {
+                let label = match subgoal["goal_text"].as_str().filter(|s| !s.is_empty()) {
+                    Some(text) => format!("子目标 {}（{}）", index + 1, text),
+                    None => format!("子目标 {}", index + 1),
+                };
+                (label, &subgoal["criteria"])
+            }));
+        }
+        for (label, criteria) in goals {
+            for dimension in ["S", "M", "A", "R", "T"] {
+                let criterion = &criteria[dimension];
+                let Some(status) = smart_criterion_status(&criterion["status"]) else {
+                    continue;
+                };
+                let note = match criterion["rationale"].as_str().filter(|s| !s.is_empty()) {
+                    Some(reason) => format!("{label}：{reason}"),
+                    None => label.clone(),
+                };
+                checks.push(json!({
+                    "dimension": dimension,
+                    "status": status,
+                    "note": note,
+                }));
+            }
         }
     }
     json!({
-        "smart_status": serde_json::to_value(task.smart_status).unwrap_or(json!("stale")),
-        "assessed_task_revision": task.task_revision_no,
-        "checks": [],
+        "smart_status": smart_status,
+        "assessed_task_revision": assessed_revision,
+        "checks": checks,
     })
+}
+
+fn smart_criterion_status(value: &Value) -> Option<&str> {
+    match value.as_str()? {
+        status @ ("met" | "needs_confirmation" | "not_applicable") => Some(status),
+        _ => None,
+    }
 }
 
 fn steps_view(steps: &[StepRow]) -> Vec<Value> {
@@ -472,4 +545,115 @@ pub fn timeline_entries(
 /// actor 来源（TaskEditService/insert_full_task 用）。
 pub fn cli_actor() -> ActorSource {
     ActorSource::Cli
+}
+
+#[cfg(test)]
+mod smart_check_tests {
+    use super::*;
+
+    fn criteria(status: &str) -> Value {
+        ["S", "M", "A", "R", "T"]
+            .into_iter()
+            .map(|dimension| {
+                (
+                    dimension.to_string(),
+                    json!({
+                        "status": status,
+                        "rationale": format!("{dimension} 原始评价"),
+                        "evidence_ids": ["synthetic-evidence"],
+                    }),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn model_smart_goals_project_each_original_criterion_without_reassessment() {
+        let raw = json!({
+            "overall_goal": {"goal_text": "整体目标", "criteria": criteria("met")},
+            "subgoals": [
+                {"subgoal_id": "one", "goal_text": "确认依据", "criteria": criteria("needs_confirmation")},
+                {"subgoal_id": "two", "goal_text": "补充步骤", "criteria": criteria("not_applicable")},
+            ],
+        }).to_string();
+        let view = project_smart_check(Some(&raw), SmartStatus::Generated, 4);
+        assert_eq!(view["smart_status"], "generated");
+        assert_eq!(view["assessed_task_revision"], 1);
+        let checks = view["checks"].as_array().unwrap();
+        assert_eq!(checks.len(), 15);
+        for (goal_index, status) in ["met", "needs_confirmation", "not_applicable"]
+            .into_iter()
+            .enumerate()
+        {
+            for (dimension_index, dimension) in ["S", "M", "A", "R", "T"].into_iter().enumerate() {
+                let check = &checks[goal_index * 5 + dimension_index];
+                assert_eq!(check["dimension"], dimension);
+                assert_eq!(check["status"], status);
+                assert!(check["note"]
+                    .as_str()
+                    .unwrap()
+                    .ends_with(&format!("{dimension} 原始评价")));
+                assert_eq!(check.as_object().unwrap().len(), 3);
+            }
+        }
+        assert_eq!(checks[0]["note"], "总目标（整体目标）：S 原始评价");
+        assert_eq!(checks[5]["note"], "子目标 1（确认依据）：S 原始评价");
+        assert_eq!(checks[10]["note"], "子目标 2（补充步骤）：S 原始评价");
+        assert_eq!(view.as_object().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn model_smart_null_rationale_is_valid_and_content_edits_keep_original_revision() {
+        let mut raw = json!({
+            "overall_goal": {"goal_text": "目标", "criteria": criteria("not_applicable")},
+            "subgoals": [],
+        });
+        raw["overall_goal"]["criteria"]["S"]["rationale"] = Value::Null;
+        let view = project_smart_check(Some(&raw.to_string()), SmartStatus::Stale, 8);
+        assert_eq!(view["smart_status"], "stale");
+        assert_eq!(view["assessed_task_revision"], 1);
+        assert_eq!(view["checks"][0]["status"], "not_applicable");
+        assert_eq!(view["checks"][0]["note"], "总目标（目标）");
+    }
+
+    #[test]
+    fn historical_read_view_preserves_repeated_dimensions_and_actual_task_status() {
+        let raw = json!({
+            "smart_status": "generated", "assessed_task_revision": 3,
+            "checks": [
+                {"dimension": "S", "status": "met", "note": "总目标"},
+                {"dimension": "S", "status": "needs_confirmation", "note": "子目标"},
+                {"dimension": "A", "status": "not_applicable", "note": null},
+            ],
+        });
+        let view = project_smart_check(Some(&raw.to_string()), SmartStatus::Stale, 5);
+        assert_eq!(view["checks"], raw["checks"]);
+        assert_eq!(view["smart_status"], "stale");
+        assert_eq!(view["assessed_task_revision"], 3);
+    }
+
+    #[test]
+    fn absent_or_unrecognized_smart_data_never_invents_passed_checks() {
+        for raw in [
+            None,
+            Some("null"),
+            Some("{}"),
+            Some("invalid json"),
+            Some("[]"),
+        ] {
+            let view = project_smart_check(raw, SmartStatus::Stale, 3);
+            assert_eq!(view["smart_status"], "stale");
+            assert_eq!(view["checks"], json!([]));
+        }
+        let raw = json!({
+            "assessed_task_revision": 99,
+            "checks": [
+                {"dimension": "S", "pass": true, "note": "not a contract status"},
+                {"dimension": "unknown", "status": "met", "note": null},
+            ],
+        });
+        let view = project_smart_check(Some(&raw.to_string()), SmartStatus::Stale, 3);
+        assert_eq!(view["checks"], json!([]));
+        assert_eq!(view["assessed_task_revision"], 1);
+    }
 }

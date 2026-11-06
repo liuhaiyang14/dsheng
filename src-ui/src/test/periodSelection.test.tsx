@@ -386,7 +386,7 @@ it('生成发送期间锁定上下文，结束后恢复选择和导航', async (
   expect(screen.getByTestId('current-period-label')).toHaveTextContent('2026-10-01');
 });
 
-it('待应用任务候选保留在原期间，显式忽略后才解除上下文锁', async () => {
+it('待应用任务候选保留在原期间，显式收起后才解除上下文锁', async () => {
   const client = new FixtureClient();
   await openApp(client);
   navigate('任务单');
@@ -396,7 +396,7 @@ it('待应用任务候选保留在原期间，显式忽略后才解除上下文�
   await screen.findByTestId('candidate-panel');
   expect(screen.getByTestId('saved-period-select')).toBeDisabled();
   expect(screen.getByTestId('workspace-select')).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: '全部忽略' }));
+  fireEvent.click(screen.getByRole('button', { name: '暂时收起' }));
   await waitFor(() => expect(screen.getByTestId('saved-period-select')).not.toBeDisabled());
 });
 

@@ -18,6 +18,7 @@ import {
   groupDecimal,
   type DshengClient,
   type StepOperation,
+  type SmartCheckView,
   type TaskEditInput,
   type TaskStatus,
   type TaskView,
@@ -33,6 +34,21 @@ const CATEGORY_OPTIONS = Object.entries(TASK_CATEGORY_LABELS) as [
 
 const PROGRESS_INPUT_PATTERN = /^(?:(?:0|[1-9][0-9]?)(?:\.[0-9]?[1-9])?|100)$/;
 const DECIMAL_INPUT_PATTERN = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]{0,5}[1-9])?$/;
+
+const SMART_DIMENSION_LABELS = { S: '具体性 S', M: '可衡量 M', A: '可实现 A', R: '相关性 R', T: '时限 T' };
+const SMART_STATUS_LABELS = { met: '通过', needs_confirmation: '待确认', not_applicable: '不适用' };
+
+/** 仅检查读视图的展示结构；不在前端重新判断或推算 SMART 结论。 */
+function readSmartCheck(value: unknown): SmartCheckView | null {
+  const record = (item: unknown): item is Record<string, unknown> => item != null && typeof item === 'object' && !Array.isArray(item);
+  if (!record(value) || !['generated', 'stale'].includes(value.smart_status as string)
+    || typeof value.assessed_task_revision !== 'number' || !Number.isInteger(value.assessed_task_revision) || value.assessed_task_revision < 1
+    || !Array.isArray(value.checks) || !value.checks.every((check: unknown) => record(check)
+      && typeof check.dimension === 'string' && Object.prototype.hasOwnProperty.call(SMART_DIMENSION_LABELS, check.dimension)
+      && typeof check.status === 'string' && Object.prototype.hasOwnProperty.call(SMART_STATUS_LABELS, check.status)
+      && (check.note === null || typeof check.note === 'string'))) return null;
+  return value as unknown as SmartCheckView;
+}
 
 interface DraftStep {
   /** 待提交的操作（已有步骤的临时编辑态）。 */
@@ -403,10 +419,13 @@ export function TaskDrawer({
     }
   };
 
-  const smartLabel =
-    current.smart_check.smart_status === 'generated'
+  const smartCheck = readSmartCheck(current.smart_check);
+  const smartAvailable = smartCheck != null && smartCheck.checks.length > 0;
+  const smartLabel = !smartAvailable
+    ? { tone: 'gold' as const, text: 'SMART：暂无可展示评价' }
+    : smartCheck.smart_status === 'generated'
       ? { tone: 'green' as const, text: 'SMART：生成时评价' }
-      : { tone: 'gold' as const, text: 'SMART：内容已改待复核（stale）' };
+      : { tone: 'gold' as const, text: 'SMART：内容已改待复核' };
 
   const cycleRole: keyof typeof CYCLE_ROLE_LABELS = current.target_period &&
     current.target_period.from >= '2026-11-01'
@@ -580,18 +599,27 @@ export function TaskDrawer({
             ))}
           </div>
 
-          <div className="detail-section">
+          <div className="detail-section" data-testid="task-smart-check">
             <h4>SMART 校核（只读，核心返回） <Tag tone={smartLabel.tone}>{smartLabel.text}</Tag></h4>
-            <div className="kv-list">
-              {current.smart_check.checks.map((c) => (
-                <div className="kv" key={c.dimension}>
-                  <label>{c.dimension === 'S' ? '具体性 S' : c.dimension === 'M' ? '可衡量 M' : c.dimension === 'A' ? '可实现 A' : c.dimension === 'R' ? '相关性 R' : '时限 T'}</label>
-                  <span className={c.pass ? 'good' : 'warn'}>
-                    {c.pass ? '通过' : '待确认'} · {c.note}
-                  </span>
+            {smartAvailable ? (
+              <>
+                {smartCheck.smart_status === 'stale' ? (
+                  <p className="panel-note">以下为任务版本 r{smartCheck.assessed_task_revision} 的历史评价，尚未复核当前内容。</p>
+                ) : null}
+                <div className="kv-list">
+                  {smartCheck.checks.map((c, index) => (
+                    <div className="kv" key={`${c.dimension}-${index}`}>
+                      <label>{SMART_DIMENSION_LABELS[c.dimension]}</label>
+                      <span className={c.status === 'met' ? 'good' : c.status === 'needs_confirmation' ? 'warn' : 'panel-note'}>
+                        {SMART_STATUS_LABELS[c.status]}{c.note ? ` · ${c.note}` : ''}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            ) : (
+              <p className="panel-note">SMART 评价暂不可用，任务信息和行动步骤仍可查看与修改。</p>
+            )}
           </div>
 
           <div className="detail-section">

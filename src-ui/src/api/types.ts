@@ -831,7 +831,11 @@ export interface MetricSeriesView {
 export interface SmartCheckView {
   smart_status: SmartStatus;
   assessed_task_revision: number;
-  checks: { dimension: 'S' | 'M' | 'A' | 'R' | 'T'; pass: boolean; note: string }[];
+  checks: {
+    dimension: 'S' | 'M' | 'A' | 'R' | 'T';
+    status: 'met' | 'needs_confirmation' | 'not_applicable';
+    note: string | null;
+  }[];
 }
 
 export interface TaskStepView {

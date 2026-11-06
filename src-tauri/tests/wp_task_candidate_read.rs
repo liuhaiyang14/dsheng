@@ -20,6 +20,13 @@ fn fingerprint(conn: &Connection, f: &Fixture) -> String {
 }
 
 fn output(f: &Fixture) -> Value {
+    let criteria = json!({
+        "S":{"status":"met","rationale":"核对对象明确","evidence_ids":[]},
+        "M":{"status":"needs_confirmation","rationale":"金额目标待确认","evidence_ids":[]},
+        "A":{"status":"needs_confirmation","rationale":"资源待确认","evidence_ids":[]},
+        "R":{"status":"met","rationale":"关联经营差异","evidence_ids":[]},
+        "T":{"status":"not_applicable","rationale":null,"evidence_ids":[]}
+    });
     // 旧候选的中文类别也按与 reconcile 相同的 exact 映射读取。
     json!({"schema_version":"2", "summary":"本地合成记录", "tasks":[{
         "task_key":"local-task", "title":"本地候选", "summary":"核对经营数据",
@@ -28,6 +35,10 @@ fn output(f: &Fixture) -> Value {
         "target_period":{"from":"2026-11-01","to":"2026-11-30"},
         "target_value":serde_json::from_str::<Value>("10000000000000000.125").unwrap(),
         "owner":null,
+        "smart_check":{
+            "overall_goal":{"goal_text":"核对经营数据","criteria":criteria},
+            "subgoals":[{"subgoal_id":"local-step","goal_text":"核对原始凭据","criteria":criteria}]
+        },
         "steps":[{"step_id":"local-step", "order":1, "action":"核对原始凭据"}]
     }]})
 }
@@ -49,6 +60,18 @@ fn seed(
 fn ok(value: Value) -> Value {
     assert_eq!(value["ok"], true, "{value}");
     value["data"].clone()
+}
+
+fn assert_task_read_contract(view: &Value) {
+    let mut schema: Value =
+        serde_json::from_str(include_str!("../../contracts/v1/read-views.schema.json")).unwrap();
+    schema["$ref"] = json!("#/$defs/taskView");
+    let validator = jsonschema::options()
+        .should_validate_formats(true)
+        .build(&schema)
+        .unwrap();
+    let errors: Vec<String> = validator.iter_errors(view).map(|e| e.to_string()).collect();
+    assert!(errors.is_empty(), "任务详情未遵循正式读合同：{errors:?}");
 }
 
 #[test]
@@ -295,6 +318,62 @@ fn recovered_candidate_can_be_applied_without_another_generation_request() {
         Some(f.run_id.clone()),
     ));
     assert!(tasks.to_string().contains("本地候选"));
+    let list_view = &tasks["tasks"][0];
+    assert_task_read_contract(list_view);
+    let task_id = list_view["task_id"].as_str().unwrap().to_string();
+    let shown = ok(task::task_show(
+        &env,
+        f.workspace.to_string(),
+        task_id.clone(),
+    ));
+    assert_task_read_contract(&shown);
+    assert_eq!(shown, *list_view);
+    let checks = shown["smart_check"]["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), 10, "总目标和子目标各五项评价完整保留");
+    for group in checks.chunks(5) {
+        assert_eq!(group[0]["dimension"], "S");
+        assert_eq!(group[0]["status"], "met");
+        assert_eq!(group[1]["status"], "needs_confirmation");
+        assert_eq!(group[4]["status"], "not_applicable");
+    }
+    assert_eq!(shown["smart_check"]["smart_status"], "generated");
+    assert_eq!(shown["smart_check"]["assessed_task_revision"], 1);
+    let saved_smart = || -> String {
+        conn.query_row(
+            "SELECT smart_check_json FROM tasks WHERE task_id=?1",
+            [&task_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    let original_smart = saved_smart();
+    assert_eq!(
+        serde_json::from_str::<Value>(&original_smart).unwrap(),
+        output(&f)["tasks"][0]["smart_check"]
+    );
+    // 编辑只标记旧评价待复核；重读不能把旧评价冒充当前版本重新评估。
+    ok(task::task_update(
+        &env,
+        json!({
+            "schema_version":"1", "workspace_id":f.workspace, "task_id":task_id,
+            "expected_task_revision":1, "mutation_id":Uuid::new_v4(),
+            "operation":{"kind":"content", "patch":{"title":"本地修改后的任务"}, "step_operations":[], "source_note":"合成回归"}
+        }),
+    ));
+    let edited = ok(task::task_show(
+        &env,
+        f.workspace.to_string(),
+        task_id.clone(),
+    ));
+    assert_task_read_contract(&edited);
+    assert_eq!(edited["task_revision_no"], 2);
+    assert_eq!(edited["smart_check"]["smart_status"], "stale");
+    assert_eq!(edited["smart_check"]["assessed_task_revision"], 1);
+    assert_eq!(
+        edited["smart_check"]["checks"],
+        shown["smart_check"]["checks"]
+    );
+    assert_eq!(saved_smart(), original_smart, "读视图转换不改写已有评价");
     let attempts: i64 = conn
         .query_row("SELECT count(*) FROM generation_attempts", [], |row| {
             row.get(0)

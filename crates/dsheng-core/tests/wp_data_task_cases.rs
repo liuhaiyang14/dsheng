@@ -225,6 +225,10 @@ fn create_task(conn: &Connection, statuses: &[TaskStatus]) -> Uuid {
 }
 
 fn edit_input(task_id: Uuid, revision: u32, operation: Value) -> TaskEditInput {
+    serde_json::from_value(edit_input_raw(task_id, revision, operation)).unwrap()
+}
+
+fn edit_input_raw(task_id: Uuid, revision: u32, operation: Value) -> Value {
     let mut v = json!({
         "schema_version": "1",
         "workspace_id": WS,
@@ -233,7 +237,7 @@ fn edit_input(task_id: Uuid, revision: u32, operation: Value) -> TaskEditInput {
         "mutation_id": Uuid::new_v4().to_string(),
     });
     v["operation"] = operation;
-    serde_json::from_value(v).unwrap()
+    v
 }
 
 fn progress_op(
@@ -264,6 +268,18 @@ fn apply_edit(
         actor: ActorSource::Ui,
     };
     svc.apply(input)
+}
+
+fn apply_edit_raw(
+    conn: &mut Connection,
+    input: &Value,
+) -> Result<dsheng_core::repository::task_store::TaskEditOutcome, TaskServiceError> {
+    TaskEditService {
+        conn,
+        now: Utc::now(),
+        actor: ActorSource::Ui,
+    }
+    .apply_raw(input)
 }
 
 fn insert_candidate(
@@ -2223,9 +2239,9 @@ fn ts_47_category_metric_mismatch_rejected() {
     )
     .unwrap();
     // patch：category=revenue + metric_id 显式 null → 合并后 revenue 无指标
-    let err = apply_edit(
+    let err = apply_edit_raw(
         &mut conn,
-        &edit_input(
+        &edit_input_raw(
             task_id,
             1,
             json!({
@@ -2253,9 +2269,9 @@ fn ts_48_category_other_metric_null_ok() {
         params![task_id.to_string()],
     )
     .unwrap();
-    apply_edit(
+    apply_edit_raw(
         &mut conn,
-        &edit_input(
+        &edit_input_raw(
             task_id,
             1,
             json!({

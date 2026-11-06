@@ -1,7 +1,7 @@
 [package]
 name = "dsheng-app"
 description = "dsheng 桌面应用（Tauri 2 壳；业务逻辑全部在 dsheng-core）"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 publish = false
 default-run = "dsheng-app"
@@ -38,6 +38,7 @@ rust_decimal = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
+jsonschema = { version = "0.60", default-features = false }
 # 集成测试合成数据注入（候选/provider 种子行；与 dsheng-cli 测试同版本）
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }

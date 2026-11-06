@@ -969,12 +969,13 @@ dependencies = [
 
 [[package]]
 name = "dsheng-app"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "chrono",
  "dirs",
  "dsheng-cli",
  "dsheng-core",
+ "jsonschema",
  "png",
  "rusqlite",
  "rust_decimal",
@@ -991,7 +992,7 @@ dependencies = [
 
 [[package]]
 name = "dsheng-cli"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "chrono",
  "clap",
@@ -1011,7 +1012,7 @@ dependencies = [
 
 [[package]]
 name = "dsheng-core"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "calamine",
  "chrono",

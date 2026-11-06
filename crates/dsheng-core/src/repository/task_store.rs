@@ -718,8 +718,35 @@ pub struct TaskEditService<'a> {
 impl<'a> TaskEditService<'a> {
     /// 应用一次 task-edit（幂等 + 乐观并发 + 单事务）。
     pub fn apply(&mut self, input: &TaskEditInput) -> Result<TaskEditOutcome, TaskServiceError> {
-        let input_json = serde_json::to_value(input).expect("json");
-        let digest = mutation_digest(&input_json);
+        let mut input_json = serde_json::to_value(input).expect("json");
+        // 类型调用的 None 表示未提供；不能把序列化补出的 null 当成清空指标。
+        // 需要显式清空的 JSON 调用走 apply_raw，保留原始字段存在性。
+        if let TaskEditOperation::Content { patch, .. } = &input.operation {
+            if patch.as_deref().is_some_and(|p| p.metric_id.is_none()) {
+                if let Some(patch) = input_json["operation"]["patch"].as_object_mut() {
+                    patch.remove("metric_id");
+                }
+            }
+        }
+        self.apply_input(input, &input_json)
+    }
+
+    /// JSON 边界保留省略字段与显式 null 的区别；类型由同一原文产生，避免双输入不一致。
+    pub fn apply_raw(
+        &mut self,
+        input_json: &serde_json::Value,
+    ) -> Result<TaskEditOutcome, TaskServiceError> {
+        let input: TaskEditInput = serde_json::from_value(input_json.clone())
+            .map_err(|e| TaskServiceError::Db(format!("task_edit_input_invalid: {e}")))?;
+        self.apply_input(&input, input_json)
+    }
+
+    fn apply_input(
+        &mut self,
+        input: &TaskEditInput,
+        input_json: &serde_json::Value,
+    ) -> Result<TaskEditOutcome, TaskServiceError> {
+        let digest = mutation_digest(input_json);
         let ws = input.workspace_id.to_string();
         let tx = self.conn.transaction().map_err(TaskServiceError::from)?;
         match check_mutation(&tx, &ws, &input.mutation_id.to_string(), &digest)? {
@@ -740,7 +767,7 @@ impl<'a> TaskEditService<'a> {
         if input.expected_task_revision != task.task_revision_no {
             return Err(TaskServiceError::RevisionConflict);
         }
-        super::tasks::validate_task_edit_with_raw(input, Some(&input_json))?;
+        super::tasks::validate_task_edit_with_raw(input, Some(input_json))?;
         let mut events: Vec<PlannedEvent> = Vec::new();
         match &input.operation {
             TaskEditOperation::Content {
@@ -748,8 +775,7 @@ impl<'a> TaskEditService<'a> {
                 step_operations,
                 ..
             } => {
-                let op_json = serde_json::to_value(&input.operation).expect("json");
-                let explicit_null = patch_metric_id_explicit_null(&op_json);
+                let explicit_null = patch_metric_id_explicit_null(&input_json["operation"]);
                 // 合并后类别/指标关系（§4.1）
                 let merged_category = patch
                     .as_deref()

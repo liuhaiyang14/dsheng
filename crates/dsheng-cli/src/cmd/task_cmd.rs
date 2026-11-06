@@ -89,10 +89,11 @@ pub fn dispatch_with_progress(
                 ws.workspace_id,
                 "task",
             )?;
+            let mut raw_input = None;
             let input = if let Some(path) = patch_json {
                 // 全量 task-edit 输入（operation 内含）；workspace/task 交叉校验
                 let value = jsonio::read_json(&path)?;
-                let parsed: TaskEditInput = serde_json::from_value(value)
+                let parsed: TaskEditInput = serde_json::from_value(value.clone())
                     .map_err(|e| CliError::invalid(format!("patch-json 非法: {e}")))?;
                 if parsed.workspace_id != ws.workspace_id || parsed.task_id != task_id {
                     return Err(CliError::new(
@@ -100,6 +101,7 @@ pub fn dispatch_with_progress(
                         "patch-json 的 workspace/task 与 flag 不一致",
                     ));
                 }
+                raw_input = Some(value);
                 parsed
             } else {
                 // CLI sugar → 同一 task-edit 合同
@@ -169,7 +171,7 @@ pub fn dispatch_with_progress(
             };
             drop(conn);
             let mut conn = ctx::open_db(db)?;
-            apply_edit(&mut conn, &input)
+            apply_edit_with_raw(&mut conn, &input, raw_input.as_ref())
         }
         cli::TaskAction::Step { action } => step(action, db),
         cli::TaskAction::Reconcile {
@@ -224,12 +226,24 @@ fn apply_edit(
     conn: &mut rusqlite::Connection,
     input: &TaskEditInput,
 ) -> CliResult<serde_json::Value> {
+    apply_edit_with_raw(conn, input, None)
+}
+
+fn apply_edit_with_raw(
+    conn: &mut rusqlite::Connection,
+    input: &TaskEditInput,
+    raw: Option<&serde_json::Value>,
+) -> CliResult<serde_json::Value> {
     let mut service = TaskEditService {
         conn,
         now: chrono::Utc::now(),
         actor: views::cli_actor(),
     };
-    let outcome = service.apply(input).map_err(CliError::from)?;
+    let outcome = match raw {
+        Some(raw) => service.apply_raw(raw),
+        None => service.apply(input),
+    }
+    .map_err(CliError::from)?;
     Ok(json!({
         "task_id": outcome.task_id,
         "task_revision_no": outcome.task_revision_no,

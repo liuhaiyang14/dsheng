@@ -53,7 +53,7 @@ describe('S6 显式生成门禁（P0）', () => {
     expect(previewSpy).not.toHaveBeenCalled();
   });
 
-  it('显式按钮流：参数 → 预览（可选引用报告）→ 确认 → 候选 → 应用创建任务', async () => {
+  it('显式按钮流：参数 → 预览（可选引用报告）→ 确认 → 候选 → 应用 → 打开任务详情', async () => {
     const client = new FixtureClient();
     await generateFlow(client);
     // 候选面板出现两条候选
@@ -68,6 +68,12 @@ describe('S6 显式生成门禁（P0）', () => {
         '建立高折扣订单预警阈值',
       );
     });
+    fireEvent.click(within(screen.getByTestId('task-list-table')).getByText('建立高折扣订单预警阈值'));
+    const drawer = await screen.findByTestId('task-drawer');
+    expect(within(drawer).getByLabelText('任务名称')).toHaveValue('建立高折扣订单预警阈值');
+    expect(within(drawer).getByTestId('task-smart-check')).toHaveTextContent('生成时未给出期限，保留待确认');
+    expect(within(drawer).getAllByRole('textbox', { name: /行动步骤/ }).length).toBeGreaterThan(0);
+    expect(screen.queryByText('页面暂时无法显示')).toBeNull();
   });
 
   it('取消预览不确认不发送', async () => {
@@ -397,6 +403,54 @@ describe('S6 详情抽屉', () => {
       <TaskDrawer task={structuredClone(stale)} workspace={workspace} client={client} onClose={() => {}} onSaved={() => {}} />,
     );
     expect(screen.getByText(/内容已改待复核/)).toBeTruthy();
+    expect(screen.getByTestId('task-smart-check')).toHaveTextContent(`任务版本 r${stale.smart_check.assessed_task_revision} 的历史评价`);
+    expect(screen.getByTestId('task-smart-check')).toHaveTextContent('尚未复核当前内容');
+  });
+
+  it.each([
+    ['缺失', undefined],
+    ['为空', null],
+    ['历史原始形状', { overall_goal: { criteria: { S: { status: 'met' } } }, subgoals: [] }],
+    ['缺少检查列表', { smart_status: 'generated', assessed_task_revision: 1 }],
+    ['检查列表不是数组', { smart_status: 'generated', assessed_task_revision: 1, checks: {} }],
+    ['列表含空值', { smart_status: 'generated', assessed_task_revision: 1, checks: [null] }],
+    ['非合同布尔值', { smart_status: 'generated', assessed_task_revision: 1, checks: [{ dimension: 'S', pass: true, note: '历史演示形状' }] }],
+    ['未知状态', { smart_status: 'generated', assessed_task_revision: 1, checks: [{ dimension: 'S', status: 'unknown', note: null }] }],
+    ['备注是对象', { smart_status: 'generated', assessed_task_revision: 1, checks: [{ dimension: 'S', status: 'met', note: {} }] }],
+    ['空列表', { smart_status: 'generated', assessed_task_revision: 1, checks: [] }],
+  ])('SMART %s时诚实提示不可用，详情、步骤和编辑仍可用', (_label, smart) => {
+    const client = new FixtureClient();
+    const source = structuredClone(fixtureTasks[0]);
+    source.smart_check = smart as unknown as TaskView['smart_check'];
+    render(<TaskDrawer task={source} workspace={workspace} client={client} onClose={() => {}} onSaved={() => {}} />);
+    const section = screen.getByTestId('task-smart-check');
+    expect(section).toHaveTextContent('SMART 评价暂不可用');
+    expect(section).not.toHaveTextContent('通过');
+    expect(section).not.toHaveTextContent('生成时评价');
+    expect(screen.getByTestId('drawer-step-count')).toHaveTextContent(`${source.steps.length} 个步骤`);
+    expect(screen.getByTestId('drawer-timeline')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('任务名称'), { target: { value: '仍可编辑任务' } });
+    expect(screen.getByLabelText('任务名称')).toHaveValue('仍可编辑任务');
+    expect(screen.getByRole('button', { name: '保存任务' })).toBeEnabled();
+    expect(screen.getByTestId('task-save-status')).toHaveTextContent('有未保存更改');
+  });
+
+  it('按合同展示 SMART 三种状态，保留总目标与子目标重复维度及空备注', () => {
+    const client = new FixtureClient();
+    const source = structuredClone(fixtureTasks[0]);
+    source.smart_check.checks = [
+      { dimension: 'S', status: 'met', note: '总目标：核实回款' },
+      { dimension: 'M', status: 'needs_confirmation', note: '总目标：数值待确认' },
+      { dimension: 'A', status: 'not_applicable', note: null },
+      { dimension: 'S', status: 'needs_confirmation', note: '子目标：补充客户清单' },
+    ];
+    render(<TaskDrawer task={source} workspace={workspace} client={client} onClose={() => {}} onSaved={() => {}} />);
+    const section = within(screen.getByTestId('task-smart-check'));
+    expect(section.getByText('通过 · 总目标：核实回款')).toBeInTheDocument();
+    expect(section.getByText('待确认 · 总目标：数值待确认')).toBeInTheDocument();
+    expect(section.getByText('不适用')).toBeInTheDocument();
+    expect(section.getByText('待确认 · 子目标：补充客户清单')).toBeInTheDocument();
+    expect(section.getAllByText('具体性 S')).toHaveLength(2);
   });
 
   it('步骤增删改排序：删除最后一步被 UI 阻止（AT_LEAST_ONE_STEP 预提示）', () => {
