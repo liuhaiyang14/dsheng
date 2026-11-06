@@ -3,7 +3,7 @@
   "status": "candidate",
   "prompt_bundles": {
     "task": {
-      "prompt_version": "2.4",
+      "prompt_version": "2.5",
       "files": [
         "task/system.md",
         "task/user.md"
@@ -744,7 +744,7 @@
   "manifest_schema_version": "1",
   "schema_version_semantics": "Manifest format only; runtime output schema version comes from the selected prompt bundle.",
   "diagnosis_report_schema_version": "3",
-  "current_revision_reason": "2026-11-06 user-authorized language-only revision: task 2.4 and diagnosis 2.1 request Simplified Chinese for provider-returned displayable reasoning and natural-language result text. JSON keys, enum values, IDs, evidence references, formulas and source quotations remain unchanged; reasoning stays outside the final JSON body. Business rules, model input/output schema versions and output shape are unchanged.",
+  "current_revision_reason": "2026-11-06 user-authorized task-scope correction: task 2.5 removes the one-task/one-step output restriction and follows the original Skill by covering evidence-backed independent priorities with all necessary executable steps, without fixed quotas or duplicate actions. Prior task outcomes are locally recorded execution context, not proof of business causes or achieved targets; an empty first-period history is valid. Chinese display preference and existing evidence, target and scheduling constraints remain. Diagnosis stays 2.1; model input/output schema versions and output shape are unchanged.",
   "validation_totals": {
     "confirmed_dispatched_all_providers": 37,
     "additional_unobserved_dispatches_maximum": 5,
@@ -761,14 +761,14 @@
     "schema/diagnosis-turn-5w2h.schema.json": "c286dc4b1b01f68acb6d2f72b83fe35f0c3ced90fdc3a48b44a44d5e343e6c26",
     "schema/diagnosis-turn-5why.schema.json": "fcf1381052eeea6234a1ce7933c941978183e62e3cdb00916668c6d06bd9e0bd",
     "schema/task-output.schema.json": "96a5eac0feac68669cf6f11402366679c1ce9c4bfd6418a30c63649e577eaf8f",
-    "task/system.md": "513dd9310dc8a93f0b6ef2121bdc3a9e239749f0a65293e5300e3b521f9f5105",
-    "task/user.md": "6827ea65c3530b5860ced0728abb5b98b411d9413cf672e0e56d69aba5b94aae"
+    "task/system.md": "80bab1841a9678b6c9fa79cef93fc6e5a995e14e877111a7585ecf49202b662a",
+    "task/user.md": "98d7d3e3a58f9449ed0ae56d13639ded0a22d16296773346025f9a8bfe0e4bdc"
   },
   "current_acceptance": {
-    "state": "user_authorized_language_revision_pending_live_observation",
+    "state": "user_authorized_task_scope_revision_pending_live_observation",
     "date": "2026-11-06",
     "prompt_and_provider_work_package_frozen": false,
-    "current_task_prompt_version": "2.4",
+    "current_task_prompt_version": "2.5",
     "current_diagnosis_prompt_version": "2.1",
     "task_output_schema_version": "2",
     "diagnosis_output_schema_version": "3",
@@ -785,11 +785,12 @@
       "note": "The prompt still requires the model to output the root envelope itself; the fallback never invents business values"
     },
     "limits": [
-      "Only language preference and version bindings changed under user authorization; prior business rules and output contracts remain in force.",
-      "Historical acceptance snapshots and the original live-validation record are retained unchanged; they are not live evidence for task 2.4 or diagnosis 2.1.",
-      "No Provider dispatch has been performed or newly authorized for this revision. Chinese reasoning is a model instruction, not a guaranteed provider language setting.",
-      "Local schema/hash and implementation regressions are verified separately; no new live-model effectiveness claim is made."
-    ]
+      "Task scope and history-context interpretation changed under user authorization. There is no application-specified task or step count quota; the model must still meet existing evidence, target, scheduling and output contracts.",
+      "Historical acceptance snapshots and original live-validation records are retained unchanged; they are not live evidence for task 2.5 or diagnosis 2.1.",
+      "No Provider dispatch has been performed or newly authorized for this revision. Multi-topic coverage and Chinese reasoning remain model instructions whose live effectiveness has not been observed.",
+      "Local schema/hash, multi-task/multi-step candidate and input-assembly regressions are verified separately; no new live-model effectiveness claim is made."
+    ],
+    "task_scope_revision_authorized": true
   },
   "plan_readiness_review": {
     "date": "2026-10-30",
@@ -927,25 +928,87 @@
         "contracts/v1/task-input.schema.json": "aa013fedc4630755ea1388c605fe9f6edb03b45bcb64e463d7bb060874680991"
       },
       "live_validation_record": "historical_live_validation_through_2026_11_02"
+    },
+    {
+      "baseline_commit": "521fbb20cd01391bd28bc8783cfc10e05f33826d",
+      "acceptance": {
+        "state": "user_authorized_language_revision_pending_live_observation",
+        "date": "2026-11-06",
+        "prompt_and_provider_work_package_frozen": false,
+        "current_task_prompt_version": "2.4",
+        "current_diagnosis_prompt_version": "2.1",
+        "task_output_schema_version": "2",
+        "diagnosis_output_schema_version": "3",
+        "current_version_confirmed_dispatches": 0,
+        "remaining_authorized_attempts": 0,
+        "language_revision_authorized": true,
+        "envelope_policy": {
+          "decision": "option_c_hybrid_adopted_2026_11_02",
+          "strict_first": true,
+          "fallback": "adaptation layer may wrap one sole bare-task object (validated against the task subschema) into the Schema 2 root envelope; envelope_locally_reconstructed must be recorded wherever the result is stored",
+          "fallback_summary_rule": "reuse the bare task object summary string when non-empty, else empty string",
+          "refused_cases": "multiple bare-task candidates, or a bare object failing the task subschema",
+          "implementation": "tools/extract_provider_json.py --policy adapt",
+          "note": "The prompt still requires the model to output the root envelope itself; the fallback never invents business values"
+        },
+        "limits": [
+          "Only language preference and version bindings changed under user authorization; prior business rules and output contracts remain in force.",
+          "Historical acceptance snapshots and the original live-validation record are retained unchanged; they are not live evidence for task 2.4 or diagnosis 2.1.",
+          "No Provider dispatch has been performed or newly authorized for this revision. Chinese reasoning is a model instruction, not a guaranteed provider language setting.",
+          "Local schema/hash and implementation regressions are verified separately; no new live-model effectiveness claim is made."
+        ]
+      },
+      "current_revision_reason": "2026-11-06 user-authorized language-only revision: task 2.4 and diagnosis 2.1 request Simplified Chinese for provider-returned displayable reasoning and natural-language result text. JSON keys, enum values, IDs, evidence references, formulas and source quotations remain unchanged; reasoning stays outside the final JSON body. Business rules, model input/output schema versions and output shape are unchanged.",
+      "resource_hashes": {
+        "diagnosis/framework-5w.md": "1c67af076f4a7d1155c906a9bcb4223a50458d8d1af0d34e9fe89f77b0efac10",
+        "diagnosis/framework-5w2h.md": "826863a3e4e5888b95a5c34464e9247cc1d39e31d454e2b7ec07af7fce417d85",
+        "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+        "diagnosis/system.md": "24c15bf696651974bc493aad8dfc4d0610513055b7eb22074f788c6b0a8dde8b",
+        "diagnosis/user.md": "19325dc4cc6ea094ad696341eb19b46f81d8dd4306bebd4f8d6defd0a04380f9",
+        "schema/diagnosis-report.schema.json": "70297418d31838c14e216377698618334d4deaabbde7681352c8eefee858e15b",
+        "schema/diagnosis-turn-5w.schema.json": "721e1733a5e75baa3db48a0d3fa20e37cc94454885bc72c386feee1653b55d4b",
+        "schema/diagnosis-turn-5w2h.schema.json": "c286dc4b1b01f68acb6d2f72b83fe35f0c3ced90fdc3a48b44a44d5e343e6c26",
+        "schema/diagnosis-turn-5why.schema.json": "fcf1381052eeea6234a1ce7933c941978183e62e3cdb00916668c6d06bd9e0bd",
+        "schema/task-output.schema.json": "96a5eac0feac68669cf6f11402366679c1ce9c4bfd6418a30c63649e577eaf8f",
+        "task/system.md": "513dd9310dc8a93f0b6ef2121bdc3a9e239749f0a65293e5300e3b521f9f5105",
+        "task/user.md": "6827ea65c3530b5860ced0728abb5b98b411d9413cf672e0e56d69aba5b94aae"
+      },
+      "input_contract_hashes": {
+        "contracts/v1/diagnosis-input.schema.json": "988dc343675df1ba814493adb1c3116bd81e4584b69e48ae525349406c770494",
+        "contracts/v1/task-input.schema.json": "8d0d82449ad92652e95b43b5964f3ff700c2a88e448920a5f168c915642255c8"
+      },
+      "live_validation": {
+        "state": "not_dispatched",
+        "date": "2026-11-06",
+        "prompt_versions": {
+          "task": "2.4",
+          "diagnosis_5why": "2.1",
+          "diagnosis_5w": "2.1",
+          "diagnosis_5w2h": "2.1"
+        },
+        "confirmed_dispatches": 0,
+        "remaining_authorized_attempts": 0,
+        "note": "No actual Provider call. Prior live validation is preserved verbatim in historical_live_validation_through_2026_11_02 and referenced by the d732e81 historical acceptance snapshot."
+      }
     }
   ],
   "context_policy_version": "2",
   "current_input_contract_hashes": {
     "contracts/v1/diagnosis-input.schema.json": "988dc343675df1ba814493adb1c3116bd81e4584b69e48ae525349406c770494",
-    "contracts/v1/task-input.schema.json": "8d0d82449ad92652e95b43b5964f3ff700c2a88e448920a5f168c915642255c8"
+    "contracts/v1/task-input.schema.json": "8ac1094e2c1c77b7c4721ff9c16e6def1ce318f40ba54e899f84cfcfdd73faf4"
   },
   "current_live_validation": {
     "state": "not_dispatched",
     "date": "2026-11-06",
     "prompt_versions": {
-      "task": "2.4",
+      "task": "2.5",
       "diagnosis_5why": "2.1",
       "diagnosis_5w": "2.1",
       "diagnosis_5w2h": "2.1"
     },
     "confirmed_dispatches": 0,
     "remaining_authorized_attempts": 0,
-    "note": "No actual Provider call. Prior live validation is preserved verbatim in historical_live_validation_through_2026_11_02 and referenced by the d732e81 historical acceptance snapshot."
+    "note": "No actual Provider call. Task 2.4 language-only acceptance and its zero-dispatch record are preserved in historical_acceptance_snapshots; original live validation remains unchanged in historical_live_validation_through_2026_11_02."
   },
   "historical_live_validation_through_2026_11_02": {
     "batch_id": "zai-glm53-current-16",

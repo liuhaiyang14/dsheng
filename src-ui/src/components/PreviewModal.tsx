@@ -75,6 +75,24 @@ export function PreviewModal({
                 {groupDecimal(String(preview.budget.output_reserve_tokens))}
               </span>
             </div>
+            {preview.task_context_summary ? <>
+              <div className="kv" data-testid="preview-task-history">
+                <label>历史任务</label>
+                <span>{preview.task_context_summary.prior_task_titles.length > 0 ? <>
+                  {preview.task_context_summary.prior_task_titles.length} 项已应用任务；发送其当前进度、执行记录及已有目标。
+                  <details><summary>查看任务范围</summary>
+                    <ul>{preview.task_context_summary.prior_task_titles.map((taskTitle, index) => <li key={index}>{taskTitle}</li>)}</ul>
+                  </details>
+                </> : '没有相关历史任务，本次依据当前经营数据制定计划。'}</span>
+              </div>
+              <div className="kv" data-testid="preview-task-diagnosis">
+                <label>诊断参考</label>
+                <span>{preview.task_context_summary.diagnosis_framework ? <>
+                  {preview.task_context_summary.diagnosis_framework.toUpperCase()} · {preview.task_context_summary.diagnosis_summary}
+                  <br />事实及用户陈述 {preview.task_context_summary.diagnosis_fact_count} 项；假设及待确认内容 {preview.task_context_summary.diagnosis_hypothesis_count} 项，连同对应证据发送。
+                </> : '未引用诊断报告。'}</span>
+              </div>
+            </> : null}
             <div className="kv">
               <label>版本绑定</label>
               <span>

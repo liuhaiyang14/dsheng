@@ -402,55 +402,10 @@ pub fn task_generate_with_progress(
         ws.workspace_id,
         "run",
     )?;
-    let (revision, fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
-        &conn,
-        &ws.workspace_id.to_string(),
-        &run,
-    )
-    .map_err(CliError::from)?;
-    let report_value = match diagnosis_report.as_deref() {
-        Some(report_id) => {
-            let (owner, report_revision, report_analysis_rev, report_fp): (
-                String,
-                i64,
-                i64,
-                String,
-            ) = conn
-                .query_row(
-                    "SELECT workspace_id, report_revision_no, analysis_revision_no,
-                            analysis_input_fingerprint
-                     FROM diagnosis_reports WHERE report_id = ?1
-                     ORDER BY report_revision_no DESC LIMIT 1",
-                    rusqlite::params![report_id],
-                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-                )
-                .map_err(|_| {
-                    CliError::new(
-                        CliErrorCode::DataValidationFailed,
-                        "diagnosis report 不存在",
-                    )
-                })?;
-            if owner != ws.workspace_id.to_string() {
-                return Err(CliError::new(
-                    CliErrorCode::WorkspaceMismatch,
-                    "diagnosis report 不属于所选 workspace",
-                ));
-            }
-            if report_analysis_rev != revision as i64 || report_fp != fingerprint {
-                return Err(CliError::new(
-                    CliErrorCode::StaleDiagnosisReference,
-                    "诊断报告与当前分析 revision/指纹不匹配（重做分析后需重新生成报告）",
-                ));
-            }
-            Some(json!({
-                "report_id": report_id,
-                "report_revision_no": report_revision,
-                "framework": "5why",
-                "scope": {"problem_statement": "（见报告）"},
-            }))
-        }
-        None => None,
-    };
+    // 由 build_task_payload 重新读取保存的完整报告并校验全部绑定。
+    let report_value = diagnosis_report
+        .as_deref()
+        .map(|id| json!({"report_id": id}));
     drop(conn);
     let mut conn = ctx::open_db(db)?;
     let material = gen::build_task_payload(
@@ -510,13 +465,14 @@ fn retry(
             return Err(CliError::invalid(format!("未知终态 {other}")));
         }
     }
-    let (run, workflow_raw): (String, String) = conn
+    let (run, workflow_raw, report_id): (String, String, Option<String>) = conn
         .query_row(
-            "SELECT s.run_id, s.workflow FROM generation_attempts a
+            "SELECT s.run_id, s.workflow, c.report_id FROM generation_attempts a
              JOIN generation_sessions s ON s.session_id = a.session_id
+             JOIN confirmations c ON c.confirmation_id = a.confirmation_id
              WHERE a.attempt_id = ?1",
             rusqlite::params![old_attempt_id.to_string()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "会话读取失败"))?;
     let workflow: Workflow = serde_json::from_value(json!(workflow_raw))
@@ -525,7 +481,14 @@ fn retry(
     let mut conn = ctx::open_db(db)?;
     let material = match workflow {
         Workflow::Task => {
-            gen::build_task_payload(&conn, ws.workspace_id, &run, "（重试任务生成）", None)?
+            let report = report_id.map(|id| json!({"report_id": id}));
+            gen::build_task_payload(
+                &conn,
+                ws.workspace_id,
+                &run,
+                "（重试任务生成）",
+                report.as_ref(),
+            )?
         }
         Workflow::Diagnosis => {
             return Err(CliError::new(

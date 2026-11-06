@@ -318,6 +318,14 @@ export interface ConfirmationPreview {
   schema_version: string;
   context_policy_version: string | null;
   source_scope_summary: ConfirmationSourceSummary[];
+  /** 任务生成额外发送的本地执行记录与用户所选诊断；旧预览可缺省。 */
+  task_context_summary?: {
+    prior_task_titles: string[];
+    diagnosis_summary: string | null;
+    diagnosis_framework: '5why' | '5w' | '5w2h' | null;
+    diagnosis_fact_count: number;
+    diagnosis_hypothesis_count: number;
+  };
   request_bytes: number;
   conservative_input_tokens: number;
   budget: Budget;

@@ -125,7 +125,7 @@ fn task_input() -> TaskInputProjection {
             run_id: "run-1".into(),
             analysis_revision_no: 1,
             analysis_input_fingerprint: "f".repeat(64),
-            prompt_version: TaskPromptVersion::V24,
+            prompt_version: TaskPromptVersion::V25,
             workflow: TaskWorkflowMarker::Task,
             schema_version: TaskSchemaVersion::V2,
         },
@@ -161,7 +161,7 @@ fn task_input() -> TaskInputProjection {
             prior_task_outcomes: vec![],
         },
         task_skill_context: TaskSkillContextProjection {
-            rules_version: TaskPromptVersion::V24,
+            rules_version: TaskPromptVersion::V25,
             required_fields: RequiredFieldsConst,
             category_options: CategoryOptionsConst,
         },
@@ -279,8 +279,8 @@ fn typed_task_input_passes_schema() {
             serde_json::to_string_pretty(&value).unwrap()
         );
     }
-    assert_eq!(value["request"]["prompt_version"], "2.4");
-    assert_eq!(value["task_skill_context"]["rules_version"], "2.4");
+    assert_eq!(value["request"]["prompt_version"], "2.5");
+    assert_eq!(value["task_skill_context"]["rules_version"], "2.5");
     // 数值词法保留（不经 f64）
     assert_eq!(value["metrics"][0]["actual"].to_string(), "100.25");
 }
@@ -338,9 +338,9 @@ fn typed_diagnosis_input_passes_schema_round1_and_continuation() {
 fn typed_projection_negative_cases() {
     // 错误的 prompt_version 常量 → schema 拒绝
     let mut bad = task_input();
-    bad.request.prompt_version = TaskPromptVersion::V24; // 唯一合法值，改为 JSON 篡改
+    bad.request.prompt_version = TaskPromptVersion::V25; // 唯一合法值，改为 JSON 篡改
     let mut value = serde_json::to_value(bad).unwrap();
-    value["request"]["prompt_version"] = json!("2.3");
+    value["request"]["prompt_version"] = json!("2.4");
     assert!(validate_task_input(&value).is_err());
     let mut old_diagnosis = serde_json::to_value(diagnosis_input(1, None)).unwrap();
     old_diagnosis["request"]["prompt_version"] = json!("2.0");
@@ -367,6 +367,14 @@ fn four_combination_message_assembly() {
     assert_eq!(task.system, expected_system, "system 为文件序列直接拼接");
     assert!(task.system.contains("供用户查看的思考文字使用简体中文"));
     assert!(task.system.contains("不得混入最终 JSON 正文"));
+    assert!(task.system.contains("任务数量与步骤数量不设固定配额或上限"));
+    assert!(task.system.contains("business_review.prior_task_outcomes"));
+    assert!(task.user.contains("绝不限定实际任务或步骤数量"));
+    for text in [&task.system, &task.user] {
+        assert!(!text.contains("最多生成一个任务"));
+        assert!(!text.contains("最多一个任务"));
+        assert!(!text.contains("最多一个步骤"));
+    }
     assert!(task.user.contains(&payload));
     assert!(task.user.contains("\"$defs\""));
 

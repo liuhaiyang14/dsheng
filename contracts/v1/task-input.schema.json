@@ -25,7 +25,7 @@
           "pattern": "^[a-f0-9]{64}$"
         },
         "prompt_version": {
-          "const": "2.4"
+          "const": "2.5"
         },
         "workflow": {
           "const": "task"
@@ -200,7 +200,7 @@
       "additionalProperties": false,
       "properties": {
         "rules_version": {
-          "const": "2.4"
+          "const": "2.5"
         },
         "required_fields": {
           "const": [

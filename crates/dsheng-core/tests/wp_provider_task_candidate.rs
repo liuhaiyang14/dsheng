@@ -67,7 +67,7 @@ fn task_input(metric: MetricProjection) -> TaskInputProjection {
             run_id: "run-1".into(),
             analysis_revision_no: 1,
             analysis_input_fingerprint: "f".repeat(64),
-            prompt_version: TaskPromptVersion::V24,
+            prompt_version: TaskPromptVersion::V25,
             workflow: TaskWorkflowMarker::Task,
             schema_version: TaskSchemaVersion::V2,
         },
@@ -113,7 +113,7 @@ fn task_input(metric: MetricProjection) -> TaskInputProjection {
             prior_task_outcomes: vec![],
         },
         task_skill_context: TaskSkillContextProjection {
-            rules_version: TaskPromptVersion::V24,
+            rules_version: TaskPromptVersion::V25,
             required_fields: RequiredFieldsConst,
             category_options: CategoryOptionsConst,
         },
@@ -217,6 +217,46 @@ fn happy_path_view_and_canonical_numbers() {
     let root2 = model_task_output(json!(100.2500), vec!["x"]);
     let set2 = parse_task_output(&extract_matched(root2)).unwrap();
     assert_eq!(set2.tasks[0].baseline_value.as_deref(), Some("100.25"));
+}
+
+#[test]
+fn multiple_topics_and_multiple_steps_survive_contract_and_candidate_projection() {
+    // 合成合同回归，不模拟或声称真实模型会输出特定数量。
+    let mut input = task_input(metric(
+        TargetConstraintScopeProjection::ExplicitTargetOnly,
+        DirectionProjection::Up,
+    ));
+    let mut cost = metric(
+        TargetConstraintScopeProjection::ExplicitTargetOnly,
+        DirectionProjection::Down,
+    );
+    cost.metric_id = "00000000-0000-4000-8000-000000000021".parse().unwrap();
+    cost.label = "合成采购成本".into();
+    cost.explicit_target = candidate("50", true, ConflictStatusProjection::None);
+    input.metrics.push(cost.clone());
+
+    let mut root = model_task_output(json!(100), vec!["步骤执行日期待确认"]);
+    let mut second = root["tasks"][0].clone();
+    second["task_key"] = json!("candidate-task-2");
+    second["title"] = json!("核对合成采购成本");
+    second["category"] = json!("cost");
+    second["metric_id"] = json!(cost.metric_id);
+    second["target_value"] = json!(50);
+    root["tasks"].as_array_mut().unwrap().push(second);
+    for task in root["tasks"].as_array_mut().unwrap() {
+        let mut next_step = task["steps"][0].clone();
+        next_step["step_id"] = json!("candidate-step-2");
+        next_step["order"] = json!(2);
+        next_step["action"] = json!("核对执行记录并形成复盘结果");
+        task["steps"].as_array_mut().unwrap().push(next_step);
+    }
+    let set = parse_task_output(&extract_matched(root)).unwrap();
+    let view = validate_candidates(&set, &input, &identity()).unwrap();
+    assert_eq!(view.tasks.len(), 2);
+    assert_eq!(view.tasks[0].target_value.as_deref(), Some("100"));
+    assert_eq!(view.tasks[1].target_value.as_deref(), Some("50"));
+    assert!(view.tasks.iter().all(|task| task.steps.len() == 2));
+    assert_eq!(view.tasks[1].steps[1].step_id, "candidate-step-2");
 }
 
 #[test]

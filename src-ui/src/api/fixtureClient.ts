@@ -700,6 +700,18 @@ export class FixtureClient implements DshengClient {
       }
     }
     const preview = this.buildPreview('task', 'task_generate', request);
+    const analysis = this.analyzedRuns.get(request.run_id) ?? fixtureAnalysisRun;
+    const report = this.reports.find((item) => item.report_id === request.diagnosis_report_id);
+    preview.task_context_summary = {
+      prior_task_titles: this.tasks.filter((task) => task.workspace_id === request.workspace_id
+        && task.lifecycle === 'active' && task.target_period != null
+        && task.target_period.from <= analysis.period.to
+        && (task.target_period.to >= analysis.period.from || task.status !== 'completed')).map((task) => task.title),
+      diagnosis_summary: report?.summary ?? null,
+      diagnosis_framework: report?.framework ?? null,
+      diagnosis_fact_count: report?.facts_and_hypotheses.filter((fact) => fact.fact_status === 'fact' || fact.fact_status === 'user_report').length ?? 0,
+      diagnosis_hypothesis_count: report?.facts_and_hypotheses.filter((fact) => fact.fact_status === 'hypothesis' || fact.fact_status === 'unknown').length ?? 0,
+    };
     this.pendingConfirmations.set(preview.confirmation_id, {
       preview,
       payload: request,

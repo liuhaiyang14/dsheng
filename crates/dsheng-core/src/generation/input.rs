@@ -402,6 +402,8 @@ pub struct ReportFactProjection {
     pub fact_status: FactStatusProjection,
     pub evidence_ids: Vec<String>,
     pub user_quote: Option<String>,
+    pub confidence: ConfidenceProjection,
+    pub reasoning_summary: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -541,11 +543,11 @@ pub enum InputSchemaVersion {
     V2,
 }
 
-/// const "2.4"（任务 prompt 版本）。
+/// const "2.5"（任务 prompt 版本）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TaskPromptVersion {
-    #[serde(rename = "2.4")]
-    V24,
+    #[serde(rename = "2.5")]
+    V25,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -792,6 +792,47 @@
         },
         "key_present": {
           "const": true
+        },
+        "task_context_summary": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "prior_task_titles",
+            "diagnosis_summary",
+            "diagnosis_framework",
+            "diagnosis_fact_count",
+            "diagnosis_hypothesis_count"
+          ],
+          "properties": {
+            "prior_task_titles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "diagnosis_summary": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "diagnosis_framework": {
+              "enum": [
+                "5why",
+                "5w",
+                "5w2h",
+                null
+              ]
+            },
+            "diagnosis_fact_count": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "diagnosis_hypothesis_count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
         }
       }
     }

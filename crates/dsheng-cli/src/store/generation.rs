@@ -703,7 +703,30 @@ pub fn build_task_payload(
         run_id,
     )
     .map_err(CliError::from)?;
-    let selection = trimmed_source_selection(conn, workspace_id, run_id, revision, &[])?;
+    let mut selected_report = optional_report
+        .map(|selection| {
+            let report_id = selection["report_id"].as_str().ok_or_else(|| {
+                CliError::new(
+                    CliErrorCode::StaleDiagnosisReference,
+                    "请选择有效的诊断报告或取消引用",
+                )
+            })?;
+            super::task_diagnosis_context::load_task_report(
+                conn,
+                workspace_id,
+                run_id,
+                revision,
+                &fingerprint,
+                report_id,
+            )
+        })
+        .transpose()?;
+    let mut report_evidence = Vec::new();
+    if let Some(report) = &selected_report {
+        collect_evidence_ids(report, &mut report_evidence);
+    }
+    let selection =
+        trimmed_source_selection(conn, workspace_id, run_id, revision, &report_evidence)?;
     let snapshot = load_snapshot(conn, run_id, revision)?;
     let defs = load_definition_projections(conn, workspace_id)?;
     let manual = manual_projections(conn, workspace_id, run_id, &snapshot)?;
@@ -725,40 +748,47 @@ pub fn build_task_payload(
     let target_period = snapshot
         .target_period
         .unwrap_or_else(|| next_month(snapshot.period_to, snapshot.month_start_day));
-    let optional_diagnosis_reference = optional_report.map(|report| OptionalDiagnosisReference {
-        report_id: report
-            .get("report_id")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        report_revision_no: report
-            .get("report_revision_no")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(1) as u32,
-        analysis_revision_no: revision,
-        analysis_input_fingerprint: fingerprint.clone(),
-        framework: serde_json::from_value(json!(report
-            .get("framework")
-            .and_then(|v| v.as_str())
-            .unwrap_or("5why")))
-        .unwrap_or(FrameworkProjection::Why5),
-        summary: report
-            .get("scope")
-            .and_then(|s| s.get("problem_statement"))
-            .and_then(|p| p.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        facts: vec![],
-        hypotheses: vec![],
-        evidence_ids: vec![],
-    });
+    let allowed_evidence: std::collections::BTreeSet<String> = selection
+        .records
+        .iter()
+        .map(|record| record.evidence_id.clone())
+        .chain(
+            manual
+                .iter()
+                .flat_map(|input| input.evidence_ids.iter().cloned()),
+        )
+        .collect();
+    let optional_diagnosis_reference = selected_report
+        .as_mut()
+        .map(|report| {
+            canonicalize_report_evidence(report, &selection.evidence_aliases, &allowed_evidence);
+            super::task_diagnosis_context::project_task_report(report, &allowed_evidence)
+        })
+        .transpose()?;
+    let prior_task_outcomes = super::task_history::prior_task_outcomes(
+        conn,
+        workspace_id,
+        DateRange::new(snapshot.period_from, snapshot.period_to)
+            .map_err(|_| source_scope_unavailable())?,
+        &allowed_evidence.iter().cloned().collect(),
+    )?;
+    let report_binding = optional_diagnosis_reference
+        .as_ref()
+        .map(|report| {
+            Uuid::parse_str(&report.report_id)
+                .map(|id| (id, report.report_revision_no))
+                .map_err(|_| {
+                    CliError::new(CliErrorCode::StaleDiagnosisReference, "诊断报告编号无效")
+                })
+        })
+        .transpose()?;
     let payload = TaskInputProjection {
         request: TaskRequestProjection {
             input_schema_version: InputSchemaVersion::V2,
             run_id: run_id.to_string(),
             analysis_revision_no: revision,
             analysis_input_fingerprint: fingerprint.clone(),
-            prompt_version: TaskPromptVersion::V24,
+            prompt_version: TaskPromptVersion::V25,
             workflow: TaskWorkflowMarker::Task,
             schema_version: TaskSchemaVersion::V2,
         },
@@ -786,10 +816,10 @@ pub fn build_task_payload(
                 "期间 {}~{} 分析快照（revision {revision}）",
                 snapshot.period_from, snapshot.period_to
             ),
-            prior_task_outcomes: vec![],
+            prior_task_outcomes,
         },
         task_skill_context: TaskSkillContextProjection {
-            rules_version: TaskPromptVersion::V24,
+            rules_version: TaskPromptVersion::V25,
             required_fields: RequiredFieldsConst,
             category_options: CategoryOptionsConst,
         },
@@ -805,7 +835,7 @@ pub fn build_task_payload(
     let value: Value = serde_json::from_str(&payload_json).expect("serialize roundtrip");
     dsheng_core::provider::schema::validate_task_input(&value)
         .map_err(|errors| CliError::new(CliErrorCode::InputContractInvalid, errors.join("; ")))?;
-    Ok(material_of(
+    let mut material = material_of(
         payload_json,
         user_context,
         Workflow::Task,
@@ -814,7 +844,60 @@ pub fn build_task_payload(
         fingerprint,
         Uuid::parse_str(run_id).map_err(|_| CliError::invalid("run_id 非法"))?,
         selection,
-    ))
+    );
+    if let Some((id, revision)) = report_binding {
+        material.report_id = Some(id);
+        material.report_revision_no = Some(revision);
+    }
+    Ok(material)
+}
+
+/// 只解析唯一且实际随本次输入发送的证据别名；未知或歧义引用留给投影校验报错。
+fn canonicalize_report_evidence(
+    value: &mut Value,
+    aliases: &std::collections::BTreeMap<String, Vec<String>>,
+    allowed: &std::collections::BTreeSet<String>,
+) {
+    fn canonicalize(
+        id: &mut Value,
+        aliases: &std::collections::BTreeMap<String, Vec<String>>,
+        allowed: &std::collections::BTreeSet<String>,
+    ) {
+        let Some(original) = id.as_str() else { return };
+        if allowed.contains(original) {
+            return;
+        }
+        let matches: Vec<_> = aliases
+            .get(original)
+            .into_iter()
+            .flatten()
+            .filter(|id| allowed.contains(*id))
+            .collect();
+        if let [canonical] = matches.as_slice() {
+            *id = Value::String((*canonical).clone());
+        }
+    }
+    match value {
+        Value::Object(object) => {
+            for (key, value) in object {
+                if key == "evidence_id" {
+                    canonicalize(value, aliases, allowed);
+                } else if key == "evidence_ids" {
+                    if let Some(ids) = value.as_array_mut() {
+                        for id in ids {
+                            canonicalize(id, aliases, allowed);
+                        }
+                    }
+                } else {
+                    canonicalize_report_evidence(value, aliases, allowed);
+                }
+            }
+        }
+        Value::Array(values) => values
+            .iter_mut()
+            .for_each(|value| canonicalize_report_evidence(value, aliases, allowed)),
+        _ => {}
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1947,12 +2030,16 @@ pub fn trimmed_source_selection(
     })
 }
 
-/// 递归收集 JSON 内全部 evidence_ids/zero_filled_evidence_ids 数组字符串。
+/// 递归收集证据引用（含报告 evidence_refs 中的单项 evidence_id）。
 fn collect_evidence_ids(v: &Value, out: &mut Vec<String>) {
     match v {
         Value::Object(map) => {
             for (k, val) in map {
-                if k == "evidence_ids" || k == "zero_filled_evidence_ids" {
+                if k == "evidence_id" {
+                    if let Some(id) = val.as_str() {
+                        out.push(id.to_string());
+                    }
+                } else if k == "evidence_ids" || k == "zero_filled_evidence_ids" {
                     if let Some(items) = val.as_array() {
                         for item in items {
                             if let Some(id) = item.as_str() {
@@ -2403,7 +2490,7 @@ pub fn create_preview(
     )
     .map_err(CliError::from)?;
     let source_scope_summary: Vec<Value> = material.scope_rows.clone();
-    Ok(json!({
+    let mut preview = json!({
         "confirmation_id": created.confirmation_id.to_string(),
         "expires_at": dsheng_core::repository::utc_iso(created.expires_at),
         "workspace_id": workspace_id.to_string(),
@@ -2432,7 +2519,26 @@ pub fn create_preview(
         "timeouts": provider.timeouts,
         "request_count_maximum": REQUEST_COUNT_MAXIMUM,
         "key_present": true,
-    }))
+    });
+    if material.workflow == Workflow::Task {
+        let payload: Value = serde_json::from_str(&material.payload_json)
+            .map_err(|_| CliError::invalid("任务预览输入无法读取"))?;
+        let report = &payload["optional_diagnosis_reference"];
+        let titles: Vec<&str> = payload["business_review"]["prior_task_outcomes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|task| task["title"].as_str())
+            .collect();
+        preview["task_context_summary"] = json!({
+            "prior_task_titles": titles,
+            "diagnosis_summary": report["summary"],
+            "diagnosis_framework": report["framework"],
+            "diagnosis_fact_count": report["facts"].as_array().map_or(0, Vec::len),
+            "diagnosis_hypothesis_count": report["hypotheses"].as_array().map_or(0, Vec::len),
+        });
+    }
+    Ok(preview)
 }
 
 /// 确认发送（双门禁之后）：重验 → 消费建 attempt → 派发（注入）→ 落库 → 终态。
