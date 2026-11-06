@@ -326,6 +326,12 @@ export interface ConfirmationPreview {
     diagnosis_fact_count: number;
     diagnosis_hypothesis_count: number;
   };
+  /** 重新生成成功后替代当前展示；旧报告仍可只读查看。 */
+  diagnosis_replacement?: {
+    report_id: string;
+    version_no: number;
+    next_version_no: number;
+  } | null;
   request_bytes: number;
   conservative_input_tokens: number;
   budget: Budget;
@@ -695,6 +701,15 @@ export interface DiagnosisSource {
 }
 
 /** read-views.schema.json: diagnosisReportSummaryView；不含报告正文。 */
+export interface DiagnosisReportVersionView {
+  report_id: string;
+  run_id: string;
+  analysis_revision_no: number;
+  report_revision_no: number;
+  version_no: number;
+  created_at: IsoDateTime;
+}
+
 export interface DiagnosisReportSummaryView {
   report_id: string;
   workspace_id: string;
@@ -703,6 +718,11 @@ export interface DiagnosisReportSummaryView {
   framework: DiagnosisFramework;
   problem_statement: string;
   report_revision_no: number;
+  series_id: string;
+  version_no: number;
+  is_latest: boolean;
+  referenceable: boolean;
+  versions: DiagnosisReportVersionView[];
   state: string;
   stop_reason: string | null;
   can_continue: boolean;

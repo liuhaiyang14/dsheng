@@ -88,6 +88,20 @@ pub fn load_task_report(
             "所选诊断报告内容与保存版本绑定不一致，请重新选择或取消引用",
         ));
     }
+    let head = super::diagnosis::report_head(
+        conn,
+        workspace_id,
+        run_id,
+        &binding.5,
+        report["scope"]["problem_statement"]
+            .as_str()
+            .unwrap_or_default(),
+    )?;
+    if head.as_ref().map(|h| h.report_id.as_str()) != Some(report_id) {
+        return Err(stale(
+            "所选诊断报告已有新版本，任务只能引用最新版本，请重新选择",
+        ));
+    }
     Ok(report)
 }
 

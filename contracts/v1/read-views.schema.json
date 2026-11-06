@@ -400,10 +400,23 @@
         }
       }
     },
+    "diagnosisReportVersionView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report_id", "run_id", "analysis_revision_no", "report_revision_no", "version_no", "created_at"],
+      "properties": {
+        "report_id": { "$ref": "#/$defs/uuidString" },
+        "run_id": { "$ref": "#/$defs/uuidString" },
+        "analysis_revision_no": { "type": "integer", "minimum": 1 },
+        "report_revision_no": { "type": "integer", "minimum": 1 },
+        "version_no": { "type": "integer", "minimum": 1 },
+        "created_at": { "$ref": "#/$defs/isoDateTime" }
+      }
+    },
     "diagnosisReportSummaryView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["report_id", "workspace_id", "run_id", "analysis_revision_no", "framework", "problem_statement", "report_revision_no", "state", "stop_reason", "can_continue", "active_warning_count", "created_at", "updated_at"],
+      "required": ["report_id", "workspace_id", "run_id", "analysis_revision_no", "framework", "problem_statement", "report_revision_no", "state", "stop_reason", "can_continue", "active_warning_count", "created_at", "updated_at", "series_id", "version_no", "is_latest", "referenceable", "versions"],
       "properties": {
         "report_id": { "$ref": "#/$defs/uuidString" },
         "workspace_id": { "$ref": "#/$defs/uuidString" },
@@ -417,7 +430,12 @@
         "can_continue": { "type": "boolean" },
         "active_warning_count": { "type": "integer", "minimum": 0 },
         "created_at": { "$ref": "#/$defs/isoDateTime" },
-        "updated_at": { "$ref": "#/$defs/isoDateTime" }
+        "updated_at": { "$ref": "#/$defs/isoDateTime" },
+        "series_id": { "$ref": "#/$defs/uuidString" },
+        "version_no": { "type": "integer", "minimum": 1 },
+        "is_latest": { "type": "boolean" },
+        "referenceable": { "type": "boolean" },
+        "versions": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/diagnosisReportVersionView" } }
       }
     },
     "reconcilePreviewView": {

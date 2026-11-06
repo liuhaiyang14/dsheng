@@ -98,14 +98,13 @@ fn material(f: &Fixture) -> dsheng_cli::store::generation::GenerationMaterial {
 
 fn attempt(conn: &Connection, f: &Fixture, session: &str) -> Uuid {
     let id = Uuid::new_v4();
-    conn.execute("INSERT INTO generation_attempts (attempt_id,workspace_id,session_id,workflow,operation,confirmation_id,provider_id,provider_revision,provider_snapshot_json,prompt_version,schema_version,input_hash,attempt_seq,created_at) VALUES (?1,?2,?3,'diagnosis','diagnosis_generate','local-confirmation',?4,1,'{}','2.0','3','hash',1,'2026-11-05T00:00:00Z')", params![id.to_string(),f.workspace.to_string(),session,f.provider.to_string()]).unwrap();
+    conn.execute("INSERT INTO generation_attempts (attempt_id,workspace_id,session_id,workflow,operation,confirmation_id,provider_id,provider_revision,provider_snapshot_json,prompt_version,schema_version,input_hash,attempt_seq,created_at) VALUES (?1,?2,?3,'diagnosis','diagnosis_generate','local-confirmation',?4,1,'{}','2.0','3','hash',(SELECT COALESCE(MAX(attempt_seq),0)+1 FROM generation_attempts WHERE session_id=?3),'2026-11-05T00:00:00Z')", params![id.to_string(),f.workspace.to_string(),session,f.provider.to_string()]).unwrap();
     id
 }
 
 #[test]
 fn new_output_persists_full_report_and_returns_its_identity() {
     let f = Fixture::new("diagnosis-save");
-    let material = material(&f);
     let mut conn = Connection::open(&f.db).unwrap();
     let (old_id, session, _) = insert_legacy(&f, &conn);
     conn.execute("DELETE FROM diagnosis_reports WHERE report_id=?1", [old_id])
@@ -113,6 +112,7 @@ fn new_output_persists_full_report_and_returns_its_identity() {
     let attempt_id = attempt(&conn, &f, &session);
     // A different session exists for the same run; persistence must use the attempt's session.
     insert_legacy(&f, &conn);
+    let material = material(&f);
     let output = json!({"schema_version":"3","framework":"5why","turn_disposition":"on_topic",
         "accepted_facts":[],"report_patch":patch(),"redirect_message":null,
         "clarification_questions":[],"stop_reason":null});
@@ -229,7 +229,7 @@ fn existing_report_continuation_is_rejected_before_confirmation_or_dispatch() {
 }
 
 #[test]
-fn repeated_identical_generation_is_rejected_before_preview() {
+fn stale_generation_head_is_rejected_before_preview() {
     use dsheng_cli::store::generation as gen;
     let f = Fixture::new("diagnosis-duplicate");
     let material = material(&f);
@@ -251,7 +251,10 @@ fn repeated_identical_generation_is_rejected_before_preview() {
         "3",
     )
     .unwrap_err();
-    assert!(error.to_string().contains("已有诊断报告"));
+    assert_eq!(
+        error.code,
+        dsheng_core::contracts::cli::CliErrorCode::ConfirmationStale
+    );
     assert_eq!(
         conn.query_row("SELECT COUNT(*) FROM confirmations", [], |r| r
             .get::<_, i64>(0))
@@ -423,4 +426,96 @@ fn recovered_report_markdown_includes_summary_answers_warnings_and_questions() {
     ] {
         assert!(md.contains(text), "missing {text}: {md}");
     }
+}
+
+#[test]
+fn identical_generation_can_replace_current_report_and_late_competitor_cannot_overwrite_it() {
+    use dsheng_cli::store::generation as gen;
+    use dsheng_core::contracts::provider::{Framework, GenerationOperation};
+    let f = Fixture::new("diagnosis-regenerate-series");
+    let mut conn = Connection::open(&f.db).unwrap();
+    let (original, _, raw) = insert_legacy(&f, &conn);
+    conn.execute(
+        "UPDATE diagnosis_reports SET problem_statement=?2 WHERE report_id=?1",
+        params![original, "\t\n\u{3000}销售下降\r\n"],
+    )
+    .unwrap();
+    let head = diagnosis::report_head(&conn, f.workspace, &f.run_id, "5why", "\u{a0}销售下降\t")
+        .unwrap()
+        .unwrap();
+    assert_eq!(head.report_id, original);
+    let next = material(&f);
+    let provider = gen::provider_snapshot(&conn, f.workspace, f.provider).unwrap();
+    let preview = gen::create_preview(
+        &mut conn,
+        f.workspace,
+        &provider,
+        &next,
+        GenerationOperation::DiagnosisGenerate,
+        dsheng_core::contracts::prompts::DIAGNOSIS_PROMPT_VERSION,
+        "3",
+    )
+    .unwrap();
+    assert_eq!(
+        preview["diagnosis_replacement"],
+        json!({"report_id":original,"version_no":1,"next_version_no":2})
+    );
+    let sid: String = conn
+        .query_row(
+            "SELECT session_id FROM generation_sessions WHERE generation_input_fingerprint=?1",
+            [&next.input_hash],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let id = attempt(&conn, &f, &sid);
+    let late = attempt(&conn, &f, &sid);
+    let receipt = gen::save_diagnosis_output(
+        &mut conn,
+        f.workspace,
+        &next,
+        Framework::Why5,
+        id,
+        &output(),
+    )
+    .unwrap();
+    let newer = receipt["report_id"].as_str().unwrap();
+    let list = diagnosis::report_list(&conn, f.workspace, &f.run_id).unwrap();
+    assert_eq!(list["reports"].as_array().unwrap().len(), 1);
+    assert_eq!(list["reports"][0]["report_id"], newer);
+    assert_eq!(list["reports"][0]["version_no"], 2);
+    assert_eq!(list["reports"][0]["versions"].as_array().unwrap().len(), 2);
+    let error = gen::save_diagnosis_output(
+        &mut conn,
+        f.workspace,
+        &next,
+        Framework::Why5,
+        late,
+        &output(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.code,
+        dsheng_core::contracts::cli::CliErrorCode::ConfirmationStale
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT report_json FROM diagnosis_reports WHERE report_id=?1",
+            [&original],
+            |r| r.get::<_, String>(0)
+        )
+        .unwrap(),
+        raw
+    );
+    let third = material(&f);
+    assert_ne!(third.input_hash, next.input_hash);
+    assert_eq!(third.report_id.unwrap().to_string(), newer);
+    assert_eq!(
+        conn.query_row(
+            "SELECT SUM(request_count) FROM generation_attempts",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
 }

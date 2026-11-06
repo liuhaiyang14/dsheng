@@ -491,3 +491,165 @@ fn report_aliases_keep_real_evidence_and_qualifications_without_importing_unavai
         0
     );
 }
+
+#[test]
+fn task_reference_rejects_old_series_version_while_history_stays_readable() {
+    use dsheng_cli::store::{diagnosis, generation as gen};
+    use dsheng_core::provider::confirm::ConfirmationGate;
+    let f = Fixture::new("task-latest-report-only");
+    let mut conn = Connection::open(&f.db).unwrap();
+    let fp = fingerprint(&conn, &f);
+    let base = gen::build_task_payload(&conn, f.workspace, &f.run_id, "检视", None).unwrap();
+    let payload: Value = serde_json::from_str(&base.payload_json).unwrap();
+    let evidence = payload["source_records"][0]["evidence_id"]
+        .as_str()
+        .unwrap();
+    let old: Value = serde_json::from_str(
+        &report(&f, &fp, "5w")
+            .to_string()
+            .replace("evidence-one", evidence),
+    )
+    .unwrap();
+    seed(&conn, &f, &old, &old);
+    let pending =
+        gen::build_task_payload(&conn, f.workspace, &f.run_id, "检视", Some(&old)).unwrap();
+    let provider = gen::provider_snapshot(&conn, f.workspace, f.provider).unwrap();
+    let preview = gen::create_preview(
+        &mut conn,
+        f.workspace,
+        &provider,
+        &pending,
+        dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
+        "2",
+    )
+    .unwrap();
+    let attempt = ConfirmationGate
+        .consume_and_create_attempt(
+            &mut gen::SqliteGenerationStore { conn: &mut conn },
+            preview["confirmation_id"]
+                .as_str()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            chrono::Utc::now(),
+        )
+        .unwrap()
+        .attempt()
+        .attempt_id;
+    let unsent_preview = gen::create_preview(
+        &mut conn,
+        f.workspace,
+        &provider,
+        &pending,
+        dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
+        "2",
+    )
+    .unwrap();
+    let latest: Value = serde_json::from_str(
+        &report(&f, &fp, "5w")
+            .to_string()
+            .replace("evidence-one", evidence),
+    )
+    .unwrap();
+    seed(&conn, &f, &latest, &latest);
+    #[derive(Default)]
+    struct NoNetwork(usize);
+    impl gen::RequestDispatch for NoNetwork {
+        fn dispatch(
+            &mut self,
+            _: &gen::ProviderRuntime,
+            _: &dsheng_core::contracts::provider::ChatCompletionsRequest,
+            _: &mut dyn FnMut(dsheng_core::provider::http::ModelProgress),
+        ) -> Result<dsheng_core::contracts::provider::ChatCompletionsResponse, (CliErrorCode, String)>
+        {
+            self.0 += 1;
+            Err((
+                CliErrorCode::NetworkError,
+                "synthetic network tripwire".into(),
+            ))
+        }
+    }
+    let mut network = NoNetwork::default();
+    let stale_send = gen::send_confirmed(
+        &mut conn,
+        f.workspace,
+        &provider,
+        &pending,
+        unsent_preview["confirmation_id"]
+            .as_str()
+            .unwrap()
+            .parse()
+            .unwrap(),
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
+        "2",
+        &mut network,
+        &mut |_| {},
+    )
+    .unwrap_err();
+    assert_eq!(stale_send.code, CliErrorCode::StaleDiagnosisReference);
+    assert_eq!(
+        network.0, 0,
+        "cached material must be rejected before dispatch"
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT COUNT(*) FROM generation_attempts WHERE workflow='task'",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        1
+    );
+    let late = gen::save_task_candidate(
+        &mut conn,
+        f.workspace,
+        &pending,
+        attempt,
+        &json!({"schema_version":"2","summary":"合成迟到结果","tasks":[]}),
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(late.code, CliErrorCode::StaleDiagnosisReference);
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM task_candidates", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    let old_id = old["report_id"].as_str().unwrap();
+    let new_id = latest["report_id"].as_str().unwrap();
+    let error = load_task_report(&conn, f.workspace, &f.run_id, 1, &fp, old_id).unwrap_err();
+    assert_eq!(error.code, CliErrorCode::StaleDiagnosisReference);
+    assert!(error.message.contains("最新版本"));
+    assert!(load_task_report(&conn, f.workspace, &f.run_id, 1, &fp, new_id).is_ok());
+    assert_eq!(
+        diagnosis::report_show(&conn, f.workspace, old_id, None).unwrap(),
+        old
+    );
+    conn.execute(
+        "UPDATE diagnosis_reports SET state='archived' WHERE report_id=?1",
+        [old_id],
+    )
+    .unwrap();
+    let list = diagnosis::report_list(&conn, f.workspace, &f.run_id).unwrap();
+    assert_eq!(list["reports"].as_array().unwrap().len(), 1);
+    let head = &list["reports"][0];
+    assert_eq!(head["report_id"], new_id);
+    assert_eq!(head["version_no"], 2);
+    assert_eq!(head["is_latest"], true);
+    assert_eq!(head["referenceable"], true);
+    assert_eq!(head["versions"][0]["report_id"], old_id);
+    conn.execute(
+        "UPDATE analysis_runs SET current_revision_no=2 WHERE run_id=?1",
+        [&f.run_id],
+    )
+    .unwrap();
+    let changed = diagnosis::report_list(&conn, f.workspace, &f.run_id).unwrap();
+    assert_eq!(changed["reports"][0]["referenceable"], false);
+    assert_eq!(
+        diagnosis::report_show(&conn, f.workspace, old_id, None).unwrap(),
+        old
+    );
+}

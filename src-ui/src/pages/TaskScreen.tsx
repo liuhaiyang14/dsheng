@@ -118,8 +118,9 @@ export function TaskScreen() {
       .diagnosisList(app.activeWorkspaceId, runId)
       .then((list) => {
         if (!cancelled) {
-          setReports(list);
-          setReportId((prev) => prev || list[0]?.report_id || '');
+          const available = list.filter((report) => report.is_latest && report.referenceable);
+          setReports(available);
+          setReportId((prev) => available.some((report) => report.report_id === prev) ? prev : available[0]?.report_id || '');
         }
       })
       .catch(() => {
@@ -128,7 +129,7 @@ export function TaskScreen() {
     return () => {
       cancelled = true;
     };
-  }, [app.client, app.activeWorkspaceId, runId]);
+  }, [app.client, app.activeWorkspaceId, runId, detail?.analysis_revision_no]);
 
   useEffect(() => {
     let cancelled = false;
@@ -613,7 +614,7 @@ export function TaskScreen() {
                     {reports.map((r) => (
                       <option key={r.report_id} value={r.report_id}>
                         {r.problem_statement.slice(0, 24)}… · {r.framework.toUpperCase()} · 第{' '}
-                        {r.report_revision_no} 版
+                        {r.version_no} 版（最新）
                       </option>
                     ))}
                   </select>

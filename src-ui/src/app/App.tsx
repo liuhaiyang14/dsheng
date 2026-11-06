@@ -88,7 +88,7 @@ function Shell() {
             : '数据仅保存在本机；模型发送前逐次确认范围。'}
           <br />
           <span className="foot-version" data-testid="foot-version">
-            v0.1.9 · powered by 海洋
+            v0.1.10 · powered by 海洋
           </span>
         </div>
       </aside>

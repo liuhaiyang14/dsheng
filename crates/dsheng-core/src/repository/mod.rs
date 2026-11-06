@@ -87,6 +87,10 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "0004_month_start_day",
         include_str!("../../migrations/0004_month_start_day.sql"),
     ),
+    (
+        "0005_diagnosis_report_series",
+        include_str!("../../migrations/0005_diagnosis_report_series.sql"),
+    ),
 ];
 
 /// 当前 schema 版本（= MIGRATIONS 长度）。
@@ -155,6 +159,68 @@ mod tests {
             CURRENT_SCHEMA_VERSION,
             "幂等迁移"
         );
+    }
+
+    #[test]
+    fn migration_0005_groups_archived_report_versions_without_changing_bodies_or_ids() {
+        let conn = Connection::open_in_memory().unwrap();
+        for (_, sql) in &MIGRATIONS[..4] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute("INSERT INTO app_schema_metadata(schema_version,migration_state,applied_at) VALUES(4,'applied','t')",[]).unwrap();
+        conn.execute("INSERT INTO workspaces(workspace_id,name,created_at,updated_at) VALUES('w','test','t','t')",[]).unwrap();
+        conn.execute("INSERT INTO analysis_runs(run_id,workspace_id,period_key,analysis_input_fingerprint,created_at,updated_at) VALUES('run','w','month','fp','t','t')",[]).unwrap();
+        conn.execute("INSERT INTO generation_sessions(session_id,workspace_id,run_id,analysis_revision_no,analysis_input_fingerprint,generation_input_fingerprint,workflow,framework,state,prompt_version,schema_version,input_schema_version,source_manifest_hash,created_at,updated_at) VALUES('s','w','run',1,'fp','gfp','diagnosis','5w','active','2.1','3','2','hash','t','t')",[]).unwrap();
+        let insert = |id: &str, problem: &str, framework: &str, state: &str, date: &str| {
+            conn.execute("INSERT INTO diagnosis_reports(report_id,workspace_id,run_id,analysis_revision_no,analysis_input_fingerprint,report_revision_no,session_id,framework,problem_statement,report_json,state,created_at,updated_at) VALUES(?1,'w','run',1,'fp',1,'s',?2,?3,?4,?5,?6,?6)",rusqlite::params![id,framework,problem,format!("original-{id}"),state,date]).unwrap();
+        };
+        insert(
+            "old",
+            "\t\n\u{3000} sales \r\n",
+            "5w",
+            "archived",
+            "2026-11-06T01:00:00Z",
+        );
+        insert("new", "sales", "5w", "accepted", "2026-11-06T02:00:00Z");
+        insert(
+            "another",
+            "inventory",
+            "5w",
+            "accepted",
+            "2026-11-06T03:00:00Z",
+        );
+        insert("why", "sales", "5why", "accepted", "2026-11-06T04:00:00Z");
+        insert("spaced", "sal es", "5w", "accepted", "2026-11-06T04:30:00Z");
+        apply_migrations(&conn, "test").unwrap();
+        let row = |id: &str| {
+            conn.query_row("SELECT series_id,series_version_no,report_revision_no,report_json,state FROM diagnosis_reports WHERE report_id=?1",[id],|r|Ok((r.get::<_,String>(0)?,r.get::<_,u32>(1)?,r.get::<_,u32>(2)?,r.get::<_,String>(3)?,r.get::<_,String>(4)?))).unwrap()
+        };
+        assert_eq!(
+            row("old"),
+            ("old".into(), 1, 1, "original-old".into(), "archived".into())
+        );
+        assert_eq!(
+            row("new"),
+            ("old".into(), 2, 1, "original-new".into(), "accepted".into())
+        );
+        assert_eq!(row("another").0, "another");
+        assert_eq!(row("why").0, "why");
+        assert_eq!(
+            row("spaced").0,
+            "spaced",
+            "interior whitespace is not normalized"
+        );
+        insert(
+            "third",
+            "\u{a0}\u{2003}sales\t\u{3000}",
+            "5w",
+            "accepted",
+            "2026-11-06T05:00:00Z",
+        );
+        assert_eq!(row("third").0, "old");
+        assert_eq!(row("third").1, 3);
+        apply_migrations(&conn, "test").unwrap();
+        assert_eq!(row("new").1, 2);
     }
 
     #[test]

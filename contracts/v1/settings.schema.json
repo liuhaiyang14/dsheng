@@ -793,6 +793,16 @@
         "key_present": {
           "const": true
         },
+        "diagnosis_replacement": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["report_id", "version_no", "next_version_no"],
+          "properties": {
+            "report_id": { "type": "string", "format": "uuid" },
+            "version_no": { "type": "integer", "minimum": 1 },
+            "next_version_no": { "type": "integer", "minimum": 2 }
+          }
+        },
         "task_context_summary": {
           "type": "object",
           "additionalProperties": false,

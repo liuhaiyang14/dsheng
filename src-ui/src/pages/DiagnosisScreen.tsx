@@ -97,6 +97,7 @@ export function DiagnosisScreen() {
   const [listReload, setListReload] = useState(0);
   const [detailReload, setDetailReload] = useState(0);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [framework, setFramework] = useState<DiagnosisFramework>('5why');
   const [problem, setProblem] = useState('');
   const [supplement, setSupplement] = useState('');
@@ -121,6 +122,7 @@ export function DiagnosisScreen() {
     setListError(null);
     if (!app.client || !app.activeWorkspaceId || !runId) {
       setSelectedReportId(null);
+      setSelectedVersionId(null);
       setListLoading(false);
       return;
     }
@@ -129,9 +131,8 @@ export function DiagnosisScreen() {
       .then((list) => {
         if (cancelled) return;
         setReports(list);
-        setSelectedReportId((prev) =>
-          prev && list.some((r) => r.report_id === prev) ? prev : (list[0]?.report_id ?? null),
-        );
+        setSelectedReportId((prev) => list.find((r) => r.report_id === prev || r.versions.some((v) => v.report_id === prev))?.report_id ?? list[0]?.report_id ?? null);
+        setSelectedVersionId(null);
       })
       .catch((err: unknown) => {
         if (!cancelled) setListError(friendlyError(err));
@@ -140,11 +141,14 @@ export function DiagnosisScreen() {
         if (!cancelled) setListLoading(false);
       });
     return () => { cancelled = true; };
-  }, [app.client, app.activeWorkspaceId, runId, listReload]);
+  }, [app.client, app.activeWorkspaceId, runId, detail?.analysis_revision_no, listReload]);
 
   const selectedSummary = reports.find((r) => r.report_id === selectedReportId) ?? null;
-  const reportId = selectedSummary?.report_id;
-  const reportRevision = selectedSummary?.report_revision_no;
+  const selectedVersion = selectedSummary?.versions.find((v) => v.report_id === selectedVersionId)
+    ?? selectedSummary?.versions.find((v) => v.report_id === selectedSummary.report_id);
+  const reportId = selectedVersion?.report_id;
+  const reportRevision = selectedVersion?.report_revision_no;
+  const oldVersion = selectedSummary != null && reportId !== selectedSummary.report_id;
   useEffect(() => {
     let cancelled = false;
     setReportDetail(null);
@@ -157,7 +161,7 @@ export function DiagnosisScreen() {
     void app.client.diagnosisShow(app.activeWorkspaceId, reportId, reportRevision)
       .then((report) => {
         if (cancelled) return;
-        if (report.report_id !== reportId || report.revision_no !== reportRevision || report.workspace_id !== app.activeWorkspaceId || report.run_id !== runId) {
+        if (report.report_id !== reportId || report.revision_no !== reportRevision || report.workspace_id !== app.activeWorkspaceId || report.run_id !== selectedVersion?.run_id) {
           throw new Error('报告详情与所选企业、期间或报告不一致，请重新加载。');
         }
         setReportDetail(report);
@@ -169,7 +173,7 @@ export function DiagnosisScreen() {
         if (!cancelled) setReportLoading(false);
       });
     return () => { cancelled = true; };
-  }, [app.client, app.activeWorkspaceId, runId, reportId, reportRevision, detailReload]);
+  }, [app.client, app.activeWorkspaceId, selectedVersion?.run_id, reportId, reportRevision, detailReload]);
 
   // 切换选中项的当次渲染即隐藏旧正文，不等待 effect 清理。
   const selected = reportDetail?.report_id === reportId && reportDetail?.revision_no === reportRevision
@@ -215,7 +219,8 @@ export function DiagnosisScreen() {
         evidence_ids: evidenceIds,
       });
       generation.reset();
-      setPending({ preview, kind: 'generate', label: '确认生成诊断报告（发送 1 次请求）' });
+      setPending({ preview, kind: 'generate', label: preview.diagnosis_replacement
+        ? '确认重新生成（发送 1 次请求）' : '确认生成诊断报告（发送 1 次请求）' });
     } catch (err) {
       setNotice(friendlyError(err));
     } finally {
@@ -225,7 +230,7 @@ export function DiagnosisScreen() {
 
   /** 显式按钮：继续分析 → 预览（含补充事实）。 */
   const requestContinue = async () => {
-    if (!app.client || !app.activeWorkspaceId || !selected || continuationUnavailable || sending || app.loading) return;
+    if (!app.client || !app.activeWorkspaceId || !selected || oldVersion || continuationUnavailable || sending || app.loading) return;
     if (supplement.trim().length === 0) {
       setNotice('请先补充一条现场事实或核实结果。');
       return;
@@ -271,7 +276,7 @@ export function DiagnosisScreen() {
   };
 
   const stopReport = () => {
-    if (!selected) return;
+    if (!selected || oldVersion) return;
     if (window.confirm(`停止并保留「${selected.scope.problem_statement.slice(0, 20)}…」？停止后仍可查看与下载。`)) {
       setStoppedLocal((prev) => new Set(prev).add(selected.report_id));
       setNotice('已停止并保留报告；现有内容仍可查看与下载。');
@@ -414,6 +419,7 @@ export function DiagnosisScreen() {
                   className={`diagnosis-item${r.report_id === selectedReportId ? ' active' : ''}`}
                   onClick={() => {
                     setSelectedReportId(r.report_id);
+                    setSelectedVersionId(null);
                     setSupplement('');
                   }}
                   data-testid={`diagnosis-item-${r.report_id.slice(0, 8)}`}
@@ -422,7 +428,7 @@ export function DiagnosisScreen() {
                     {r.problem_statement.slice(0, 18)}… · {r.framework.toUpperCase()}
                   </strong>
                   <small>
-                    第 {r.report_revision_no} 版 · 生成于 {r.created_at.slice(0, 10)} ·{' '}
+                    第 {r.version_no} 版 · 生成于 {r.created_at.slice(0, 10)} ·{' '}
                     {app.mode === 'tauri' ? '已保存' : r.can_continue ? '可继续' : '已停止'}
                   </small>
                 </button>
@@ -453,11 +459,26 @@ export function DiagnosisScreen() {
                   <strong>{selected.scope.problem_statement}</strong>
                   <div className="diagnosis-report-meta">
                     {app.activeWorkspace?.name} · {selected.period.from ?? '—'} 至{' '}
-                    {selected.period.to ?? '—'} · {selected.framework.toUpperCase()} · 第{' '}
-                    {selected.revision_no} 版 · 分析 revision {selected.analysis_revision_no}
+                    {selected.period.to ?? '—'} · {selected.framework.toUpperCase()} ·{' '}
+                    <select
+                      className="select diagnosis-version-select"
+                      aria-label="报告版本"
+                      data-testid="diagnosis-version-select"
+                      value={reportId}
+                      disabled={busy || sending}
+                      onChange={(event) => { setSelectedVersionId(event.target.value); setSupplement(''); }}
+                    >
+                      {[...(selectedSummary?.versions ?? [])].sort((a, b) => b.version_no - a.version_no).map((version) => (
+                        <option key={version.report_id} value={version.report_id}>
+                          第 {version.version_no} 版{version.report_id === selectedSummary?.report_id ? '（最新）' : '（历史）'} · {version.created_at.slice(0, 10)}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-                {continuationUnavailable ? (
+                {oldVersion ? (
+                  <Tag tone="gold">历史版本 · 仅供查看</Tag>
+                ) : continuationUnavailable ? (
                   <Tag tone="blue">报告已保存</Tag>
                 ) : isStopped ? (
                   <Tag tone="blue">已停止 · 保留报告</Tag>
@@ -524,19 +545,19 @@ export function DiagnosisScreen() {
                   placeholder="写入核实到的新事实、记录来源或现场反馈（将作为未核实的用户陈述记录）"
                   value={supplement}
                   onChange={(e) => setSupplement(e.target.value)}
-                  disabled={isStopped || continuationUnavailable}
+                  disabled={oldVersion || isStopped || continuationUnavailable}
                 />
                 <div className="diagnosis-actions">
                   <button
                     type="button"
                     className="primary"
                     onClick={() => void requestContinue()}
-                    disabled={busy || sending || isStopped || continuationUnavailable || app.loading}
+                    disabled={busy || sending || oldVersion || isStopped || continuationUnavailable || app.loading}
                     data-testid="continue-diagnosis-button"
                   >
                     继续分析
                   </button>
-                  <button type="button" className="outline" onClick={stopReport} disabled={isStopped || continuationUnavailable}>
+                  <button type="button" className="outline" onClick={stopReport} disabled={oldVersion || isStopped || continuationUnavailable}>
                     停止并保留报告
                   </button>
                   <button type="button" className="outline" onClick={() => void download('md')}>
@@ -546,7 +567,9 @@ export function DiagnosisScreen() {
                     下载 JSON
                   </button>
                   <span className="diagnosis-status">
-                    {continuationUnavailable
+                    {oldVersion
+                      ? '当前查看历史版本，仅供查看和下载；任务生成只可引用最新版。'
+                      : continuationUnavailable
                       ? '当前版本暂不支持对已保存报告继续追问，已有内容可查看和下载。'
                       : isStopped
                       ? '本报告已停止；内容仍可查看与下载'

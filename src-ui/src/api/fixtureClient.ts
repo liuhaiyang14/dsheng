@@ -504,6 +504,11 @@ export class FixtureClient implements DshengClient {
       });
     }
     const preview = this.buildPreview('diagnosis', 'diagnosis_generate', request);
+    const latest = (await this.diagnosisList(request.workspace_id, request.run_id))
+      .find((report) => report.framework === request.framework && report.problem_statement.trim() === request.problem.trim());
+    if (latest) {
+      preview.diagnosis_replacement = { report_id: latest.report_id, version_no: latest.version_no, next_version_no: latest.version_no + 1 };
+    }
     this.pendingConfirmations.set(preview.confirmation_id, {
       preview,
       payload: request,
@@ -532,8 +537,9 @@ export class FixtureClient implements DshengClient {
     report.revision_no = 1;
     report.created_at = DEMO_NOW;
     report.updated_at = DEMO_NOW;
-    report.analysis_revision_no = fixtureAnalysisRun.current_revision_no;
-    report.analysis_input_fingerprint = fixtureAnalysisRun.analysis_input_fingerprint;
+    const analysis = this.analyzedRuns.get(request.run_id) ?? fixtureAnalysisRun;
+    report.analysis_revision_no = analysis.current_revision_no;
+    report.analysis_input_fingerprint = analysis.analysis_input_fingerprint;
     this.reports.unshift(report);
     return {
       attempt_id: nextUuid(),
@@ -616,9 +622,18 @@ export class FixtureClient implements DshengClient {
     runId: string,
   ): Promise<DiagnosisReportSummaryView[]> {
     this.requireWorkspace(workspaceId);
-    return this.reports
-      .filter((r) => r.workspace_id === workspaceId && r.run_id === runId)
-      .map((r) => ({
+    const groups = new Map<string, DiagnosisReport[]>();
+    for (const report of this.reports.filter((r) => r.workspace_id === workspaceId && r.run_id === runId)) {
+      const key = JSON.stringify([report.framework, report.scope.problem_statement.trim()]);
+      const group = groups.get(key) ?? [];
+      group.push(report);
+      groups.set(key, group);
+    }
+    const analysis = this.analyzedRuns.get(runId) ?? fixtureAnalysisRun;
+    return [...groups.values()].map((group) => {
+      group.sort((a, b) => a.created_at.localeCompare(b.created_at) || a.report_id.localeCompare(b.report_id));
+      const r = group[group.length - 1];
+      return {
         report_id: r.report_id,
         workspace_id: r.workspace_id,
         run_id: r.run_id,
@@ -626,13 +641,23 @@ export class FixtureClient implements DshengClient {
         framework: r.framework,
         problem_statement: r.scope.problem_statement,
         report_revision_no: r.revision_no,
+        series_id: group[0].report_id,
+        version_no: group.length,
+        is_latest: true,
+        referenceable: r.analysis_revision_no === analysis.current_revision_no && r.analysis_input_fingerprint === analysis.analysis_input_fingerprint,
+        versions: group.map((version, index) => ({
+          report_id: version.report_id, run_id: version.run_id,
+          analysis_revision_no: version.analysis_revision_no, report_revision_no: version.revision_no,
+          version_no: index + 1, created_at: version.created_at,
+        })),
         state: r.can_continue ? 'active' : 'stopped',
         stop_reason: r.stop_reason,
         can_continue: r.can_continue,
         active_warning_count: r.warnings.filter((w) => w.status === 'active').length,
         created_at: r.created_at,
         updated_at: r.updated_at,
-      }));
+      };
+    });
   }
 
   async diagnosisShow(
@@ -689,13 +714,12 @@ export class FixtureClient implements DshengClient {
       });
     }
     if (request.diagnosis_report_id) {
-      const report = this.reports.find(
-        (r) => r.report_id === request.diagnosis_report_id,
-      );
-      if (!report || report.run_id !== request.run_id) {
+      const report = (await this.diagnosisList(request.workspace_id, request.run_id))
+        .find((r) => r.report_id === request.diagnosis_report_id && r.is_latest && r.referenceable);
+      if (!report) {
         throw new DshengCliError({
           code: 'STALE_DIAGNOSIS_REFERENCE',
-          message: '引用的诊断报告不属于当前分析期间，请重选或取消引用',
+          message: '所选诊断报告不是当前分析可引用的最新版，请重选或取消引用',
           field: 'diagnosis_report_id',
           details: null,
         });

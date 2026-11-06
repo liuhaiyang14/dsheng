@@ -677,7 +677,14 @@ pub fn build_diagnosis_payload(
     let value: Value = serde_json::from_str(&payload_json).expect("serialize roundtrip");
     dsheng_core::provider::schema::validate_diagnosis_input(&value)
         .map_err(|errors| CliError::new(CliErrorCode::InputContractInvalid, errors.join("; ")))?;
-    Ok(material_of(
+    let head = super::diagnosis::report_head(
+        conn,
+        workspace_id,
+        run_id,
+        framework_db_str(framework),
+        problem,
+    )?;
+    let mut material = material_of(
         payload_json,
         user_message,
         Workflow::Diagnosis,
@@ -686,7 +693,20 @@ pub fn build_diagnosis_payload(
         fingerprint,
         Uuid::parse_str(run_id).map_err(|_| CliError::invalid("run_id 非法"))?,
         selection,
-    ))
+    );
+    // Regeneration is a new operation bound to the currently visible report.
+    // The head is local confirmation metadata, not fabricated model input.
+    material.input_hash = dsheng_core::analysis::fingerprint::sha256_hex(
+        &json!({"input":material.input_hash,
+            "replaces_report_id":head.as_ref().map(|h| &h.report_id)})
+        .to_string(),
+    );
+    if let Some(head) = head {
+        material.report_id =
+            Some(Uuid::parse_str(&head.report_id).map_err(|_| CliError::invalid("报告编号无效"))?);
+        material.report_revision_no = Some(head.report_revision_no);
+    }
+    Ok(material)
 }
 
 /// 从 run revision 组装任务输入投影（验证过 dsheng-task-input-v2）。
@@ -2384,25 +2404,42 @@ fn assemble(
     .map_err(|e| CliError::new(e.code, e.detail))
 }
 
-// 同一指纹会复用会话；旧 schema 不支持追加该报告的新 revision。
-// 必须在预览和发送前都检查，避免重复请求后才遇到保存冲突。
-fn ensure_diagnosis_storage_available(
+// Revalidate the replacement head at preview, dispatch and atomic save boundaries.
+fn ensure_current_report_binding(
     conn: &Connection,
     workspace_id: Uuid,
     material: &GenerationMaterial,
 ) -> CliResult<()> {
     if material.workflow == Workflow::Diagnosis {
-        let existing: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM diagnosis_reports r JOIN generation_sessions s ON s.session_id = r.session_id
-             WHERE s.workspace_id = ?1 AND s.run_id = ?2 AND s.generation_input_fingerprint = ?3",
-            params![workspace_id.to_string(), material.run_id.to_string(), material.input_hash], |r| r.get(0),
+        let payload: Value = serde_json::from_str(&material.payload_json)
+            .map_err(|_| CliError::invalid("诊断输入无法读取"))?;
+        let head = super::diagnosis::report_head(
+            conn,
+            workspace_id,
+            &material.run_id.to_string(),
+            payload["scope"]["framework"].as_str().unwrap_or_default(),
+            payload["scope"]["problem_statement"]
+                .as_str()
+                .unwrap_or_default(),
         )?;
-        if existing > 0 {
+        let expected = material.report_id.map(|id| id.to_string());
+        if head.as_ref().map(|h| h.report_id.as_str()) != expected.as_deref()
+            || head.as_ref().map(|h| h.report_revision_no) != material.report_revision_no
+        {
             return Err(CliError::new(
-                CliErrorCode::DataValidationFailed,
-                "相同问题和输入已有诊断报告，请查看本期诊断记录。此次未发送模型请求。",
+                CliErrorCode::ConfirmationStale,
+                "诊断报告已有新版本，请重新预览；当前报告保持不变",
             ));
         }
+    } else if let Some(report_id) = material.report_id {
+        super::task_diagnosis_context::load_task_report(
+            conn,
+            workspace_id,
+            &material.run_id.to_string(),
+            material.analysis_revision_no,
+            &material.analysis_input_fingerprint,
+            &report_id.to_string(),
+        )?;
     }
     Ok(())
 }
@@ -2417,7 +2454,7 @@ pub fn create_preview(
     prompt_version: &str,
     schema_version: &str,
 ) -> CliResult<Value> {
-    ensure_diagnosis_storage_available(conn, workspace_id, material)?;
+    ensure_current_report_binding(conn, workspace_id, material)?;
     if !provider.key_present {
         return Err(CliError::new(
             CliErrorCode::ProviderKeyMissing,
@@ -2520,6 +2557,17 @@ pub fn create_preview(
         "request_count_maximum": REQUEST_COUNT_MAXIMUM,
         "key_present": true,
     });
+    if material.workflow == Workflow::Diagnosis {
+        if let Some(report_id) = material.report_id {
+            let version_no: u32 = conn.query_row(
+                "SELECT series_version_no FROM diagnosis_reports WHERE report_id=?1 AND workspace_id=?2",
+                params![report_id.to_string(), workspace_id.to_string()], |r| r.get(0),
+            )?;
+            preview["diagnosis_replacement"] = json!({
+                "report_id":report_id, "version_no":version_no, "next_version_no":version_no + 1,
+            });
+        }
+    }
     if material.workflow == Workflow::Task {
         let payload: Value = serde_json::from_str(&material.payload_json)
             .map_err(|_| CliError::invalid("任务预览输入无法读取"))?;
@@ -2556,7 +2604,7 @@ pub fn send_confirmed(
     dispatcher: &mut dyn RequestDispatch,
     on_progress: &mut dyn FnMut(StreamProgressEvent),
 ) -> CliResult<(Uuid, Value)> {
-    ensure_diagnosis_storage_available(conn, workspace_id, material)?;
+    ensure_current_report_binding(conn, workspace_id, material)?;
     let api_key = crate::store::settings::provider_api_key(conn, provider.provider_id)?
         .ok_or_else(|| {
             CliError::new(
@@ -3119,6 +3167,16 @@ pub fn save_task_candidate(
                 "迟到响应：分析 revision 已变化，不提交任务候选",
             )
         })?;
+        if let Some(report_id) = material.report_id {
+            super::task_diagnosis_context::load_task_report(
+                &tx,
+                workspace_id,
+                &material.run_id.to_string(),
+                material.analysis_revision_no,
+                &material.analysis_input_fingerprint,
+                &report_id.to_string(),
+            )?;
+        }
         let candidate_id = Uuid::new_v4().to_string();
         tx.execute(
             "INSERT INTO task_candidates (candidate_generation_id, workspace_id, run_id,
@@ -3253,6 +3311,9 @@ fn save_diagnosis_output_transaction(
             "迟到响应：分析 revision 已变化，不提交诊断报告",
         )
     })?;
+    // A second generation may have finished while this request was in flight.
+    // Never let a late response replace a newer accepted result.
+    ensure_current_report_binding(&tx, workspace_id, material)?;
     let existing: i64 = tx.query_row(
         "SELECT COUNT(*) FROM diagnosis_reports WHERE session_id = ?1",
         [&session_id],

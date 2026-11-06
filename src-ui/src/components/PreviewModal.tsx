@@ -43,6 +43,11 @@ export function PreviewModal({
           <span className="tag gold">发送前预览</span>
         </div>
         <div className="modal-body">
+          {preview.diagnosis_replacement ? (
+            <div className="notice" role="note" data-testid="diagnosis-replacement-notice" style={{ marginBottom: 16 }}>
+              当前已有第 {preview.diagnosis_replacement.version_no} 版报告。确认后将重新生成，成功时以第 {preview.diagnosis_replacement.next_version_no} 版替换当前展示；旧版保留在版本选择中。失败或停止不会替换现有报告。
+            </div>
+          ) : null}
           <div className="kv-list">
             <div className="kv">
               <label>Provider</label>

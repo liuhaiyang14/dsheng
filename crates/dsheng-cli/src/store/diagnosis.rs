@@ -11,7 +11,7 @@ use dsheng_core::contracts::cli::CliErrorCode;
 use dsheng_core::generation::report::{
     apply_report_patch, ReportPatch, ReportPeriod, ReportScope, ReportSeed,
 };
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -23,7 +23,41 @@ fn validation(msg: impl Into<String>) -> CliError {
     CliError::new(CliErrorCode::DataValidationFailed, msg.into())
 }
 
-/// diagnosisReportSummaryView（每 report 一行，当前 revision）。
+#[derive(Debug, Clone)]
+pub struct ReportHead {
+    pub report_id: String,
+    pub report_revision_no: u32,
+    pub version_no: u32,
+}
+
+/// Series identity is business scope, independent of prompt/source/analysis revision.
+/// The SQL Unicode White_Space list matches migration 0005; interior text is unchanged.
+pub fn report_head(
+    conn: &Connection,
+    workspace_id: Uuid,
+    run_id: &str,
+    framework: &str,
+    problem: &str,
+) -> CliResult<Option<ReportHead>> {
+    Ok(conn
+        .query_row(
+            "SELECT report_id, report_revision_no, series_version_no FROM diagnosis_reports
+         WHERE workspace_id=?1 AND run_id=?2 AND framework=?3
+           AND trim(problem_statement, char(9,10,11,12,13,32,133,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288))=trim(?4, char(9,10,11,12,13,32,133,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288))
+         ORDER BY series_version_no DESC, created_at DESC, report_id DESC LIMIT 1",
+            params![workspace_id.to_string(), run_id, framework, problem],
+            |r| {
+                Ok(ReportHead {
+                    report_id: r.get(0)?,
+                    report_revision_no: r.get(1)?,
+                    version_no: r.get(2)?,
+                })
+            },
+        )
+        .optional()?)
+}
+
+/// diagnosisReportSummaryView: one current item per report series, plus immutable versions.
 pub fn report_list(conn: &Connection, workspace_id: Uuid, run_id: &str) -> CliResult<Value> {
     crate::ctx::ensure_object_in_workspace(
         conn,
@@ -39,7 +73,11 @@ pub fn report_list(conn: &Connection, workspace_id: Uuid, run_id: &str) -> CliRe
                 r.session_id, r.created_at, r.updated_at,
                 (SELECT s.frozen_at FROM generation_sessions s WHERE s.session_id = r.session_id),
                 (SELECT COUNT(*) FROM diagnosis_turns t
-                  WHERE t.session_id = r.session_id AND t.turn_state = 'pending')
+                  WHERE t.session_id = r.session_id AND t.turn_state = 'pending'),
+                r.series_id, r.series_version_no,
+                (SELECT a.current_revision_no = r.analysis_revision_no
+                    AND a.analysis_input_fingerprint = r.analysis_input_fingerprint
+                 FROM analysis_runs a WHERE a.run_id=r.run_id AND a.workspace_id=r.workspace_id)
          FROM diagnosis_reports r
          WHERE r.workspace_id = ?1 AND r.run_id = ?2
          ORDER BY r.created_at",
@@ -69,12 +107,47 @@ pub fn report_list(conn: &Connection, workspace_id: Uuid, run_id: &str) -> CliRe
             "active_warning_count": active_warnings,
             "created_at": r.get::<_, String>(10)?,
             "updated_at": r.get::<_, String>(11)?,
+            "series_id": r.get::<_, String>(14)?,
+            "version_no": r.get::<_, u32>(15)?,
+            "is_latest": true,
+            "referenceable": r.get::<_, String>(7)? == "accepted"
+                && r.get::<_, Option<String>>(12)?.is_none()
+                && r.get::<_, bool>(16)?,
         }))
     })?;
-    let mut out = Vec::new();
+    let mut groups: std::collections::BTreeMap<String, Vec<Value>> = Default::default();
     for row in rows {
-        out.push(row?);
+        let row = row?;
+        groups
+            .entry(row["series_id"].as_str().unwrap_or_default().to_string())
+            .or_default()
+            .push(row);
     }
+    let mut out = Vec::new();
+    for mut group in groups.into_values() {
+        group.sort_by_key(|r| r["version_no"].as_u64().unwrap_or(0));
+        let versions: Vec<Value> = group
+            .iter()
+            .map(|r| {
+                json!({
+                    "report_id":r["report_id"], "run_id":r["run_id"],
+                    "analysis_revision_no":r["analysis_revision_no"],
+                    "report_revision_no":r["report_revision_no"],
+                    "version_no":r["version_no"], "created_at":r["created_at"]
+                })
+            })
+            .collect();
+        if let Some(mut latest) = group.pop() {
+            latest["versions"] = json!(versions);
+            out.push(latest);
+        }
+    }
+    out.sort_by(|a, b| {
+        a["created_at"]
+            .as_str()
+            .cmp(&b["created_at"].as_str())
+            .then_with(|| a["report_id"].as_str().cmp(&b["report_id"].as_str()))
+    });
     Ok(json!({ "run_id": run_id, "reports": out }))
 }
 
