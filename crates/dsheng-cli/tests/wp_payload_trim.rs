@@ -288,7 +288,7 @@ fn user_evidence_rows_are_kept() {
 }
 
 #[test]
-fn transposed_trend_sheet_trims_to_metric_columns() {
+fn scanned_transposed_trend_sheet_keeps_current_and_baseline_rows() {
     let s = setup(
         "trim-transposed",
         &[
@@ -350,6 +350,15 @@ fn transposed_trend_sheet_trims_to_metric_columns() {
     // 只发送表头、本期十月及环比九月锚点；累计和无期间注释不发送。
     let rows: std::collections::BTreeSet<u32> = rows_of(&payload);
     assert_eq!(rows, [1, 4, 5].into_iter().collect());
+    assert!(records
+        .iter()
+        .any(|r| r["cell_or_row"] == "B5" && r["values"]["raw_text"] == "1003"));
+    assert!(records
+        .iter()
+        .any(|r| r["cell_or_row"] == "B4" && r["values"]["raw_text"] == "1002"));
+    assert!(!records
+        .iter()
+        .any(|r| r["values"]["raw_text"] == "1000" || r["values"]["raw_text"] == "3003"));
     let manifest = payload["source_manifest"].as_array().unwrap();
     assert_eq!(manifest.len(), 1);
     let range = manifest[0]["selected_range"].as_str().unwrap();

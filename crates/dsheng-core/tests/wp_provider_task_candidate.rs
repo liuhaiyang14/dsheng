@@ -563,3 +563,32 @@ fn view_matches_read_views_shape() {
     // Framework 导入不为未使用告警（保持与 input 投影一致的框架枚举来源）
     let _ = Framework::Why5;
 }
+
+#[test]
+fn monthly_floor_accepts_only_the_approved_anchored_month() {
+    for (from, to) in [("2026-10-15", "2026-11-14"), ("2026-02-28", "2026-03-30")] {
+        let mut input = task_input(metric(
+            TargetConstraintScopeProjection::MonthlyRevenueFloor,
+            DirectionProjection::Up,
+        ));
+        input.period.target_from = NaiveDate::parse_from_str(from, "%Y-%m-%d").unwrap();
+        input.period.target_to = NaiveDate::parse_from_str(to, "%Y-%m-%d").unwrap();
+        let mut approved = model_task_output(json!(110), vec!["上调待确认"]);
+        approved["tasks"][0]["target_period"] = json!({"from":from,"to":to});
+        let set = parse_task_output(&extract_matched(approved.clone())).unwrap();
+        assert!(validate_candidates(&set, &input, &identity()).is_ok());
+        approved["tasks"][0]["target_value"] = json!(100);
+        let low = parse_task_output(&extract_matched(approved)).unwrap();
+        let error = validate_candidates(&low, &input, &identity()).unwrap_err();
+        assert!(error.detail.contains("月度下限复核失败"));
+    }
+    let mut input = task_input(metric(
+        TargetConstraintScopeProjection::MonthlyRevenueFloor,
+        DirectionProjection::Up,
+    ));
+    input.period.target_from = NaiveDate::from_ymd_opt(2026, 10, 15).unwrap();
+    input.period.target_to = NaiveDate::from_ymd_opt(2026, 11, 14).unwrap();
+    let wrong_month =
+        parse_task_output(&extract_matched(model_task_output(json!(110), vec!["x"]))).unwrap();
+    assert!(validate_candidates(&wrong_month, &input, &identity()).is_err());
+}

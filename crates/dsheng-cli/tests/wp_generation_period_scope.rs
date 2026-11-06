@@ -19,7 +19,7 @@ fn check_layout(kind: &str) {
         .unwrap();
     let (layout, rows, current, outside, base) = match kind {
         "transposed" => (
-            json!({"transposed":{"header_row":1,"metric_columns":[[1,"销售额"]],"period_rows":[[2,"2026-10-02/2026-10-02"],[3,"2026-10-03/2026-10-03"],[4,"2026-10-01/2026-10-01"]],"cumulative_rows":[]}}),
+            json!({"transposed":{"header_row":1,"metric_columns":[[1,"销售额"]],"period_rows":[[1,"2026-10-02/2026-10-02"],[2,"2026-10-03/2026-10-03"],[3,"2026-10-01/2026-10-01"]],"cumulative_rows":[]}}),
             vec![
                 vec!["日期", "销售额"],
                 vec!["2026-10-02", "22"],
@@ -99,14 +99,23 @@ fn check_layout(kind: &str) {
             |r| r.get(0),
         )
         .unwrap();
-    for (key, value) in [(current_key.as_str(), "44"), ("other-period", "333033")] {
-        conn.execute("INSERT INTO manual_inputs(input_id,workspace_id,metric_id,period_key,measure_role,scope_key,value,unit,confirmed,source_note,input_revision,raw_text,created_at,updated_at) VALUES(?1,?2,?3,?4,'actual','all',?5,'元',1,'合成输入',1,?5,'test','test')",params![uuid::Uuid::new_v4().to_string(),f.workspace.to_string(),f.metric_id,key,value]).unwrap();
+    let mut manual_evidence = Vec::new();
+    for (key, value) in [(current_key.as_str(), "44"), ("other-period", "333034")] {
+        let input_id = uuid::Uuid::new_v4().to_string();
+        manual_evidence.push(format!("manual:{input_id}:r1"));
+        conn.execute("INSERT INTO manual_inputs(input_id,workspace_id,metric_id,period_key,measure_role,scope_key,value,unit,confirmed,source_note,input_revision,raw_text,created_at,updated_at) VALUES(?1,?2,?3,?4,'actual','all',?5,'元',1,'合成输入',1,?5,'test','test')",params![input_id,f.workspace.to_string(),f.metric_id,key,value]).unwrap();
     }
-    for (date, value, evidence) in [
-        ("2026-10-02", "22", &ids[0]),
-        ("2026-10-03", "333033", &ids[1]),
+    for (date, value, evidence, manual_id, manual_value) in [
+        ("2026-10-02", "22", &ids[0], &manual_evidence[0], "44"),
+        (
+            "2026-10-03",
+            "333033",
+            &ids[1],
+            &manual_evidence[1],
+            "333034",
+        ),
     ] {
-        conn.execute("INSERT INTO source_conflicts(conflict_id,workspace_id,run_id,metric_id,measure_role,period_from,period_to,scope_key,unit,candidate_values_json,resolution_status,created_at) VALUES(?1,?2,?3,?4,'actual',?5,?5,'all','元',?6,'unresolved','test')",params![uuid::Uuid::new_v4().to_string(),f.workspace.to_string(),f.run_id,f.metric_id,date,json!([{"value":value,"evidence_id":evidence,"source_label":label}]).to_string()]).unwrap();
+        conn.execute("INSERT INTO source_conflicts(conflict_id,workspace_id,run_id,metric_id,measure_role,period_from,period_to,scope_key,unit,candidate_values_json,resolution_status,created_at) VALUES(?1,?2,?3,?4,'actual',?5,?5,'all','元',?6,'unresolved','test')",params![uuid::Uuid::new_v4().to_string(),f.workspace.to_string(),f.run_id,f.metric_id,date,json!([{"value":value,"evidence_id":evidence,"source_label":label},{"value":manual_value,"evidence_id":manual_id,"source_label":"人工输入"}]).to_string()]).unwrap();
     }
     let task = build_task_payload(&conn, f.workspace, &f.run_id, "只分析选定当天", None).unwrap();
     let diagnosis = build_diagnosis_payload(

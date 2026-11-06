@@ -33,7 +33,7 @@ use crate::generation::input::{
     CandidateProjection, ConflictStatusProjection, MetricProjection, ResolutionStatusProjection,
     TaskInputProjection,
 };
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -560,28 +560,14 @@ pub fn validate_candidates(
 // 月度下限复核（§2）
 // ---------------------------------------------------------------------------
 
-/// 目标窗口是否完整自然月。
+/// 目标窗口是否完整月周期（包含自定义月起始日及短月末日钳制）。
 pub fn is_full_month(period: Option<(NaiveDate, NaiveDate)>) -> bool {
-    match period {
-        Some((from, to)) => {
-            from.day() == 1 && from == first_day_of_month(from) && to == last_day_of_month(from)
-        }
-        None => false,
-    }
-}
-
-fn first_day_of_month(d: NaiveDate) -> NaiveDate {
-    NaiveDate::from_ymd_opt(d.year(), d.month(), 1).expect("合法日期")
-}
-
-fn last_day_of_month(d: NaiveDate) -> NaiveDate {
-    let (y, m) = (d.year(), d.month());
-    let next_month_first = if m == 12 {
-        NaiveDate::from_ymd_opt(y + 1, 1, 1).expect("合法日期")
-    } else {
-        NaiveDate::from_ymd_opt(y, m + 1, 1).expect("合法日期")
-    };
-    next_month_first - chrono::Duration::days(1)
+    period.is_some_and(|(from, to)| {
+        (1..=31).any(|day| {
+            let expected = crate::analysis::periods::monthly_period_span(from, day);
+            expected.from == from && expected.to == to
+        })
+    })
 }
 
 /// 候选数值是否可参与下限计算（可比且无未解决冲突）。
@@ -618,8 +604,12 @@ pub fn check_monthly_floor(
     use crate::generation::input::TargetConstraintScopeProjection as Scope;
     match metric.target_constraint_scope {
         Scope::MonthlyRevenueFloor => {
-            if !is_full_month(task.target_period) {
-                // 非完整月不套月度下限 → 仅显式目标
+            let approved_month = input.period.target_grain
+                == crate::generation::input::CadenceProjection::Month
+                && task.target_period == Some((input.period.target_from, input.period.target_to))
+                && is_full_month(task.target_period);
+            if !approved_month {
+                // 非获准完整月周期不套月度下限 → 仅显式目标
                 return check_explicit_only(task, Some(metric));
             }
             let mut candidates: Vec<(&str, rust_decimal::Decimal)> = Vec::new();

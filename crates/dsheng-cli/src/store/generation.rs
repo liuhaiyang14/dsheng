@@ -724,7 +724,7 @@ pub fn build_task_payload(
         .collect();
     let target_period = snapshot
         .target_period
-        .unwrap_or_else(|| next_month(snapshot.period_to));
+        .unwrap_or_else(|| next_month(snapshot.period_to, snapshot.month_start_day));
     let optional_diagnosis_reference = optional_report.map(|report| OptionalDiagnosisReference {
         report_id: report
             .get("report_id")
@@ -884,15 +884,12 @@ fn material_of(
     }
 }
 
-fn next_month(d: chrono::NaiveDate) -> dsheng_core::contracts::domain::DateRange {
-    use chrono::Datelike;
-    let (y, m) = if d.month() == 12 {
-        (d.year() + 1, 1)
-    } else {
-        (d.year(), d.month() + 1)
-    };
-    dsheng_core::analysis::periods::natural_month_span(
-        chrono::NaiveDate::from_ymd_opt(y, m, 1).unwrap_or(d),
+fn next_month(d: chrono::NaiveDate, month_start_day: u32) -> DateRange {
+    // 使用保存的策略推进完整月周期，短月须始终保留原起始日（例如 31）。
+    let current = dsheng_core::analysis::periods::monthly_period_span(d, month_start_day);
+    dsheng_core::analysis::periods::monthly_period_span(
+        current.to.succ_opt().unwrap_or(d),
+        month_start_day,
     )
 }
 
@@ -900,17 +897,18 @@ struct RunSnapshot {
     period_from: chrono::NaiveDate,
     period_to: chrono::NaiveDate,
     target_period: Option<dsheng_core::contracts::domain::DateRange>,
+    month_start_day: u32,
     policy_version: String,
     metrics: Value,
 }
 
 fn load_snapshot(conn: &Connection, run_id: &str, revision: u32) -> CliResult<RunSnapshot> {
-    let (normalized_raw, policy_raw): (String, String) = conn
+    let (normalized_raw, policy_raw, action_period_raw): (String, String, Option<String>) = conn
         .query_row(
-            "SELECT normalized_metrics_json, period_policy_snapshot_json FROM run_revisions
+            "SELECT normalized_metrics_json, period_policy_snapshot_json, action_period_snapshot_json FROM run_revisions
              WHERE run_id = ?1 AND revision_no = ?2",
             params![run_id, revision as i64],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "run revision 不存在"))?;
     let normalized: Value = serde_json::from_str(&normalized_raw)
@@ -924,7 +922,17 @@ fn load_snapshot(conn: &Connection, run_id: &str, revision: u32) -> CliResult<Ru
             .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()),
         period_to: parse_d(normalized["period"]["to"].as_str())
             .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()),
-        target_period: None,
+        target_period: action_period_raw
+            .map(|raw| {
+                let value: Value =
+                    serde_json::from_str(&raw).map_err(|_| source_scope_unavailable())?;
+                json_period(&value, "from", "to").ok_or_else(source_scope_unavailable)
+            })
+            .transpose()?,
+        month_start_day: policy["month_start_day"]
+            .as_u64()
+            .filter(|day| (1..=31).contains(day))
+            .unwrap_or(1) as u32,
         policy_version: policy
             .get("version")
             .and_then(|v| v.as_u64())
@@ -1246,7 +1254,8 @@ fn constrain_period_cells<'a>(
                 if let (Some(row), Some(period)) =
                     (pair[0].as_u64(), pair[1].as_str().and_then(source_period))
                 {
-                    row_periods.insert(row as usize, period);
+                    // TransposedTrendLayout stores data rows as zero-based indexes.
+                    row_periods.insert(row as usize + 1, period);
                 }
             }
         }
