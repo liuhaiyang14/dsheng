@@ -131,7 +131,7 @@ pub const HEADER_ROW: u32 = 5;
 /// 写元数据块（§5 精确位置；空元数据留空）。
 pub fn write_metadata(ws: &mut Worksheet, data: &ExportData) -> ExportResult<()> {
     let m = &data.meta;
-    let pairs: [(u32, u16, &str, String); 14] = [
+    let pairs: [(u32, u16, &str, String); 15] = [
         (
             0,
             0,

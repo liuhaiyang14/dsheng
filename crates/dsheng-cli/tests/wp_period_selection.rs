@@ -228,7 +228,7 @@ fn manual_values_are_bound_to_the_exact_analysis_period_key() {
         range,
         "全公司",
     );
-    conn.execute("INSERT INTO manual_inputs (input_id, workspace_id, metric_id, period_key, measure_role, scope_key, value, unit, confirmed, source_note, input_revision, created_at, updated_at) VALUES (?1,?2,?3,?4,'plan','全公司','50','元',1,'本地测试',1,'t','t')", params![uuid::Uuid::new_v4().to_string(),f.workspace.to_string(),f.metric_id,period_key]).unwrap();
+    conn.execute("INSERT INTO manual_inputs (input_id, workspace_id, metric_id, period_key, measure_role, scope_key, value, unit, confirmed, source_note, input_revision, raw_text, created_at, updated_at) VALUES (?1,?2,?3,?4,'plan','全公司','50','元',1,'本地测试',1,'50','t','t')", params![uuid::Uuid::new_v4().to_string(),f.workspace.to_string(),f.metric_id,period_key]).unwrap();
     let day1 = analyze(&mut conn, &f, dir.path(), "2026-10-01", "2026-10-01", "day");
     assert!(sales(&day1)["target_value"].is_null(), "5日目标不能跑到1日");
     let day5 = analyze(&mut conn, &f, dir.path(), "2026-10-05", "2026-10-05", "day");

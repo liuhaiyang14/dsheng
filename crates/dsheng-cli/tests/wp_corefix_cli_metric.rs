@@ -96,12 +96,13 @@ fn stable_identity_survives_version_bump_and_projects_into_model_input() {
         "INSERT INTO manual_inputs (input_id, workspace_id, metric_id, period_key, measure_role,
                 scope_key, value, unit, confirmed, source_note, input_revision, raw_text,
                 created_at, updated_at)
-         VALUES (?3, ?1, ?2, '2026-10', 'actual', '全公司', '100.5', '元', 1, '备注', 1,
+         VALUES (?3, ?1, ?2, (SELECT period_key FROM analysis_runs WHERE run_id = ?4), 'actual', '全公司', '100.5', '元', 1, '备注', 1,
                  '原文', 't', 't')",
         rusqlite::params![
             f.workspace.to_string(),
             v2_row_id,
-            uuid::Uuid::new_v4().to_string()
+            uuid::Uuid::new_v4().to_string(),
+            f.run_id
         ],
     )
     .unwrap();
