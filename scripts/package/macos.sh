@@ -214,11 +214,29 @@ echo "$ZL" | grep -E "$FORBIDDEN_RE" >/dev/null \
 
 # ---------------------------------------------------------------- 6. DMG 收集
 log "6/6 收集 DMG"
-TAURI_DMG="$(ls "$REPO_ROOT"/src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg 2>/dev/null | head -1 || true)"
-[ -n "$TAURI_DMG" ] || die "bundle/dmg 下未找到 .dmg"
+DMG_MATCHES=("$REPO_ROOT/src-tauri/target/$TARGET/release/bundle/dmg/dsheng_${VERSION}_"*.dmg)
+[ "${#DMG_MATCHES[@]}" -eq 1 ] && [ -f "${DMG_MATCHES[0]}" ] \
+  || die "未找到唯一的当前版本 DMG：dsheng_${VERSION}_*.dmg"
+TAURI_DMG="${DMG_MATCHES[0]}"
 DMG_OUT="$DIST_DIR/dsheng_${VERSION}_macos_${ARCH}.dmg"
 cp "$TAURI_DMG" "$DMG_OUT"
 hdiutil imageinfo "$DMG_OUT" >/dev/null || die "DMG 校验失败（hdiutil imageinfo）"
+# 不启动应用；只读挂载核对内装版本与刚构建的可执行，防止旧包改名后误交付。
+verify_dmg_contents() (
+  DMG_MOUNT="$(mktemp -d "${TMPDIR:-/tmp}/dsheng-dmg-check.XXXXXX")"
+  trap 'hdiutil detach "$DMG_MOUNT" >/dev/null 2>&1 || true; rmdir "$DMG_MOUNT" 2>/dev/null || true' EXIT
+  hdiutil attach -readonly -nobrowse -mountpoint "$DMG_MOUNT" "$DMG_OUT" >/dev/null \
+    || die "无法只读挂载 DMG"
+  DMG_APP="$DMG_MOUNT/dsheng.app"
+  DMG_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$DMG_APP/Contents/Info.plist")"
+  DMG_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$DMG_APP/Contents/Info.plist")"
+  [ "$DMG_VERSION" = "$VERSION" ] || die "DMG 内版本 $DMG_VERSION != $VERSION"
+  [ "$DMG_IDENTIFIER" = "$IDENT" ] || die "DMG 内应用标识不匹配"
+  cmp -s "$DMG_APP/Contents/MacOS/$EXEC_NAME" "$APP_BUNDLE/Contents/MacOS/$EXEC_NAME" \
+    || die "DMG 内可执行与本次构建不一致"
+  log "  DMG 内版本及可执行核对通过：$DMG_VERSION / $DMG_IDENTIFIER"
+)
+verify_dmg_contents
 
 # ---------------------------------------------------------------- 输出摘要
 rm -rf "$DIST_DIR/stage"
