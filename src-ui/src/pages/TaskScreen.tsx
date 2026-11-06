@@ -35,6 +35,9 @@ function cycleRoleOf(task: TaskView, periodEnd: string): 'review' | 'plan' {
 
 function friendlyError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
+  if (raw.includes('所选诊断报告引用的证据不在本次可发送范围')) {
+    return '所选报告的部分证据不在本次可发送范围，无法引用。请取消勾选“引用本期已保存的诊断报告”后继续，或选择其他可用报告。';
+  }
   if (/PROVIDER_REQUIRED|No explicit\/default provider|未.*默认 Provider/i.test(raw)) {
     return `本档案尚未配置默认 Provider——请到「Provider 设置」填写 Base URL／模型／API Key（Key 仅存本机），并点「设为默认」后回来重试。（${raw}）`;
   }
@@ -78,6 +81,7 @@ export function TaskScreen() {
   const [useReport, setUseReport] = useState(false);
   const [reportId, setReportId] = useState('');
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [preview, setPreview] = useState<ConfirmationPreview | null>(null);
   /** 确认后保留指纹供 reconcile 使用。 */
   const [lastFingerprint, setLastFingerprint] = useState<string>('');
@@ -97,10 +101,11 @@ export function TaskScreen() {
     app.setContextLock(sending
       ? '正在生成任务；请等待完成或在生成弹窗停止后再切换企业、期间或页面。'
       : candidate ? '本页有待应用的任务候选，请先应用或暂时收起，再切换企业、期间或页面。'
-        : createOpen ? '正在填写新任务，请先保存或关闭后再切换企业、期间或页面。'
-          : selectedTaskId ? '请先关闭任务详情，再切换企业、期间或页面。' : null);
+        : generateModalOpen ? '请先完成发送预览或关闭生成任务弹窗，再切换企业、期间或页面。'
+          : createOpen ? '正在填写新任务，请先保存或关闭后再切换企业、期间或页面。'
+            : selectedTaskId ? '请先关闭任务详情，再切换企业、期间或页面。' : null);
     return () => app.setContextLock(null);
-  }, [app.setContextLock, sending, candidate, createOpen, selectedTaskId]);
+  }, [app.setContextLock, sending, candidate, generateModalOpen, createOpen, selectedTaskId]);
 
   // 进入页面：只读加载诊断报告列表（供生成预览选择），绝不触发生成。
   useEffect(() => {
@@ -154,13 +159,16 @@ export function TaskScreen() {
       setNotice('请先为当前企业档案导入数据并完成字段映射。');
       return;
     }
+    setPreviewError(null);
+    setNotice(null);
     setGenerateModalOpen(true);
   };
 
   /** 显式按钮第二步：请求发送预览。 */
   const requestPreview = async () => {
-    if (!app.client || !app.activeWorkspaceId || !runId || historical || sending || app.loading) return;
+    if (!app.client || !app.activeWorkspaceId || !runId || historical || sending || app.loading || busy) return;
     setBusy(true);
+    setPreviewError(null);
     setNotice(null);
     try {
       const p = await app.client.taskGeneratePreview({
@@ -173,7 +181,7 @@ export function TaskScreen() {
       setLastFingerprint(p.analysis_input_fingerprint);
       setGenerateModalOpen(false);
     } catch (err) {
-      setNotice(friendlyError(err));
+      setPreviewError(friendlyError(err));
     } finally {
       setBusy(false);
     }
@@ -572,7 +580,7 @@ export function TaskScreen() {
 
       {generateModalOpen ? (
         <div className="modal-scrim" data-testid="generate-param-modal">
-          <div className="modal" role="dialog" aria-label="生成任务单参数">
+          <div className="modal" role="dialog" aria-modal="true" aria-label="生成任务单参数" aria-busy={busy}>
             <div className="modal-head">
               <div>
                 <h3>生成任务单</h3>
@@ -582,6 +590,7 @@ export function TaskScreen() {
               </div>
             </div>
             <div className="modal-body">
+              {previewError ? <div className="notice risk" role="alert" style={{ marginBottom: 16 }}>{previewError}</div> : null}
               {reports.length > 0 ? (
                 <>
                   <label style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
@@ -589,7 +598,8 @@ export function TaskScreen() {
                       type="checkbox"
                       className="check"
                       checked={useReport}
-                      onChange={(e) => setUseReport(e.target.checked)}
+                      onChange={(e) => { setUseReport(e.target.checked); setPreviewError(null); }}
+                      disabled={busy}
                     />
                     引用本期已保存的诊断报告（可选）
                   </label>
@@ -597,8 +607,8 @@ export function TaskScreen() {
                     className="select"
                     aria-label="引用报告"
                     value={reportId}
-                    onChange={(e) => setReportId(e.target.value)}
-                    disabled={!useReport}
+                    onChange={(e) => { setReportId(e.target.value); setPreviewError(null); }}
+                    disabled={!useReport || busy}
                   >
                     {reports.map((r) => (
                       <option key={r.report_id} value={r.report_id}>
@@ -616,7 +626,7 @@ export function TaskScreen() {
               )}
             </div>
             <div className="modal-actions">
-              <button type="button" className="outline" onClick={() => setGenerateModalOpen(false)}>
+              <button type="button" className="outline" disabled={busy} onClick={() => setGenerateModalOpen(false)}>
                 取消
               </button>
               <button
@@ -626,7 +636,7 @@ export function TaskScreen() {
                 disabled={busy}
                 data-testid="request-task-preview"
               >
-                下一步：发送预览
+                {busy ? '正在准备预览…' : '下一步：发送预览'}
               </button>
             </div>
           </div>
