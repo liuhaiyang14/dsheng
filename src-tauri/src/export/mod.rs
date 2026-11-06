@@ -73,7 +73,13 @@ pub struct PolicyMeta {
     pub cadence: String,
     pub timezone_id: String,
     pub week_start_day: u32,
+    #[serde(default = "default_month_start_day")]
+    pub month_start_day: u32,
     pub fiscal_year_start_month: u32,
+}
+
+fn default_month_start_day() -> u32 {
+    1
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

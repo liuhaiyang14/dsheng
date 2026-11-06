@@ -369,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_0002_to_0003_preserves_providers_and_relaxes_stream() {
+    fn upgrade_0002_to_current_preserves_providers_and_relaxes_stream() {
         let dir = tempfile::tempdir().unwrap();
         let paths = paths_in(dir.path());
         // 建 v2 库（0001+0002；providers 仍带 CHECK (stream = 0)）
@@ -418,9 +418,12 @@ mod tests {
         )
         .unwrap();
         guard2.release();
-        assert_eq!(v, 3);
+        assert_eq!(v, super::super::CURRENT_SCHEMA_VERSION);
         let conn = Connection::open(&paths.db_path).unwrap();
-        assert_eq!(read_schema_version(&conn).unwrap(), Some(3));
+        assert_eq!(
+            read_schema_version(&conn).unwrap(),
+            Some(super::super::CURRENT_SCHEMA_VERSION)
+        );
         // providers 数据保留（含 api_key/revision），stream 回填 0
         let (name, key, stream, revision): (String, Option<String>, i64, i64) = conn
             .query_row(
@@ -616,11 +619,12 @@ mod tests {
         )
         .unwrap();
         guard.release();
-        // 伪装 db schema=3 > 客户端 read_max=2
+        // 伪装未来数据库版本，高于当前和旧客户端支持范围
         let conn = Connection::open(&paths.db_path).unwrap();
+        let future_version = super::super::CURRENT_SCHEMA_VERSION + 1;
         conn.execute(
-            "INSERT INTO app_schema_metadata (schema_version, migration_state, applied_at) VALUES (3, 'applied', 't')",
-            [],
+            "INSERT INTO app_schema_metadata (schema_version, migration_state, applied_at) VALUES (?1, 'applied', 't')",
+            [future_version],
         )
         .unwrap();
         drop(conn);
@@ -633,9 +637,9 @@ mod tests {
             open_with_negotiation(&paths, old_client).unwrap_err(),
             MigrationError::SchemaUnsupported
         );
-        // 自动降级=false：db 里 3 仍在
+        // 自动降级=false：未来版本号仍在
         let conn = Connection::open(&paths.db_path).unwrap();
-        assert_eq!(read_schema_version(&conn).unwrap(), Some(3));
+        assert_eq!(read_schema_version(&conn).unwrap(), Some(future_version));
     }
 
     #[test]

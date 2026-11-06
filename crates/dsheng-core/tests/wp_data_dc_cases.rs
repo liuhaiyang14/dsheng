@@ -532,6 +532,7 @@ fn dispatch(case: &Value) -> Value {
                 timezone_id: DEFAULT_TIMEZONE.into(),
                 grain: Granularity::Month,
                 week_start_day: 1,
+                month_start_day: 1,
                 fiscal_year_start_month: 1,
             };
             let comparable =
@@ -547,6 +548,7 @@ fn dispatch(case: &Value) -> Value {
                 timezone_id: DEFAULT_TIMEZONE.into(),
                 grain: Granularity::Week,
                 week_start_day: w as u32,
+                month_start_day: 1,
                 fiscal_year_start_month: 1,
             };
             match signatures_compatible(

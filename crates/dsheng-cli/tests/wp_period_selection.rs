@@ -281,3 +281,87 @@ fn desktop_selection_requires_one_natural_bucket_using_current_system_grain() {
     )
     .is_err());
 }
+
+#[test]
+fn configured_month_start_controls_scan_guard_totals_and_comparisons() {
+    let f = Fixture::new("custom-month-bucket");
+    let dir = tempfile::tempdir().unwrap();
+    daily_file(dir.path());
+    let mut conn = Connection::open(&f.db).unwrap();
+    conn.execute(
+        "UPDATE period_policies SET month_start_day=15 WHERE workspace_id=?1",
+        [f.workspace.to_string()],
+    )
+    .unwrap();
+    let scan = sources::scan_summary_desktop(&mut conn, f.workspace, &dir.path().to_string_lossy())
+        .unwrap();
+    assert_eq!(
+        scan["available_periods"],
+        json!([
+            {"from":"2026-09-15","to":"2026-10-14","grain":"month"},
+            {"from":"2026-10-15","to":"2026-11-14","grain":"month"}
+        ])
+    );
+    assert!(sources::validate_desktop_analysis_period(
+        &conn,
+        f.workspace,
+        "2026-10-15",
+        "2026-11-14",
+        "month"
+    )
+    .is_ok());
+    assert!(sources::validate_desktop_analysis_period(
+        &conn,
+        f.workspace,
+        "2026-10-01",
+        "2026-10-31",
+        "month"
+    )
+    .is_err());
+    let view = analyze(
+        &mut conn,
+        &f,
+        dir.path(),
+        "2026-10-15",
+        "2026-11-14",
+        "month",
+    );
+    let metric = sales(&view);
+    assert_eq!(metric["actual_value"], "100");
+    assert_eq!(metric["mom"]["base_value"], "6");
+    assert_eq!(metric["mom"]["base_from"], "2026-09-15");
+    assert_eq!(metric["mom"]["base_to"], "2026-10-14");
+    assert_eq!(metric["yoy"]["base_from"], "2025-10-15");
+    assert_eq!(metric["yoy"]["base_to"], "2025-11-14");
+    let saved: String = conn.query_row("SELECT period_policy_snapshot_json FROM run_revisions WHERE run_id=?1 AND revision_no=1", [view["run_id"].as_str().unwrap()],|row|row.get(0)).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Value>(&saved).unwrap()["month_start_day"],
+        15
+    );
+}
+
+#[test]
+fn setting_month_start_creates_new_policy_and_preserves_old_default() {
+    let f = Fixture::new("custom-month-setting");
+    let mut conn = Connection::open(&f.db).unwrap();
+    let before = dsheng_cli::store::settings::list_policies(&conn, f.workspace).unwrap();
+    assert_eq!(before[0]["policy"]["month_start_day"], 1);
+    let op = dsheng_cli::jsonio::parse_settings_operation(json!({"schema_version":"1","operation":"period_policy_set", "workspace_id":f.workspace,"expected_revision":1, "policy":{"cadence":"month","month_start_day":31,"effective_from":"2026-11-01"}})).unwrap();
+    let changed =
+        dsheng_cli::store::settings::apply_settings_operation(&mut conn, &op, None).unwrap();
+    assert_eq!(changed["policy"]["policy"]["month_start_day"], 31);
+    assert_eq!(changed["policy"]["version"], 2);
+    let after = dsheng_cli::store::settings::list_policies(&conn, f.workspace).unwrap();
+    assert_eq!(after.len(), 2);
+    assert_eq!(after[0]["policy"]["month_start_day"], 1);
+    assert_eq!(after[0]["period_policy_id"], before[0]["period_policy_id"]);
+    for invalid in [0, 32] {
+        assert!(dsheng_cli::jsonio::parse_settings_operation(json!({"schema_version":"1","operation":"period_policy_set", "workspace_id":f.workspace,"expected_revision":2,"policy":{"cadence":"month","month_start_day":invalid,"effective_from":"2026-12-01"}})).is_err());
+    }
+    assert_eq!(
+        dsheng_cli::store::settings::list_policies(&conn, f.workspace)
+            .unwrap()
+            .len(),
+        2
+    );
+}

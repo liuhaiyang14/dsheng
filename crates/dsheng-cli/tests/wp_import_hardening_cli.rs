@@ -1018,14 +1018,26 @@ fn transposed_trend_hits_trend_and_observes_periods_as_rows() {
     let label = "cell:合成转置推移表.xlsx:推移表";
     assert_eq!(
         evidence,
-        vec![
-            format!("{label}:B2"),
-            format!("{label}:B3"),
-            format!("{label}:B6"), // 累计行（期间键序 2026-01-01/2026-10-31）
-            format!("{label}:B4"),
-            format!("{label}:B5"),
-        ]
+        vec![format!("{label}:B4"), format!("{label}:B5")],
+        "环比只引用当前10月及基期9月"
     );
+    let yoy: Vec<&str> = sales_metric["yoy"]["evidence_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert_eq!(
+        yoy,
+        vec![format!("{label}:B5")],
+        "缺失去年10月时不混入去年7/8月或累计值"
+    );
+    for unrelated in ["B2", "B3", "B6"] {
+        assert!(!evidence
+            .iter()
+            .chain(yoy.iter())
+            .any(|id| id.ends_with(unrelated)));
+    }
     std::fs::remove_dir_all(&env.dir).ok();
 }
 

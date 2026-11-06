@@ -155,6 +155,12 @@ pub fn write_metadata(ws: &mut Worksheet, data: &ExportData) -> ExportResult<()>
         (3, 2, "week_start_day", m.policy.week_start_day.to_string()),
         (
             3,
+            10,
+            "month_start_day",
+            m.policy.month_start_day.to_string(),
+        ),
+        (
+            3,
             4,
             "fiscal_year_start_month",
             m.policy.fiscal_year_start_month.to_string(),

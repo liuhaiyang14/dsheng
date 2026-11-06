@@ -209,6 +209,7 @@ pub fn build_export_data(
                 .unwrap_or("Asia/Shanghai")
                 .to_string(),
             week_start_day: policy["week_start_day"].as_u64().unwrap_or(1) as u32,
+            month_start_day: policy["month_start_day"].as_u64().unwrap_or(1) as u32,
             fiscal_year_start_month: policy["fiscal_year_start_month"].as_u64().unwrap_or(1) as u32,
         },
         currency,

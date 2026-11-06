@@ -61,6 +61,7 @@ pub struct PeriodPolicyRecord {
     pub effective_from: chrono::NaiveDate,
     pub effective_to: Option<chrono::NaiveDate>,
     pub week_start_day: u32,
+    pub month_start_day: u32,
     pub fiscal_year_start_month: u32,
     pub timezone_id: String,
 }
@@ -103,13 +104,13 @@ pub fn register_period_policy(
     conn.execute(
         "INSERT INTO period_policies
            (period_policy_id, workspace_id, version, cadence, effective_from, effective_to,
-            week_start_day, fiscal_year_start_month, timezone_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            week_start_day, fiscal_year_start_month, timezone_id, created_at, month_start_day)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT(workspace_id, version) DO UPDATE SET
             cadence=excluded.cadence, effective_from=excluded.effective_from,
             effective_to=excluded.effective_to, week_start_day=excluded.week_start_day,
             fiscal_year_start_month=excluded.fiscal_year_start_month,
-            timezone_id=excluded.timezone_id",
+            timezone_id=excluded.timezone_id, month_start_day=excluded.month_start_day",
         params![
             record.period_policy_id,
             workspace_id,
@@ -122,7 +123,8 @@ pub fn register_period_policy(
             record.week_start_day,
             record.fiscal_year_start_month,
             record.timezone_id,
-            now
+            now,
+            record.month_start_day
         ],
     )?;
     Ok(())
@@ -522,6 +524,7 @@ mod tests {
             effective_from: chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
             effective_to: Some(chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap()),
             week_start_day: 1,
+            month_start_day: 1,
             fiscal_year_start_month: 1,
             timezone_id: "Asia/Shanghai".into(),
         };
@@ -562,6 +565,7 @@ mod tests {
                 effective_from: chrono::NaiveDate::from_ymd_opt(1900, 1, 1).unwrap(),
                 effective_to: Some(chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap()),
                 week_start_day: 1,
+                month_start_day: 1,
                 fiscal_year_start_month: 1,
                 timezone_id: "Asia/Shanghai".into(),
             },
@@ -577,6 +581,7 @@ mod tests {
                 effective_from: chrono::NaiveDate::from_ymd_opt(2026, 10, 16).unwrap(),
                 effective_to: None,
                 week_start_day: 1,
+                month_start_day: 1,
                 fiscal_year_start_month: 1,
                 timezone_id: "Asia/Shanghai".into(),
             },

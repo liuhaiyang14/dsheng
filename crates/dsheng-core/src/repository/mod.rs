@@ -82,6 +82,10 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         "0003_stream_flag",
         include_str!("../../migrations/0003_stream_flag.sql"),
     ),
+    (
+        "0004_month_start_day",
+        include_str!("../../migrations/0004_month_start_day.sql"),
+    ),
 ];
 
 /// 当前 schema 版本（= MIGRATIONS 长度）。
@@ -116,6 +120,41 @@ pub fn apply_migrations(conn: &Connection, app_version: &str) -> rusqlite::Resul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn migration_0004_defaults_old_policies_without_changing_identity() {
+        let conn = Connection::open_in_memory().unwrap();
+        for (_, sql) in &MIGRATIONS[..3] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute("INSERT INTO app_schema_metadata (schema_version,migration_state,applied_at) VALUES (3,'applied','t')", []).unwrap();
+        conn.execute("INSERT INTO workspaces (workspace_id,name,current_period_policy_id,created_at,updated_at) VALUES ('w','local','p','t','t')",[]).unwrap();
+        conn.execute("INSERT INTO period_policies (period_policy_id,workspace_id,version,cadence,effective_from,created_at) VALUES ('p','w',1,'month','2026-01-01','t')",[]).unwrap();
+        assert_eq!(
+            apply_migrations(&conn, "test").unwrap(),
+            CURRENT_SCHEMA_VERSION
+        );
+        let policy: (String, i64, i64) = conn
+            .query_row(
+                "SELECT period_policy_id,version,month_start_day FROM period_policies",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(policy, ("p".into(), 1, 1));
+        for invalid in [0, 32] {
+            assert!(conn
+                .execute("UPDATE period_policies SET month_start_day=?1", [invalid])
+                .is_err());
+        }
+        conn.execute("UPDATE period_policies SET month_start_day=31", [])
+            .unwrap();
+        assert_eq!(
+            apply_migrations(&conn, "test").unwrap(),
+            CURRENT_SCHEMA_VERSION,
+            "幂等迁移"
+        );
+    }
 
     #[test]
     fn migrations_apply_on_empty_db() {

@@ -111,7 +111,7 @@ fn parse_cadence(raw: &str) -> Cadence {
 pub fn policy_view(conn: &Connection, period_policy_id: &str) -> CliResult<serde_json::Value> {
     conn.query_row(
         "SELECT period_policy_id, workspace_id, version, cadence, effective_from, effective_to,
-                week_start_day, fiscal_year_start_month, timezone_id, created_at
+                week_start_day, fiscal_year_start_month, timezone_id, created_at, month_start_day
          FROM period_policies WHERE period_policy_id = ?1",
         params![period_policy_id],
         map_policy_row,
@@ -128,6 +128,7 @@ fn map_policy_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> 
         "policy": {
             "cadence": cadence,
             "week_start_day": r.get::<_, i64>(6)?,
+            "month_start_day": r.get::<_, i64>(10)?,
             "fiscal_year_start_month": r.get::<_, i64>(7)?,
             "timezone_id": r.get::<_, String>(8)?,
             "effective_from": r.get::<_, String>(4)?,
@@ -140,7 +141,7 @@ fn map_policy_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<serde_json::Value> 
 pub fn list_policies(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<serde_json::Value>> {
     let mut stmt = conn.prepare(
         "SELECT period_policy_id, workspace_id, version, cadence, effective_from, effective_to,
-                week_start_day, fiscal_year_start_month, timezone_id, created_at
+                week_start_day, fiscal_year_start_month, timezone_id, created_at, month_start_day
          FROM period_policies WHERE workspace_id = ?1 ORDER BY effective_from",
     )?;
     let rows = stmt.query_map(params![workspace_id.to_string()], map_policy_row)?;
@@ -194,6 +195,7 @@ fn insert_policy(
             )
             .ok(),
             week_start_day: policy.week_start_day as u32,
+            month_start_day: policy.month_start_day as u32,
             fiscal_year_start_month: policy.fiscal_year_start_month as u32,
             timezone_id: policy.timezone_id.clone(),
         },
@@ -331,8 +333,8 @@ fn apply_in_tx(
             tx.execute(
                 "INSERT INTO period_policies (period_policy_id, workspace_id, version, cadence,
                         effective_from, effective_to, week_start_day, fiscal_year_start_month,
-                        timezone_id, created_at)
-                 VALUES (?1, ?2, 1, ?3, ?4, NULL, ?5, ?6, ?7, ?8)",
+                        timezone_id, created_at, month_start_day)
+                 VALUES (?1, ?2, 1, ?3, ?4, NULL, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     policy_id,
                     workspace_id.to_string(),
@@ -344,7 +346,8 @@ fn apply_in_tx(
                     initial_period_policy.week_start_day as i64,
                     initial_period_policy.fiscal_year_start_month as i64,
                     initial_period_policy.timezone_id,
-                    now
+                    now,
+                    initial_period_policy.month_start_day
                 ],
             )?;
             Ok(json!({
@@ -388,6 +391,7 @@ fn apply_in_tx(
                 "policy": view,
                 "applied_defaults": {
                     "week_start_day": policy.week_start_day,
+                    "month_start_day": policy.month_start_day,
                     "fiscal_year_start_month": policy.fiscal_year_start_month,
                     "timezone_id": policy.timezone_id,
                 },

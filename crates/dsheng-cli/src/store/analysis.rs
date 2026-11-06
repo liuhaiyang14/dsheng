@@ -938,12 +938,12 @@ pub fn run_analyze(
             policy_explicit.as_deref(),
         )
         .map_err(CliError::from)?;
-    let (week_start, fiscal, tz, cadence): (u32, u32, String, String) = conn
+    let (week_start, fiscal, tz, cadence, month_start): (u32, u32, String, String, u32) = conn
         .query_row(
-            "SELECT week_start_day, fiscal_year_start_month, timezone_id, cadence
+            "SELECT week_start_day, fiscal_year_start_month, timezone_id, cadence, month_start_day
              FROM period_policies WHERE workspace_id = ?1 AND version = ?2",
             params![workspace_id.to_string(), policy_version],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .map_err(|_| CliError::new(CliErrorCode::ContextInvalid, "策略版本不存在"))?;
     let cadence = cadence_of_grain(&cadence);
@@ -960,6 +960,7 @@ pub fn run_analyze(
         .map_err(|_| CliError::invalid("grain 取值非法"))?;
     let policy = CalendarPolicy {
         week_start_day: week_start,
+        month_start_day: month_start,
         fiscal_year_start_month: fiscal,
         timezone_id: tz.clone(),
     };
@@ -1128,12 +1129,12 @@ pub fn run_analyze(
             (
                 "mom",
                 mom_base(window, grain, &policy),
-                "上一完整自然月".to_string(),
+                "上一完整周期".to_string(),
             ),
             (
                 "yoy",
                 yoy_base(window, grain, &policy),
-                "上一年同月".to_string(),
+                "上一年同期".to_string(),
             ),
         ] {
             let Ok(base_period) = base_result else {
@@ -1285,6 +1286,7 @@ pub fn run_analyze(
         period_policy: json!({
             "version": policy_version,
             "week_start_day": week_start,
+            "month_start_day": month_start,
             "fiscal_year_start_month": fiscal,
             "timezone_id": tz,
             // §2 coverage 快照（默认 unknown/empty_days_are_zero=false：缺失≠0）

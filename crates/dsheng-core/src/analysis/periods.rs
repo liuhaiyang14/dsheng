@@ -6,7 +6,7 @@
 //! | --- | --- | --- |
 //! | day | 前 1 当地日 | 上一年同月同日；闰日不存在 → null/`date_not_in_prior_year` |
 //! | week | 全周前移 7 天 | 全周前移 364 天，固定标签“52周同期” |
-//! | month | 前一完整自然月 | 上一年同月 |
+//! | month | 按月度起点配置的前一完整周期 | 上一年同一起点月份的周期 |
 //! | quarter | 前一财季（前 3 月） | 同财年配置前 12 月的财季 |
 //! | custom | 紧接 from 前的等天数范围 | 两端减 1 年均存在且总天数相同，否则 `prior_year_range_not_comparable` |
 
@@ -25,6 +25,8 @@ pub const DEFAULT_TIMEZONE: &str = "Asia/Shanghai";
 pub struct CalendarPolicy {
     /// ISO 1–7，默认 1（周一）。
     pub week_start_day: u32,
+    /// 月度周期起始日（1–31）；短月截到月末，下月继续原锚点日号。
+    pub month_start_day: u32,
     /// 财年起月，默认 1。
     pub fiscal_year_start_month: u32,
     /// IANA 时区标识；默认 Asia/Shanghai。
@@ -35,6 +37,7 @@ impl Default for CalendarPolicy {
     fn default() -> Self {
         Self {
             week_start_day: 1,
+            month_start_day: 1,
             fiscal_year_start_month: 1,
             timezone_id: DEFAULT_TIMEZONE.to_string(),
         }
@@ -112,6 +115,30 @@ pub fn natural_month_span(d: NaiveDate) -> DateRange {
     }
 }
 
+/// 指定起点月份的月度周期。每个端点独立按原始日号钳制，不沿上月日期漂移。
+fn month_span_from_anchor(year: i32, month: u32, month_start_day: u32) -> DateRange {
+    fn anchor(year: i32, month: u32, day: u32) -> NaiveDate {
+        let last = month_last(year, month).expect("有效月份");
+        NaiveDate::from_ymd_opt(year, month, day.min(last.day())).expect("月度起点日为1至31")
+    }
+    let (next_year, next_month) = month_add(year, month, 1);
+    DateRange {
+        from: anchor(year, month, month_start_day),
+        to: anchor(next_year, next_month, month_start_day) - Duration::days(1),
+    }
+}
+
+/// 日期所属月度周期；标签归属区间起点所在月，不按截止月命名。
+pub fn monthly_period_span(date: NaiveDate, month_start_day: u32) -> DateRange {
+    let current = month_span_from_anchor(date.year(), date.month(), month_start_day);
+    if date >= current.from {
+        current
+    } else {
+        let (year, month) = month_add(date.year(), date.month(), -1);
+        month_span_from_anchor(year, month, month_start_day)
+    }
+}
+
 /// 财季区间：返回（财年起始年 FY、季度序号 1–4、区间）。
 ///
 /// FY 按起始年命名（§3.1）：财年 2026-04 起的 2027-01 属 FY2026 Q4。
@@ -153,7 +180,7 @@ pub fn check_full_coverage(
             }
         }
         Granularity::Month => {
-            if natural_month_span(range.from) == range && natural_month_span(range.to) == range {
+            if monthly_period_span(range.from, policy.month_start_day) == range {
                 Ok(())
             } else {
                 Err(CalendarReason::PartialPeriod)
@@ -189,10 +216,7 @@ pub fn mom_base(
         },
         Granularity::Month => {
             let (py, pm) = month_add(range.from.year(), range.from.month(), -1);
-            DateRange {
-                from: month_first(py, pm).expect("自然月"),
-                to: month_last(py, pm).expect("自然月"),
-            }
+            month_span_from_anchor(py, pm, policy.month_start_day)
         }
         Granularity::Quarter => {
             // 前一财季 = 本财季起点前移 3 个自然月
@@ -242,14 +266,14 @@ pub fn yoy_base(
             },
             label: Some(FIFTY_TWO_WEEK_LABEL),
         }),
-        Granularity::Month => {
-            let from = shift_year(range.from).ok_or(CalendarReason::InvalidDate)?;
-            let to = shift_year(range.to).ok_or(CalendarReason::InvalidDate)?;
-            Ok(BasePeriod {
-                range: DateRange { from, to },
-                label: None,
-            })
-        }
+        Granularity::Month => Ok(BasePeriod {
+            range: month_span_from_anchor(
+                range.from.year() - 1,
+                range.from.month(),
+                policy.month_start_day,
+            ),
+            label: None,
+        }),
         Granularity::Quarter => {
             // 同财年配置前 12 月的财季：财季起点年-1，季内月序不变
             let (_, _, span) = fiscal_quarter_span(range.from, policy.fiscal_year_start_month);
@@ -409,6 +433,7 @@ pub struct ComparisonSignature {
     pub timezone_id: String,
     pub grain: Granularity,
     pub week_start_day: u32,
+    pub month_start_day: u32,
     pub fiscal_year_start_month: u32,
 }
 
@@ -426,6 +451,9 @@ pub fn signatures_compatible(
         return Err(CalendarReason::CalendarMismatch);
     }
     match a.grain {
+        Granularity::Month if a.month_start_day != b.month_start_day => {
+            Err(CalendarReason::CalendarMismatch)
+        }
         Granularity::Week if a.week_start_day != b.week_start_day => {
             Err(CalendarReason::CalendarMismatch)
         }
@@ -514,6 +542,91 @@ mod tests {
 
     fn d(s: &str) -> NaiveDate {
         NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+    }
+
+    #[test]
+    fn monthly_anchor_clamps_each_month_without_drifting() {
+        for (date, day, from, to) in [
+            ("2026-10-14", 15, "2026-09-15", "2026-10-14"),
+            ("2026-10-15", 15, "2026-10-15", "2026-11-14"),
+            ("2023-02-27", 31, "2023-01-31", "2023-02-27"),
+            ("2023-02-28", 31, "2023-02-28", "2023-03-30"),
+            ("2023-03-30", 31, "2023-02-28", "2023-03-30"),
+            ("2023-03-31", 31, "2023-03-31", "2023-04-29"),
+            ("2024-02-29", 31, "2024-02-29", "2024-03-30"),
+            ("2026-01-01", 31, "2025-12-31", "2026-01-30"),
+        ] {
+            assert_eq!(
+                monthly_period_span(d(date), day),
+                DateRange {
+                    from: d(from),
+                    to: d(to)
+                }
+            );
+        }
+        for year in [2023, 2024] {
+            for start in [1, 15, 28, 29, 30, 31] {
+                for month in 1..=12 {
+                    let range = month_span_from_anchor(year, month, start);
+                    let (next_year, next_month) = month_add(year, month, 1);
+                    let next = month_span_from_anchor(next_year, next_month, start);
+                    assert_eq!(range.to + Duration::days(1), next.from, "月桶连续且无重叠");
+                    assert_eq!(range.from.month(), month, "标签归属起点月");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn month_comparisons_use_same_anchor_across_short_and_leap_months() {
+        let policy = CalendarPolicy {
+            month_start_day: 31,
+            ..Default::default()
+        };
+        let current = monthly_period_span(d("2024-03-01"), 31);
+        assert_eq!(
+            current,
+            DateRange {
+                from: d("2024-02-29"),
+                to: d("2024-03-30")
+            }
+        );
+        assert_eq!(
+            mom_base(current, Granularity::Month, &policy)
+                .unwrap()
+                .range,
+            DateRange {
+                from: d("2024-01-31"),
+                to: d("2024-02-28")
+            }
+        );
+        assert_eq!(
+            yoy_base(current, Granularity::Month, &policy)
+                .unwrap()
+                .range,
+            DateRange {
+                from: d("2023-02-28"),
+                to: d("2023-03-30")
+            }
+        );
+        let ordinary = monthly_period_span(d("2024-02-01"), 1);
+        assert_eq!(
+            yoy_base(ordinary, Granularity::Month, &CalendarPolicy::default())
+                .unwrap()
+                .range,
+            DateRange {
+                from: d("2023-02-01"),
+                to: d("2023-02-28")
+            }
+        );
+        assert_eq!(
+            check_full_coverage(
+                natural_month_span(d("2024-02-01")),
+                Granularity::Month,
+                &policy
+            ),
+            Err(CalendarReason::PartialPeriod)
+        );
     }
 
     #[test]
@@ -640,6 +753,7 @@ mod tests {
                 timezone_id: DEFAULT_TIMEZONE.into(),
                 grain,
                 week_start_day: week_start,
+                month_start_day: 1,
                 fiscal_year_start_month: 1,
             }
         }
@@ -650,6 +764,12 @@ mod tests {
         // month 粒度下周起点差异不参与
         assert!(
             signatures_compatible(&sig(Granularity::Month, 1), &sig(Granularity::Month, 7)).is_ok()
+        );
+        let mut shifted_month = sig(Granularity::Month, 1);
+        shifted_month.month_start_day = 15;
+        assert_eq!(
+            signatures_compatible(&sig(Granularity::Month, 1), &shifted_month),
+            Err(CalendarReason::CalendarMismatch)
         );
         // quarter 才比较财年起月
         assert_eq!(

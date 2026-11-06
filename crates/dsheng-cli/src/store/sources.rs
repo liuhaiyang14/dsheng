@@ -9,7 +9,7 @@
 
 use crate::error::{CliError, CliResult};
 use chrono::{Datelike, Duration, NaiveDate};
-use dsheng_core::analysis::periods::{fiscal_quarter_span, natural_month_span, CalendarPolicy};
+use dsheng_core::analysis::periods::{fiscal_quarter_span, monthly_period_span, CalendarPolicy};
 use dsheng_core::contracts::cli::CliErrorCode;
 use dsheng_core::contracts::domain::{DateRange, UnitSignature};
 use dsheng_core::contracts::metrics::{
@@ -1331,14 +1331,14 @@ struct AnalysisCalendar {
 
 fn current_analysis_calendar(conn: &Connection, workspace_id: Uuid) -> CliResult<AnalysisCalendar> {
     conn.query_row(
-        "SELECT p.period_policy_id, p.version, p.cadence, p.week_start_day, p.fiscal_year_start_month, p.timezone_id
+        "SELECT p.period_policy_id, p.version, p.cadence, p.week_start_day, p.fiscal_year_start_month, p.timezone_id, p.month_start_day
          FROM workspaces w JOIN period_policies p ON p.period_policy_id = w.current_period_policy_id
          WHERE w.workspace_id = ?1",
         params![workspace_id.to_string()],
         |r| Ok(AnalysisCalendar {
             policy_id: r.get(0)?, version: r.get::<_, i64>(1)?.to_string(), grain: r.get(2)?,
             calendar: CalendarPolicy {
-                week_start_day: r.get(3)?, fiscal_year_start_month: r.get(4)?, timezone_id: r.get(5)?,
+                week_start_day: r.get(3)?, month_start_day: r.get(6)?, fiscal_year_start_month: r.get(4)?, timezone_id: r.get(5)?,
             },
         }),
     ).map_err(CliError::from)
@@ -1350,7 +1350,7 @@ fn analysis_bucket(date: NaiveDate, grain: &str, policy: &CalendarPolicy) -> Cli
             from: date,
             to: date,
         }),
-        "month" => Ok(natural_month_span(date)),
+        "month" => Ok(monthly_period_span(date, policy.month_start_day)),
         "quarter" => Ok(fiscal_quarter_span(date, policy.fiscal_year_start_month).2),
         "week" => {
             let offset = (date.weekday().number_from_monday() + 7 - policy.week_start_day) % 7;

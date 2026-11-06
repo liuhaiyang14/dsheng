@@ -39,6 +39,8 @@ pub const DEFAULT_BUDGET: Budget = Budget {
 pub struct PeriodPolicy {
     pub cadence: Cadence,
     pub week_start_day: u8,
+    #[serde(default = "default_month_start_day")]
+    pub month_start_day: u8,
     pub fiscal_year_start_month: u8,
     pub timezone_id: String,
     pub effective_from: NaiveDate,
@@ -50,18 +52,28 @@ pub struct PeriodPolicy {
 pub struct PeriodPolicyInputDefaults {
     pub cadence: Option<Cadence>,
     pub week_start_day: Option<u8>,
+    pub month_start_day: Option<u8>,
     pub fiscal_year_start_month: Option<u8>,
     pub timezone_id: Option<String>,
     pub effective_from: Option<NaiveDate>,
+}
+
+fn default_month_start_day() -> u8 {
+    1
 }
 
 impl PeriodPolicyInputDefaults {
     /// 仅补本文声明的默认值；返回实际采用值。
     pub fn materialize(self) -> Result<PeriodPolicy, &'static str> {
         let cadence = self.cadence.ok_or("cadence_required")?;
+        let month_start_day = self.month_start_day.unwrap_or(1);
+        if !(1..=31).contains(&month_start_day) {
+            return Err("month_start_day_range");
+        }
         Ok(PeriodPolicy {
             cadence,
             week_start_day: self.week_start_day.unwrap_or(1),
+            month_start_day,
             fiscal_year_start_month: self.fiscal_year_start_month.unwrap_or(1),
             timezone_id: self.timezone_id.unwrap_or_else(|| "Asia/Shanghai".into()),
             effective_from: self.effective_from.ok_or("effective_from_required")?,
@@ -340,8 +352,26 @@ mod tests {
         };
         let p = input.materialize().unwrap();
         assert_eq!(p.week_start_day, 1);
+        assert_eq!(p.month_start_day, 1);
         assert_eq!(p.timezone_id, "Asia/Shanghai");
         assert!(PeriodPolicyInputDefaults::default().materialize().is_err());
+    }
+
+    #[test]
+    fn month_start_day_defaults_and_accepts_only_1_through_31() {
+        let raw = json!({"cadence":"month", "week_start_day":1, "fiscal_year_start_month":1,
+            "timezone_id":"Asia/Shanghai", "effective_from":"2026-11-01"});
+        let old: PeriodPolicy = serde_json::from_value(raw).unwrap();
+        assert_eq!(old.month_start_day, 1, "旧序列化策略保持每月1日");
+        for day in [0, 1, 15, 31, 32] {
+            let input = PeriodPolicyInputDefaults {
+                cadence: Some(Cadence::Month),
+                month_start_day: Some(day),
+                effective_from: Some(NaiveDate::from_ymd_opt(2026, 11, 1).unwrap()),
+                ..Default::default()
+            };
+            assert_eq!(input.materialize().is_ok(), (1..=31).contains(&day));
+        }
     }
 
     #[test]
