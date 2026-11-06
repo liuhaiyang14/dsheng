@@ -1,6 +1,8 @@
 # 内置提示词资源
 
-当前任务prompt 2.3（含完整输出形状示例，2026-11-02完整复测批19场景全部通过后经用户批准冻结）/ output schema 2；三框架诊断prompt 2.0 / turn、report schema 3；输入和context policy为2。v1是资源集合名称。信封政策为C方案：提示词严格要求根对象，适配层仅对唯一裸任务对象做带标记的本地包装（tools/extract_provider_json.py --policy adapt）。当前版本真实请求及结果按 versions.json 本轮批次记录，2026-11-02 经用户批准冻结；工程实现须包含 C 方案适配层。
+当前任务prompt 2.4 / output schema 2；三框架诊断prompt 2.1 / turn、report schema 3；输入和context policy为2。2026-11-06经用户授权新增简体中文展示偏好，仅约束服务商实际返回的思考文字和结果中的自然语言，保留JSON字段、枚举、ID、公式与原文引用。输出合同不变；新版本只完成本地验证，没有真实Provider调用，中文遵循效果尚未在线验证。
+
+任务prompt 2.3（含完整输出形状示例）和诊断prompt 2.0的2026-11-02真实验收及冻结记录作为历史保留，不代表2.4/2.1已通过真实模型验收，详见 versions.json。v1是资源集合名称。信封政策继续采用C方案：提示词严格要求根对象，适配层仅对唯一裸任务对象做带标记的本地包装（tools/extract_provider_json.py --policy adapt）。工程实现须包含 C 方案适配层。
 
 ## 装配
 
