@@ -28,7 +28,7 @@ impl RequestDispatch for Recorder {
         &mut self,
         _runtime: &ProviderRuntime,
         _request: &dsheng_core::contracts::provider::ChatCompletionsRequest,
-        _on_chunk: &mut dyn FnMut(u64, u64, i64),
+        _on_chunk: &mut dyn FnMut(dsheng_core::provider::http::ModelProgress),
     ) -> Result<
         dsheng_core::contracts::provider::ChatCompletionsResponse,
         (dsheng_core::contracts::cli::CliErrorCode, String),

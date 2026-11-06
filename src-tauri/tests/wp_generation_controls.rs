@@ -35,11 +35,18 @@ fn task_preview(env: &DesktopEnv, f: &Fixture) -> String {
 }
 
 #[test]
-fn progress_payload_contains_only_correlation_and_progress_metadata() {
+fn progress_payload_contains_correlation_counts_and_only_requested_reasoning_delta() {
     let attempt = Uuid::new_v4();
     let confirmation = Uuid::new_v4();
     let workspace = Uuid::new_v4();
-    for stage in ["waiting", "receiving", "validating", "saving"] {
+    for stage in [
+        "waiting",
+        "receiving",
+        "reasoning",
+        "content",
+        "validating",
+        "saving",
+    ] {
         let payload = progress_payload(&StreamProgressEvent {
             attempt_id: attempt,
             confirmation_id: confirmation,
@@ -47,10 +54,16 @@ fn progress_payload_contains_only_correlation_and_progress_metadata() {
             chunk_seq: 2,
             bytes: 8192,
             elapsed_ms: 250,
+            content_chars: 7,
+            reasoning_delta: if stage == "reasoning" {
+                "合成本地片段".into()
+            } else {
+                String::new()
+            },
             stage,
         });
-        // Exact shape excludes prompts, raw output, credentials, and Provider
-        // connection settings from this broadcast-to-all-windows event.
+        // The requested reasoning delta is present; prompts, report content,
+        // credentials and Provider connection settings remain excluded.
         assert_eq!(
             payload,
             json!({
@@ -58,6 +71,8 @@ fn progress_payload_contains_only_correlation_and_progress_metadata() {
                 "confirmation_id":confirmation.to_string(),
                 "workspace_id":workspace.to_string(),
                 "chunk_seq":2, "bytes":8192, "elapsed_ms":250, "stage":stage,
+                "content_chars":7,
+                "reasoning_delta": if stage == "reasoning" { "合成本地片段" } else { "" },
             })
         );
     }

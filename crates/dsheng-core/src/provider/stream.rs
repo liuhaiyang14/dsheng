@@ -48,6 +48,8 @@ pub struct SseDeltaParser {
     /// 未凑齐一行的残余字节（分片边界安全：按 \n 切行，行内 UTF-8 完整才转 str）。
     buffer: Vec<u8>,
     content: String,
+    content_chars: u64,
+    pending_reasoning: String,
     finish_reason: Option<String>,
     skipped_invalid_lines: usize,
     done_marker_seen: bool,
@@ -63,6 +65,8 @@ impl SseDeltaParser {
         Self {
             buffer: Vec::new(),
             content: String::new(),
+            content_chars: 0,
+            pending_reasoning: String::new(),
             finish_reason: None,
             skipped_invalid_lines: 0,
             done_marker_seen: false,
@@ -136,6 +140,16 @@ impl SseDeltaParser {
         &self.content
     }
 
+    /// 正文 Unicode 字符累计数，不包含 SSE 包装、元数据和思考字段。
+    pub fn content_chars(&self) -> u64 {
+        self.content_chars
+    }
+
+    /// 仅取出 Provider 已返回的思考增量；取出后不在解析器中保留。
+    pub fn take_reasoning_delta(&mut self) -> String {
+        std::mem::take(&mut self.pending_reasoning)
+    }
+
     /// 解析单个完整行（无行结束符）。
     fn process_line(&mut self, line: &[u8], events: &mut Vec<StreamEvent>) {
         let mut line = line;
@@ -197,11 +211,17 @@ impl SseDeltaParser {
         let Some(choice) = value.get("choices").and_then(|c| c.get(0)) else {
             return;
         };
+        if let Some(reasoning) = choice.get("delta").and_then(reasoning_text) {
+            self.pending_reasoning.push_str(reasoning);
+        }
         if let Some(delta_text) = choice
             .get("delta")
             .and_then(|d| d.get("content"))
             .and_then(|c| c.as_str())
         {
+            self.content_chars = self
+                .content_chars
+                .saturating_add(delta_text.chars().count() as u64);
             self.content.push_str(delta_text);
             events.push(StreamEvent::Delta(delta_text.to_string()));
         }
@@ -210,6 +230,14 @@ impl SseDeltaParser {
             self.finish_reason = Some(reason.to_string());
         }
     }
+}
+
+/// 只接收服务商明确返回的字符串字段；不从正文或其他元数据推断思考。
+pub(super) fn reasoning_text(value: &serde_json::Value) -> Option<&str> {
+    value
+        .get("reasoning_content")
+        .and_then(serde_json::Value::as_str)
+        .or_else(|| value.get("reasoning").and_then(serde_json::Value::as_str))
 }
 
 #[cfg(test)]
@@ -393,6 +421,43 @@ mod tests {
         let outcome = parser.finish();
         assert_eq!(outcome.content, "");
         assert_eq!(outcome.skipped_invalid_lines, 0, "合法 JSON 不计 skipped");
+    }
+
+    #[test]
+    fn reasoning_is_incremental_and_separate_from_unicode_content_counts() {
+        let stream = concat!(
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"核对🙂\"}}]}\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"结论A\"}}]}\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning\":\"补充\"}}]}\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"。\",\"reasoning_content\":\"完成\",\"reasoning\":\"不重复\"}}]}\n",
+            "data: {\"usage\":{\"completion_tokens\":999}}\n",
+            "data: [DONE]\n",
+        );
+        for size in [1, 2, 7, 4096] {
+            let mut parser = SseDeltaParser::new();
+            let mut reasoning = String::new();
+            for chunk in stream.as_bytes().chunks(size) {
+                parser.feed(chunk);
+                reasoning.push_str(&parser.take_reasoning_delta());
+                assert!(parser.take_reasoning_delta().is_empty(), "增量只能取一次");
+            }
+            let result = parser.finish();
+            assert_eq!(result.content, "结论A。");
+            assert_eq!(parser.content_chars(), 4, "按Unicode字符而非UTF8字节计数");
+            assert_eq!(reasoning, "核对🙂补充完成");
+            assert!(parser.take_reasoning_delta().is_empty());
+        }
+    }
+
+    #[test]
+    fn no_reasoning_field_leaves_reasoning_empty_without_inference() {
+        let mut parser = SseDeltaParser::new();
+        parser.feed(concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"<think>普通正文</think>\",\"reasoning\":{\"text\":\"不是字符串\"}}}]}\n",
+            "data: [DONE]\n",
+        ).as_bytes());
+        assert!(parser.take_reasoning_delta().is_empty());
+        assert_eq!(parser.finish().content, "<think>普通正文</think>");
     }
 
     #[test]

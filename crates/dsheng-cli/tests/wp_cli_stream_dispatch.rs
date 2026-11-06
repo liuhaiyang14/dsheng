@@ -38,16 +38,26 @@ impl RequestDispatch for RecordingDispatch {
         &mut self,
         runtime: &ProviderRuntime,
         _request: &dsheng_core::contracts::provider::ChatCompletionsRequest,
-        on_chunk: &mut dyn FnMut(u64, u64, i64),
+        on_chunk: &mut dyn FnMut(dsheng_core::provider::http::ModelProgress),
     ) -> Result<
         dsheng_core::contracts::provider::ChatCompletionsResponse,
         (dsheng_core::contracts::cli::CliErrorCode, String),
     > {
         *self.runtime_stream.borrow_mut() = Some(runtime.stream);
         // 回放三块进度（模拟流式 chunk 到达；仅进度通道，无响应数据）
-        on_chunk(1, 128, 40);
-        on_chunk(2, 4_096, 30_050);
-        on_chunk(3, 9_216, 60_900);
+        for (chunk_seq, bytes, elapsed_ms, content_chars, reasoning_delta) in [
+            (1, 128, 40, 0, "合成本地思考片段"),
+            (2, 4_096, 30_050, 12, ""),
+            (3, 9_216, 60_900, 12, ""),
+        ] {
+            on_chunk(dsheng_core::provider::http::ModelProgress {
+                chunk_seq,
+                bytes,
+                elapsed_ms,
+                content_chars,
+                reasoning_delta: reasoning_delta.to_string(),
+            });
+        }
         Err((
             dsheng_core::contracts::cli::CliErrorCode::NetworkError,
             "测试注入：拒绝派发（依赖注入层）".into(),
@@ -147,6 +157,8 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
                 chunk_seq: 0,
                 bytes: 0,
                 elapsed_ms: 0,
+                content_chars: 0,
+                reasoning_delta: String::new(),
                 stage: "waiting",
             },
             StreamProgressEvent {
@@ -156,7 +168,9 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
                 chunk_seq: 1,
                 bytes: 128,
                 elapsed_ms: 40,
-                stage: "receiving",
+                content_chars: 0,
+                reasoning_delta: "合成本地思考片段".into(),
+                stage: "reasoning",
             },
             StreamProgressEvent {
                 attempt_id: attempt,
@@ -165,7 +179,9 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
                 chunk_seq: 2,
                 bytes: 4_096,
                 elapsed_ms: 30_050,
-                stage: "receiving",
+                content_chars: 12,
+                reasoning_delta: String::new(),
+                stage: "content",
             },
             StreamProgressEvent {
                 attempt_id: attempt,
@@ -174,6 +190,8 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
                 chunk_seq: 3,
                 bytes: 9_216,
                 elapsed_ms: 60_900,
+                content_chars: 12,
+                reasoning_delta: String::new(),
                 stage: "receiving",
             },
         ]

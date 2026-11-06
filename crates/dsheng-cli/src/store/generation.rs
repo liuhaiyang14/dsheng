@@ -24,6 +24,7 @@ use dsheng_core::generation::input::*;
 use dsheng_core::provider::confirm::{
     AttemptRecord, ConfirmationGate, ConsumeOutcome as GateConsume, GenerationStore, SendSnapshot,
 };
+use dsheng_core::provider::http::ModelProgress;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -431,20 +432,20 @@ pub struct ProviderRuntime {
 /// 请求派发抽象：生产＝provider::http 一次 send_once / send_once_streaming
 /// （按 runtime.stream 选择）；测试＝记录器（断言未确认不派发；无网络、
 /// 无 Mock Provider）。`on_chunk` 为流式进度回调
-/// `(chunk_seq, total_bytes, elapsed_ms)`（非流式实现忽略）。
+/// 接收正文字符累计数和实际思考增量（不落库、不写入 CLI 日志）。
 pub trait RequestDispatch {
     fn dispatch(
         &mut self,
         runtime: &ProviderRuntime,
         request: &ChatCompletionsRequest,
-        on_chunk: &mut dyn FnMut(u64, u64, i64),
+        on_chunk: &mut dyn FnMut(ModelProgress),
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)>;
 
     fn dispatch_cancellable(
         &mut self,
         runtime: &ProviderRuntime,
         request: &ChatCompletionsRequest,
-        on_chunk: &mut dyn FnMut(u64, u64, i64),
+        on_chunk: &mut dyn FnMut(ModelProgress),
         should_cancel: &dyn Fn() -> bool,
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
         if should_cancel() {
@@ -480,7 +481,7 @@ impl RequestDispatch for HttpDispatch {
         &mut self,
         runtime: &ProviderRuntime,
         request: &ChatCompletionsRequest,
-        on_chunk: &mut dyn FnMut(u64, u64, i64),
+        on_chunk: &mut dyn FnMut(ModelProgress),
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
         self.dispatch_cancellable(runtime, request, on_chunk, &|| false)
     }
@@ -489,7 +490,7 @@ impl RequestDispatch for HttpDispatch {
         &mut self,
         runtime: &ProviderRuntime,
         request: &ChatCompletionsRequest,
-        on_chunk: &mut dyn FnMut(u64, u64, i64),
+        on_chunk: &mut dyn FnMut(ModelProgress),
         should_cancel: &dyn Fn() -> bool,
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
         dsheng_core::provider::http::send_once_cancellable(
@@ -516,7 +517,9 @@ pub struct StreamProgressEvent {
     pub chunk_seq: u64,
     pub bytes: u64,
     pub elapsed_ms: i64,
-    /// waiting / receiving / validating / saving（不估算模型进度）。
+    pub content_chars: u64,
+    pub reasoning_delta: String,
+    /// waiting / receiving / reasoning / content / validating / saving。
     pub stage: &'static str,
 }
 
@@ -2176,6 +2179,8 @@ pub fn send_confirmed(
         chunk_seq: 0,
         bytes: 0,
         elapsed_ms: 0,
+        content_chars: 0,
+        reasoning_delta: String::new(),
         stage: "waiting",
     });
     ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
@@ -2198,23 +2203,32 @@ pub fn send_confirmed(
         attempt.attempt_id,
         "waiting_response",
     )?;
-    let mut last_chunk = (0, 0);
+    let mut last_chunk = (0, 0, 0);
     let response_result = {
         let should_cancel =
             || ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id).is_err();
-        let mut chunk_progress = |seq: u64, bytes: u64, ms: i64| {
+        let mut chunk_progress = |progress: ModelProgress| {
             if should_cancel() {
                 return;
             }
-            last_chunk = (seq, bytes);
+            let stage = if progress.content_chars > last_chunk.2 {
+                "content"
+            } else if !progress.reasoning_delta.is_empty() {
+                "reasoning"
+            } else {
+                "receiving"
+            };
+            last_chunk = (progress.chunk_seq, progress.bytes, progress.content_chars);
             on_progress(StreamProgressEvent {
                 attempt_id: attempt.attempt_id,
                 confirmation_id,
                 workspace_id,
-                chunk_seq: seq,
-                bytes,
-                elapsed_ms: ms,
-                stage: "receiving",
+                chunk_seq: progress.chunk_seq,
+                bytes: progress.bytes,
+                elapsed_ms: progress.elapsed_ms,
+                content_chars: progress.content_chars,
+                reasoning_delta: progress.reasoning_delta,
+                stage,
             });
         };
         dispatcher.dispatch_cancellable(
@@ -2253,6 +2267,8 @@ pub fn send_confirmed(
         chunk_seq: last_chunk.0,
         bytes: last_chunk.1,
         elapsed_ms: started.elapsed().as_millis().min(i64::MAX as u128) as i64,
+        content_chars: last_chunk.2,
+        reasoning_delta: String::new(),
         stage: "validating",
     });
     ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
@@ -2310,6 +2326,8 @@ pub fn send_confirmed(
                 chunk_seq: last_chunk.0,
                 bytes: last_chunk.1,
                 elapsed_ms: started.elapsed().as_millis().min(i64::MAX as u128) as i64,
+                content_chars: last_chunk.2,
+                reasoning_delta: String::new(),
                 stage: "saving",
             });
             ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;

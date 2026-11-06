@@ -73,7 +73,7 @@ impl RequestDispatch for RefuseDispatch {
         &mut self,
         _: &ProviderRuntime,
         _: &ChatCompletionsRequest,
-        _: &mut dyn FnMut(u64, u64, i64),
+        _: &mut dyn FnMut(dsheng_core::provider::http::ModelProgress),
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
         self.0 += 1;
         Err((
@@ -161,7 +161,7 @@ impl RequestDispatch for CancelDuringDispatch<'_> {
         &mut self,
         _: &ProviderRuntime,
         _: &ChatCompletionsRequest,
-        _: &mut dyn FnMut(u64, u64, i64),
+        _: &mut dyn FnMut(dsheng_core::provider::http::ModelProgress),
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
         panic!("service must use cancellable dispatch")
     }
@@ -169,7 +169,7 @@ impl RequestDispatch for CancelDuringDispatch<'_> {
         &mut self,
         _: &ProviderRuntime,
         _: &ChatCompletionsRequest,
-        _: &mut dyn FnMut(u64, u64, i64),
+        _: &mut dyn FnMut(dsheng_core::provider::http::ModelProgress),
         should_cancel: &dyn Fn() -> bool,
     ) -> Result<ChatCompletionsResponse, (CliErrorCode, String)> {
         assert!(!should_cancel());

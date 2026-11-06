@@ -26,7 +26,7 @@ use crate::contracts::provider::{
 };
 use crate::contracts::settings::{chat_completions_url, Budget, Timeouts};
 use crate::provider::deadline::{MonotonicClock, SystemClock};
-use crate::provider::stream::SseDeltaParser;
+use crate::provider::stream::{reasoning_text, SseDeltaParser};
 use std::error::Error as _;
 use std::io::Read;
 use std::time::Duration;
@@ -100,11 +100,24 @@ impl ResponseBody for reqwest::Response {
     }
 }
 
+/// 生产传输的进度事件。思考只携带本次新增内容，不累计拷贝整个思考文本。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModelProgress {
+    /// 单调递增事件序号；EOF 补解析或非流式正文解析也可产生新事件。
+    pub chunk_seq: u64,
+    pub bytes: u64,
+    pub elapsed_ms: i64,
+    pub content_chars: u64,
+    pub reasoning_delta: String,
+}
+
+pub type ModelProgressCallback<'a> = dyn FnMut(ModelProgress) + 'a;
+
 async fn read_response_cancellable(
     body: &mut impl ResponseBody,
     stream: bool,
     started_at: Instant,
-    on_chunk: &mut StreamProgress<'_>,
+    on_chunk: &mut ModelProgressCallback<'_>,
     should_cancel: &dyn Fn() -> bool,
 ) -> TransportResult<ChatCompletionsResponse> {
     let mut parser = SseDeltaParser::new();
@@ -123,11 +136,13 @@ async fn read_response_cancellable(
         } else {
             bytes.extend_from_slice(&chunk);
         }
-        on_chunk(
+        on_chunk(ModelProgress {
             chunk_seq,
-            total_bytes,
-            started_at.elapsed().as_millis().min(i64::MAX as u128) as i64,
-        );
+            bytes: total_bytes,
+            elapsed_ms: started_at.elapsed().as_millis().min(i64::MAX as u128) as i64,
+            content_chars: parser.content_chars(),
+            reasoning_delta: parser.take_reasoning_delta(),
+        });
         if should_cancel() {
             return Err(cancelled());
         }
@@ -136,7 +151,23 @@ async fn read_response_cancellable(
         }
     }
     if stream {
+        let prior_content_chars = parser.content_chars();
         let outcome = parser.finish();
+        let reasoning_delta = parser.take_reasoning_delta();
+        // EOF 可能补出最后一个没有换行符的 data 行；必须单独发出，不能丢尾段。
+        if parser.content_chars() != prior_content_chars || !reasoning_delta.is_empty() {
+            chunk_seq = chunk_seq.saturating_add(1);
+            on_chunk(ModelProgress {
+                chunk_seq,
+                bytes: total_bytes,
+                elapsed_ms: started_at.elapsed().as_millis().min(i64::MAX as u128) as i64,
+                content_chars: parser.content_chars(),
+                reasoning_delta,
+            });
+            if should_cancel() {
+                return Err(cancelled());
+            }
+        }
         if let Some(message) = parser.provider_error() {
             return Err((CliErrorCode::ProviderRejectedUnknown, message.to_owned()));
         }
@@ -148,7 +179,7 @@ async fn read_response_cancellable(
             skipped_invalid_lines: outcome.skipped_invalid_lines,
         })
     } else {
-        // 非流式成功状态也可能包装 Provider error，而不是 choices。
+        // 非流式只有完整响应才可解析正文；元数据和思考都不计入正文字符数。
         if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
             if let Some(error) = value.get("error").filter(|error| !error.is_null()) {
                 let message = error
@@ -157,6 +188,28 @@ async fn read_response_cancellable(
                     .or_else(|| error.as_str())
                     .unwrap_or("模型服务返回错误");
                 return Err((CliErrorCode::ProviderRejectedUnknown, message.to_owned()));
+            }
+            if let Some(message) = value
+                .get("choices")
+                .and_then(|v| v.get(0))
+                .and_then(|v| v.get("message"))
+            {
+                let content_chars = message
+                    .get("content")
+                    .and_then(serde_json::Value::as_str)
+                    .map_or(0, |content| content.chars().count() as u64);
+                let reasoning_delta = reasoning_text(message).unwrap_or_default().to_owned();
+                chunk_seq = chunk_seq.saturating_add(1);
+                on_chunk(ModelProgress {
+                    chunk_seq,
+                    bytes: total_bytes,
+                    elapsed_ms: started_at.elapsed().as_millis().min(i64::MAX as u128) as i64,
+                    content_chars,
+                    reasoning_delta,
+                });
+                if should_cancel() {
+                    return Err(cancelled());
+                }
             }
         }
         parse_chat_response(&bytes)
@@ -174,7 +227,7 @@ pub fn send_once_cancellable(
     api_key: &str,
     request: &ChatCompletionsRequest,
     stream: bool,
-    on_chunk: &mut StreamProgress<'_>,
+    on_chunk: &mut ModelProgressCallback<'_>,
     should_cancel: &dyn Fn() -> bool,
 ) -> TransportResult<ChatCompletionsResponse> {
     if should_cancel() {
@@ -877,7 +930,7 @@ mod tests {
             &mut body,
             true,
             Instant::now(),
-            &mut |seq, bytes, _| progress.push((seq, bytes)),
+            &mut |event| progress.push((event.chunk_seq, event.bytes)),
             &|| started.elapsed() >= Duration::from_millis(250),
         )
         .await;
@@ -904,7 +957,7 @@ mod tests {
             &mut body,
             true,
             Instant::now(),
-            &mut |seq, bytes, _| progress.push((seq, bytes)),
+            &mut |event| progress.push((event.chunk_seq, event.bytes)),
             &|| false,
         )
         .await
@@ -934,7 +987,7 @@ mod tests {
             &mut body,
             false,
             Instant::now(),
-            &mut |_, bytes, _| observed = bytes,
+            &mut |event| observed = event.bytes,
             &|| false,
         )
         .await
@@ -958,15 +1011,10 @@ mod tests {
                 pending_after_chunks: true,
                 reads: 0,
             };
-            let err = read_response_cancellable(
-                &mut body,
-                true,
-                Instant::now(),
-                &mut |_, _, _| {},
-                &|| false,
-            )
-            .await
-            .unwrap_err();
+            let err =
+                read_response_cancellable(&mut body, true, Instant::now(), &mut |_| {}, &|| false)
+                    .await
+                    .unwrap_err();
             assert_eq!(
                 err,
                 (
@@ -986,13 +1034,133 @@ mod tests {
             reads: 0,
         };
         let err =
-            read_response_cancellable(&mut body, true, Instant::now(), &mut |_, _, _| {}, &|| {
-                false
-            })
-            .await
-            .unwrap_err();
+            read_response_cancellable(&mut body, true, Instant::now(), &mut |_| {}, &|| false)
+                .await
+                .unwrap_err();
         assert_eq!(err.0, CliErrorCode::IncompleteOutput);
         assert_eq!(body.reads, 1);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn progress_separates_reasoning_body_and_transport_activity() {
+        let chunks = [
+            "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"核对输入\"}}]}\n",
+            ": heartbeat\n\ndata: {\"usage\":{\"completion_tokens\":999}}\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"正文🙂\"}}]}\n",
+            "data: {\"choices\":[{\"delta\":{\"reasoning\":\"后续\",\"content\":\"A\"},\"finish_reason\":\"stop\"}]}\n",
+        ];
+        let mut body = AsyncBody {
+            chunks: chunks
+                .into_iter()
+                .map(|s| (Duration::ZERO, s.as_bytes().to_vec()))
+                .collect(),
+            pending_after_chunks: true,
+            reads: 0,
+        };
+        let mut events = Vec::new();
+        let result = read_response_cancellable(
+            &mut body,
+            true,
+            Instant::now(),
+            &mut |event| events.push(event),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            result.choices[0].message.content.as_deref(),
+            Some("正文🙂A")
+        );
+        assert_eq!(
+            events.iter().map(|e| e.content_chars).collect::<Vec<_>>(),
+            vec![0, 0, 3, 4]
+        );
+        assert_eq!(
+            events
+                .iter()
+                .map(|e| e.reasoning_delta.as_str())
+                .collect::<Vec<_>>(),
+            vec!["核对输入", "", "", "后续"]
+        );
+        assert_eq!(
+            events.iter().map(|e| e.chunk_seq).collect::<Vec<_>>(),
+            vec![1, 2, 3, 4]
+        );
+        assert!(
+            events[1].bytes > events[0].bytes,
+            "网络心跳增加接收量但不能增加正文字符数"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn eof_tail_emits_reasoning_once_with_a_new_sequence_number() {
+        let tail = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"尾部思考\",\"content\":\"尾部🙂\"},\"finish_reason\":\"stop\"}]}";
+        let mut body = AsyncBody {
+            chunks: [(Duration::ZERO, tail.as_bytes().to_vec())].into(),
+            pending_after_chunks: false,
+            reads: 0,
+        };
+        let mut events = Vec::new();
+        read_response_cancellable(
+            &mut body,
+            true,
+            Instant::now(),
+            &mut |event| events.push(event),
+            &|| false,
+        )
+        .await
+        .unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].content_chars, 0);
+        assert!(events[0].reasoning_delta.is_empty());
+        assert_eq!(events[1].chunk_seq, 2);
+        assert_eq!(events[1].content_chars, 3);
+        assert_eq!(events[1].reasoning_delta, "尾部思考");
+        assert_eq!(events[1].bytes, events[0].bytes);
+    }
+
+    #[tokio::test(flavor = "current_thread", start_paused = true)]
+    async fn non_streaming_counts_only_parsed_body_and_forwards_optional_reasoning() {
+        for reasoning in [None, Some("非流式思考🙂")] {
+            let mut message = serde_json::json!({"content":"正文🙂A"});
+            if let Some(reasoning) = reasoning {
+                message["reasoning_content"] = reasoning.into();
+            }
+            let json = serde_json::json!({"choices":[{"message":message,"finish_reason":"stop"}]})
+                .to_string();
+            let mut body = AsyncBody {
+                chunks: json
+                    .as_bytes()
+                    .chunks(2)
+                    .map(|c| (Duration::ZERO, c.to_vec()))
+                    .collect(),
+                pending_after_chunks: false,
+                reads: 0,
+            };
+            let mut events = Vec::new();
+            let result = read_response_cancellable(
+                &mut body,
+                false,
+                Instant::now(),
+                &mut |event| events.push(event),
+                &|| false,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                result.choices[0].message.content.as_deref(),
+                Some("正文🙂A")
+            );
+            let last = events.last().unwrap();
+            assert_eq!(last.content_chars, 4);
+            assert_eq!(last.reasoning_delta, reasoning.unwrap_or_default());
+            assert!(events[..events.len() - 1]
+                .iter()
+                .all(|e| e.content_chars == 0 && e.reasoning_delta.is_empty()));
+            assert!(events
+                .windows(2)
+                .all(|pair| pair[1].chunk_seq > pair[0].chunk_seq));
+        }
     }
 
     #[test]
@@ -1159,7 +1327,7 @@ mod tests {
 
     // ---- 流式（S3）：纯逻辑依赖注入测试（脚本 reader＋伪时钟；无网络） ----
 
-    use crate::provider::stream::SseDeltaParser;
+    use crate::provider::stream::{reasoning_text, SseDeltaParser};
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::rc::Rc;
