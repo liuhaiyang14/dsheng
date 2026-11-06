@@ -67,7 +67,7 @@ it('先等待事件监听就绪；准备阶段停止不会发送请求', async (
   expect(confirm).not.toHaveBeenCalled();
 });
 
-it('只呈现本次关联事件的活动和计数，不展示原始思考；发送失败保留终态', async () => {
+it('仅呈现本次事件的思考文本及正文计数，发送失败保留内容和终态', async () => {
   const emit = events();
   const client = new FixtureClient();
   const pending = deferred<DiagnosisGenerationReceipt>();
@@ -78,19 +78,103 @@ it('只呈现本次关联事件的活动和计数，不展示原始思考；发�
   const id = confirm.mock.calls[0][0];
   emit(progress('another-confirmation', { bytes: 999_999, stage: 'saving' }));
   expect(screen.getByTestId('generation-progress-stats')).not.toHaveTextContent('999,999');
-  emit({ ...progress(id, { bytes: 2048, chunk_seq: 5, elapsed_ms: 12345, stage: 'reasoning', content_chars: 20, reasoning_chars: 360 }),
-    reasoning_content: '不应暴露的原始思考' } as GenerationProgressEvent);
+  expect(screen.getByTestId('generation-reasoning-text')).toBeEmptyDOMElement();
+  expect(screen.getByTestId('generation-content-count')).toHaveTextContent('0 字符');
+  emit(progress(id, { bytes: 2048, chunk_seq: 5, elapsed_ms: 12345, stage: 'reasoning',
+    content_chars: 20, reasoning_delta: '先核对期间。\n<img src=x onerror=alert(1)>' }));
   const dialog = screen.getByRole('dialog');
   expect(within(dialog).getByTestId('generation-progress-stage')).toHaveTextContent('模型正在思考');
-  expect(within(dialog).getByTestId('generation-progress-stats')).toHaveTextContent('2,048');
-  expect(dialog).toHaveTextContent('正文 20 字符');
-  expect(dialog).toHaveTextContent('思考活动 360 字符');
-  expect(dialog).not.toHaveTextContent('不应暴露的原始思考');
+  expect(within(dialog).getByTestId('generation-content-count')).toHaveTextContent('20 字符');
+  expect(within(dialog).getByTestId('generation-progress-stats')).not.toHaveTextContent('2,048');
+  expect(dialog).not.toHaveTextContent('字节');
+  expect(dialog).not.toHaveTextContent('输出活动');
+  expect(dialog).not.toHaveTextContent('思考活动');
+  expect(screen.getByTestId('generation-reasoning-text')).toHaveTextContent('先核对期间。');
+  expect(screen.getByTestId('generation-reasoning-text').querySelector('img')).toBeNull();
+  expect(screen.getByTestId('generation-reasoning-text')).toHaveTextContent('<img src=x onerror=alert(1)>');
   await act(async () => pending.reject(new Error('服务返回无效结果')));
   expect(screen.getByRole('dialog')).toHaveTextContent('生成失败');
   expect(screen.getByRole('alert')).toHaveTextContent('服务返回无效结果');
   expect(screen.getByRole('button', { name: '关闭' })).toBeEnabled();
   expect(confirm).toHaveBeenCalledOnce();
+});
+
+it('思考增量去重并隔离其他请求，正文按后端字符计数，关闭后新请求清空', async () => {
+  const emit = events();
+  const client = new FixtureClient();
+  const pending = deferred<DiagnosisGenerationReceipt>();
+  const next = deferred<DiagnosisGenerationReceipt>();
+  const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm')
+    .mockReturnValueOnce(pending.promise).mockReturnValueOnce(next.promise);
+  await diagnosisPreview(client);
+  fireEvent.click(screen.getByTestId('preview-confirm'));
+  await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  const id = confirm.mock.calls[0][0];
+  emit(progress(id, { stage: 'reasoning', chunk_seq: 1, reasoning_delta: '核对🙂' }));
+  emit(progress(id, { stage: 'reasoning', chunk_seq: 1, reasoning_delta: '核对🙂' }));
+  emit(progress(id, { stage: 'reasoning', chunk_seq: 2, workspace_id: 'other-workspace', reasoning_delta: '错误企业' }));
+  emit(progress(id, { stage: 'reasoning', chunk_seq: 2, attempt_id: 'other-attempt', reasoning_delta: '错误请求' }));
+  emit(progress(id, { stage: 'content', chunk_seq: 2, content_chars: 3, reasoning_delta: '，再看差异。' }));
+  emit(progress(id, { stage: 'reasoning', chunk_seq: 1, reasoning_delta: '迟到内容' }));
+  expect(screen.getByTestId('generation-reasoning-text')).toHaveTextContent('核对🙂，再看差异。');
+  expect(screen.getByTestId('generation-reasoning-text').textContent).toBe('核对🙂，再看差异。');
+  expect(screen.getByTestId('generation-content-count')).toHaveTextContent('3 字符');
+  emit(progress(id, { stage: 'validating', chunk_seq: 2 }));
+  expect(screen.getByTestId('generation-content-count')).toHaveTextContent('3 字符');
+  await act(async () => pending.reject(new Error('本地测试终态')));
+  emit(progress(id, { stage: 'reasoning', chunk_seq: 3, reasoning_delta: '终态后的内容' }));
+  expect(screen.getByTestId('generation-reasoning-text').textContent).toBe('核对🙂，再看差异。');
+  fireEvent.click(screen.getByRole('button', { name: '关闭' }));
+  fireEvent.click(screen.getByTestId('generate-diagnosis-button'));
+  fireEvent.click(await screen.findByTestId('preview-confirm'));
+  await waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
+  expect(screen.getByTestId('generation-reasoning-text')).toBeEmptyDOMElement();
+  expect(screen.getByTestId('generation-content-count')).toHaveTextContent('0 字符');
+  await act(async () => next.reject(new Error('本地测试结束')));
+});
+
+it('思考区跟随新内容，用户上翻后保持阅读位置，可回到最新内容', async () => {
+  const emit = events();
+  const client = new FixtureClient();
+  const pending = deferred<DiagnosisGenerationReceipt>();
+  const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm').mockReturnValue(pending.promise);
+  await diagnosisPreview(client);
+  fireEvent.click(screen.getByTestId('preview-confirm'));
+  await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  const id = confirm.mock.calls[0][0];
+  const viewport = screen.getByTestId('generation-reasoning-text');
+  let contentHeight = 500;
+  Object.defineProperty(viewport, 'scrollHeight', { get: () => contentHeight });
+  Object.defineProperty(viewport, 'clientHeight', { value: 100 });
+  emit(progress(id, { stage: 'reasoning', chunk_seq: 1, reasoning_delta: '第一段\n' }));
+  expect(viewport.scrollTop).toBe(500);
+  viewport.scrollTop = 50;
+  fireEvent.scroll(viewport);
+  contentHeight = 600;
+  emit(progress(id, { stage: 'reasoning', chunk_seq: 2, reasoning_delta: '第二段' }));
+  expect(viewport.scrollTop).toBe(50);
+  fireEvent.click(screen.getByRole('button', { name: '回到最新内容' }));
+  expect(viewport.scrollTop).toBe(600);
+  expect(screen.queryByRole('button', { name: '回到最新内容' })).toBeNull();
+  await act(async () => pending.reject(new Error('本地测试结束')));
+});
+
+it('非流式结束时接收正文计数，没有返回思考则展示空白区域', async () => {
+  const emit = events();
+  const client = new FixtureClient();
+  const pending = deferred<DiagnosisGenerationReceipt>();
+  const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm').mockReturnValue(pending.promise);
+  await diagnosisPreview(client);
+  fireEvent.click(screen.getByTestId('preview-confirm'));
+  await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  const id = confirm.mock.calls[0][0];
+  emit(progress(id, { stage: 'receiving', bytes: 5000, chunk_seq: 1 }));
+  expect(screen.getByTestId('generation-content-count')).toHaveTextContent('0 字符');
+  emit(progress(id, { stage: 'content', bytes: 5000, chunk_seq: 2, content_chars: 1200 }));
+  emit(progress(id, { stage: 'saving', bytes: 5000, chunk_seq: 2, content_chars: 1200 }));
+  await act(async () => pending.resolve(receipt));
+  expect(screen.getByTestId('generation-content-count')).toHaveTextContent('1,200 字符');
+  expect(screen.getByTestId('generation-reasoning-text')).toBeEmptyDOMElement();
 });
 
 it('首个输出前可以登记停止，停止成功丢弃迟到报告并等待请求结束才解锁', async () => {
@@ -235,7 +319,7 @@ it('旧客户端既无可用事件通道也无确认编号停止能力时，不�
   expect(screen.getByRole('button', { name: '关闭' })).toBeEnabled();
 });
 
-it('仅新的接收活动重置距上次输出时间，长时间无新块明确等待且不自动停止', async () => {
+it('仅新的正文或思考重置输出时间，传输包装不计入正文且等待不自动停止', async () => {
   const emit = events();
   const client = new FixtureClient();
   const pending = deferred<DiagnosisGenerationReceipt>();
@@ -247,16 +331,22 @@ it('仅新的接收活动重置距上次输出时间，长时间无新块明确�
   await act(async () => { await Promise.resolve(); });
   const id = confirm.mock.calls[0][0];
   emit(progress(id, { stage: 'receiving', bytes: 100, chunk_seq: 1 }));
-  expect(screen.getByTestId('generation-progress-stage')).toHaveTextContent('正在接收');
+  expect(screen.getByTestId('generation-last-output')).toHaveTextContent('尚未收到模型输出');
+  expect(screen.getByTestId('generation-content-count')).toHaveTextContent('0 字符');
+  emit(progress(id, { stage: 'content', bytes: 200, chunk_seq: 2, content_chars: 1 }));
+  expect(screen.getByTestId('generation-progress-stage')).toHaveTextContent('正在接收正文');
   expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 0 秒');
   act(() => vi.advanceTimersByTime(3000));
-  emit(progress(id, { stage: 'receiving', bytes: 100, chunk_seq: 1 }));
+  emit(progress(id, { stage: 'content', bytes: 200, chunk_seq: 2, content_chars: 1 }));
   emit(progress('another-request', { stage: 'receiving', bytes: 500, chunk_seq: 2 }));
   expect(screen.getByTestId('generation-progress-stage')).toHaveTextContent('等待后续输出');
   expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 3 秒');
   emit(progress(id, { stage: 'waiting', bytes: 200, chunk_seq: 2 }));
   expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 3 秒');
-  emit(progress(id, { stage: 'receiving', bytes: 150, chunk_seq: 1 }));
+  emit(progress(id, { stage: 'receiving', bytes: 300, chunk_seq: 3 }));
+  expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 3 秒');
+  expect(screen.getByTestId('generation-content-count')).toHaveTextContent('1 字符');
+  emit(progress(id, { stage: 'content', bytes: 400, chunk_seq: 4, content_chars: 2 }));
   expect(screen.getByTestId('generation-last-output')).toHaveTextContent('距上次输出 0 秒');
   act(() => vi.advanceTimersByTime(3_600_000));
   expect(screen.getByTestId('generation-progress-stage')).toHaveTextContent('等待后续输出');
@@ -264,10 +354,10 @@ it('仅新的接收活动重置距上次输出时间，长时间无新块明确�
   expect(screen.getByRole('button', { name: '停止生成' })).toBeEnabled();
   expect(screen.getByTestId('workspace-select')).toBeDisabled();
   expect(cancel).not.toHaveBeenCalled();
-  emit(progress(id, { stage: 'validating', bytes: 150, chunk_seq: 1 }));
+  emit(progress(id, { stage: 'validating', bytes: 400, chunk_seq: 4, content_chars: 2 }));
   expect(screen.getByTestId('generation-progress-hint')).toHaveTextContent('正在校验生成结果');
   expect(screen.getByTestId('generation-progress-hint')).not.toHaveTextContent('正在接收');
-  emit(progress(id, { stage: 'saving', bytes: 150, chunk_seq: 1 }));
+  emit(progress(id, { stage: 'saving', bytes: 400, chunk_seq: 4, content_chars: 2 }));
   expect(screen.getByTestId('generation-progress-hint')).toHaveTextContent('正在保存结果');
   await act(async () => pending.resolve(receipt));
 });

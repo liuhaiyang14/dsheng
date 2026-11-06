@@ -8,12 +8,14 @@ export interface GenerationState {
   latest: GenerationProgressEvent | null;
   elapsedMs: number;
   lastActivityAt: number | null;
+  contentChars: number;
+  reasoningText: string;
   canRetryConnection: boolean;
   error: string | null;
   message: string | null;
 }
 const initialState: GenerationState = {
-  phase: 'idle', latest: null, elapsedMs: 0, lastActivityAt: null,
+  phase: 'idle', latest: null, elapsedMs: 0, lastActivityAt: null, contentChars: 0, reasoningText: '',
   canRetryConnection: false, error: null, message: null,
 };
 const activePhase = (phase: GenerationPhase) => phase === 'starting' || phase === 'running' || phase === 'stopping';
@@ -28,8 +30,8 @@ interface Inflight {
   finished: boolean;
   cancelled: boolean;
   stopRequested: boolean;
-  receivedBytes: number;
   receivedChunks: number;
+  lastReasoningSeq: number;
   attemptId?: string;
   cancelPromise?: Promise<void>;
   unsubscribe?: () => void;
@@ -50,9 +52,9 @@ export function useGeneration(client: DshengClient | null, workspaceId: string |
       if (request && !request.finished) void stopOnUnmount.current?.(request);
     };
   }, []);
-  const update = useCallback((request: Inflight, change: Partial<GenerationState>) => {
+  const update = useCallback((request: Inflight, change: Partial<GenerationState> | ((previous: GenerationState) => Partial<GenerationState>)) => {
     if (mounted.current && current.current === request) {
-      setState((previous) => ({ ...previous, ...change, elapsedMs: Date.now() - request.startedAt }));
+      setState((previous) => ({ ...previous, ...(typeof change === 'function' ? change(previous) : change), elapsedMs: Date.now() - request.startedAt }));
     }
   }, []);
   useEffect(() => {
@@ -106,7 +108,7 @@ export function useGeneration(client: DshengClient | null, workspaceId: string |
     }
     const request: Inflight = {
       confirmationId, workspaceId, client, startedAt: Date.now(), invoked: false,
-      finished: false, cancelled: false, stopRequested: false, receivedBytes: 0, receivedChunks: 0,
+      finished: false, cancelled: false, stopRequested: false, receivedChunks: 0, lastReasoningSeq: -1,
     };
     current.current = request;
     setState({ ...initialState, phase: 'starting' });
@@ -121,13 +123,23 @@ export function useGeneration(client: DshengClient | null, workspaceId: string |
           if (event.confirmation_id !== confirmationId || (event.workspace_id && event.workspace_id !== workspaceId)) return;
           if (request.attemptId && request.attemptId !== event.attempt_id) return;
           request.attemptId = event.attempt_id;
-          const newActivity = event.stage === 'receiving'
-            && (event.bytes > request.receivedBytes || event.chunk_seq > request.receivedChunks);
-          if (event.stage === 'receiving') {
-            request.receivedBytes = Math.max(request.receivedBytes, event.bytes);
-            request.receivedChunks = Math.max(request.receivedChunks, event.chunk_seq);
-          }
-          update(request, { latest: event, ...(newActivity ? { lastActivityAt: Date.now() } : {}) });
+          const outputEvent = ['receiving', 'reasoning', 'content'].includes(event.stage);
+          if (outputEvent && event.chunk_seq < request.receivedChunks) return;
+          const reasoningDelta = event.chunk_seq > request.lastReasoningSeq && typeof event.reasoning_delta === 'string'
+            ? event.reasoning_delta : '';
+          if (reasoningDelta) request.lastReasoningSeq = event.chunk_seq;
+          request.receivedChunks = Math.max(request.receivedChunks, event.chunk_seq);
+          const contentChars = typeof event.content_chars === 'number' && Number.isFinite(event.content_chars)
+            ? Math.max(0, Math.floor(event.content_chars)) : 0;
+          update(request, (previous) => {
+            // 接收包装或心跳不等于模型新增正文；只以实际文本更新活动时间。
+            const newActivity = contentChars > previous.contentChars || reasoningDelta.length > 0;
+            return {
+              latest: event, contentChars: Math.max(previous.contentChars, contentChars),
+              reasoningText: previous.reasoningText + reasoningDelta,
+              ...(newActivity ? { lastActivityAt: Date.now() } : {}),
+            };
+          });
           if (event.stage === 'cancelled') {
             request.cancelled = true;
             update(request, { phase: 'stopping', message: '停止已确认，正在结束本次请求。' });

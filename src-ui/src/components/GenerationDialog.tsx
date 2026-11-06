@@ -1,8 +1,30 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ConfirmationPreview } from '../api';
 import { groupDecimal } from '../api';
 import { PreviewModal } from './PreviewModal';
 import type { GenerationController } from './useGeneration';
+import './generation-dialog.css';
+
+function ReasoningOutput({ text }: { text: string }) {
+  const viewport = useRef<HTMLDivElement>(null);
+  const [following, setFollowing] = useState(true);
+  useLayoutEffect(() => {
+    if (following && viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
+  }, [text, following]);
+  return (
+    <section className="generation-reasoning" aria-label="思考过程">
+      <div className="generation-reasoning-heading">
+        <h4>思考过程</h4>
+        {!following && text ? <button type="button" className="outline" onClick={() => setFollowing(true)}>回到最新内容</button> : null}
+      </div>
+      <div ref={viewport} className="generation-reasoning-text" data-testid="generation-reasoning-text"
+        role="region" aria-label="模型返回的思考内容" tabIndex={0} onScroll={(event) => {
+          const element = event.currentTarget;
+          setFollowing(element.scrollHeight - element.scrollTop - element.clientHeight <= 24);
+        }}>{text}</div>
+    </section>
+  );
+}
 
 const stageLabels: Record<string, string> = {
   starting: '正在准备请求', preparing: '正在准备请求', started: '请求已创建',
@@ -44,8 +66,8 @@ export function GenerationDialog({
     : Math.floor(Math.max(0, Date.now() - state.lastActivityAt) / 1000);
   const receiving = secondsSinceOutput != null && secondsSinceOutput < 2;
   const stage = event?.stage;
-  const outputStage = stage === 'receiving'
-    ? receiving ? '正在接收模型响应' : secondsSinceOutput == null ? '等待模型输出' : '等待后续输出'
+  const outputStage = stage && ['receiving', 'reasoning', 'content'].includes(stage)
+    ? receiving ? stageLabels[stage] : secondsSinceOutput == null ? '等待模型输出' : '等待后续输出'
     : stage ? stageLabels[stage] ?? '正在处理模型响应' : label;
   const activityHint = stage === 'validating' ? '模型输出已结束，正在校验生成结果。'
     : stage === 'saving' ? '校验已通过，正在保存结果。'
@@ -60,9 +82,9 @@ export function GenerationDialog({
         ref={dialog} tabIndex={-1} onKeyDown={(key) => {
           if (key.key === 'Escape') { key.preventDefault(); if (!active) onClose(); }
           if (key.key === 'Tab') {
-            const buttons = dialog.current?.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
-            if (!buttons?.length) { key.preventDefault(); return; }
-            const first = buttons[0], last = buttons[buttons.length - 1];
+            const controls = dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), [tabindex="0"]');
+            if (!controls?.length) { key.preventDefault(); return; }
+            const first = controls[0], last = controls[controls.length - 1];
             if (key.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) {
               key.preventDefault(); last.focus();
             } else if (!key.shiftKey && document.activeElement === last) {
@@ -88,13 +110,9 @@ export function GenerationDialog({
           </div>
           <dl className="generation-stats" data-testid="generation-progress-stats">
             <div><dt>已用时间</dt><dd>{Math.floor(elapsed / 1000)}<small> 秒</small></dd></div>
-            <div><dt>已接收</dt><dd>{event ? groupDecimal(String(event.bytes)) : '—'}<small> 字节</small></dd></div>
-            <div><dt>输出活动</dt><dd>{event ? groupDecimal(String(event.chunk_seq)) : '—'}<small> 块</small></dd></div>
+            <div><dt>已生成正文</dt><dd data-testid="generation-content-count">{groupDecimal(String(state.contentChars))}<small> 字符</small></dd></div>
           </dl>
-          {(event?.content_chars != null || event?.reasoning_chars != null) ? (
-            <p className="generation-text-counts">正文 {groupDecimal(String(event.content_chars ?? 0))} 字符
-              {' · '}思考活动 {groupDecimal(String(event.reasoning_chars ?? 0))} 字符（仅计数）</p>
-          ) : null}
+          <ReasoningOutput key={preview.confirmation_id} text={state.reasoningText} />
           {state.error ? <div className="notice error" role="alert">{state.error}</div> : null}
           {active ? <p className="panel-note">停止会请求结束本次生成；远端已产生的用量仍以服务商记录为准。</p> : null}
         </div>

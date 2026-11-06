@@ -972,8 +972,10 @@ export interface GenerationProgressEvent {
   bytes: number;
   elapsed_ms: number;
   stage: string;
+  /** 正文累计 Unicode 字符数，不包含思考文本和传输包装。 */
   content_chars?: number;
-  reasoning_chars?: number;
+  /** 本事件中服务商返回的思考文本增量；不存在时为空。 */
+  reasoning_delta?: string;
 }
 
 /** generation cancel 结果（核心 CLI 契约形状）。 */

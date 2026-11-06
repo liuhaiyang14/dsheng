@@ -1,0 +1,29 @@
+.modal.generation-dialog {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.generation-dialog .modal-head,
+.generation-dialog .modal-actions { flex: 0 0 auto; }
+.generation-dialog .modal-body { min-height: 0; overflow-y: auto; }
+.generation-dialog .generation-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+.generation-reasoning { margin: 0 0 18px; }
+.generation-reasoning-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; margin-bottom: 8px; }
+.generation-reasoning-heading h4 { margin: 0; font-size: .875rem; font-weight: 600; }
+.generation-reasoning-heading button { padding: 4px 8px; font-size: .75rem; }
+.generation-reasoning-text {
+  height: min(24vh, 200px);
+  min-height: 96px;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: white;
+  color: var(--ink);
+  font-size: .875rem;
+  line-height: 1.7;
+}
+.generation-reasoning-text:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
