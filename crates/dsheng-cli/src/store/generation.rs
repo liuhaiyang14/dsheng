@@ -13,6 +13,7 @@
 use crate::error::{CliError, CliResult};
 use chrono::{DateTime, Utc};
 use dsheng_core::contracts::cli::CliErrorCode;
+use dsheng_core::contracts::domain::DateRange;
 use dsheng_core::contracts::provider::Framework;
 use dsheng_core::contracts::provider::{
     conservative_input_tokens, ChatCompletionsRequest, ChatCompletionsResponse,
@@ -613,9 +614,9 @@ pub fn build_diagnosis_payload(
     let defs = load_definition_projections(conn, workspace_id)?;
     let used_defs =
         used_definition_closure(defs, &observed_metric_keys(&snapshot), focus_metric_ids);
-    let metrics = metric_projections(conn, workspace_id, &snapshot)?;
-    let conflicts = conflict_projections(conn, workspace_id, run_id)?;
-    let manual = manual_projections(conn, workspace_id)?;
+    let manual = manual_projections(conn, workspace_id, run_id, &snapshot)?;
+    let metrics = metric_projections(conn, workspace_id, &snapshot, &selection, &manual)?;
+    let conflicts = conflict_projections(conn, workspace_id, run_id, &snapshot, &selection)?;
     let anomalies: Vec<AnomalyProjection> = conflicts
         .iter()
         .map(|c| AnomalyProjection {
@@ -705,9 +706,9 @@ pub fn build_task_payload(
     let selection = trimmed_source_selection(conn, workspace_id, run_id, revision, &[])?;
     let snapshot = load_snapshot(conn, run_id, revision)?;
     let defs = load_definition_projections(conn, workspace_id)?;
-    let metrics = metric_projections(conn, workspace_id, &snapshot)?;
-    let conflicts = conflict_projections(conn, workspace_id, run_id)?;
-    let manual = manual_projections(conn, workspace_id)?;
+    let manual = manual_projections(conn, workspace_id, run_id, &snapshot)?;
+    let metrics = metric_projections(conn, workspace_id, &snapshot, &selection, &manual)?;
+    let conflicts = conflict_projections(conn, workspace_id, run_id, &snapshot, &selection)?;
     let anomalies: Vec<AnomalyProjection> = conflicts
         .iter()
         .map(|c| AnomalyProjection {
@@ -1074,6 +1075,8 @@ fn metric_projections(
     conn: &Connection,
     workspace_id: Uuid,
     snapshot: &RunSnapshot,
+    selection: &TrimmedSourceSelection,
+    manual: &[ManualInputProjection],
 ) -> CliResult<Vec<MetricProjection>> {
     let defs = load_definition_projections(conn, workspace_id)?;
     let mut out = Vec::new();
@@ -1087,14 +1090,51 @@ fn metric_projections(
             })
             .cloned();
         let Some(row) = row else { continue };
-        let mom: Option<ComparisonProjection> = row
+        let mut mom: Option<ComparisonProjection> = row
             .get("mom")
             .filter(|v| !v.is_null())
             .and_then(|v| serde_json::from_value(clone_with_numbers(v)).ok());
-        let yoy: Option<ComparisonProjection> = row
+        let mut yoy: Option<ComparisonProjection> = row
             .get("yoy")
             .filter(|v| !v.is_null())
             .and_then(|v| serde_json::from_value(clone_with_numbers(v)).ok());
+        let current = DateRange::new(snapshot.period_from, snapshot.period_to)
+            .map_err(|_| source_scope_unavailable())?;
+        let manual_ids: std::collections::BTreeSet<&str> = manual
+            .iter()
+            .flat_map(|input| input.evidence_ids.iter().map(String::as_str))
+            .collect();
+        for comparison in [&mut mom, &mut yoy].into_iter().flatten() {
+            let base = DateRange::new(comparison.base_from, comparison.base_to)
+                .map_err(|_| source_scope_unavailable())?;
+            comparison.evidence_ids = comparison
+                .evidence_ids
+                .iter()
+                .flat_map(|id| {
+                    if manual_ids.contains(id.as_str()) {
+                        return vec![id.clone()];
+                    }
+                    selection
+                        .evidence_aliases
+                        .get(id)
+                        .into_iter()
+                        .flatten()
+                        .filter(|canonical| {
+                            selection
+                                .evidence_periods
+                                .get(*canonical)
+                                .is_some_and(|period| {
+                                    period_contains(current, *period)
+                                        || period_contains(base, *period)
+                                })
+                        })
+                        .cloned()
+                        .collect()
+                })
+                .collect();
+            comparison.evidence_ids.sort();
+            comparison.evidence_ids.dedup();
+        }
         out.push(MetricProjection {
             metric_id: def.metric_id,
             label: def.label.clone(),
@@ -1140,6 +1180,8 @@ pub struct TrimmedSourceSelection {
     pub manifest: Vec<SourceManifestEntry>,
     pub records: Vec<SourceRecordProjection>,
     pub scope_rows: Vec<Value>,
+    evidence_periods: std::collections::BTreeMap<String, DateRange>,
+    evidence_aliases: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// 旁表单元格快照（analyze 落库；生成时只读）。
@@ -1152,6 +1194,174 @@ struct CellSnap {
     typed_value: Option<String>,
     formula: Option<String>,
     merged_range: Option<String>,
+}
+
+fn json_period(value: &Value, from: &str, to: &str) -> Option<DateRange> {
+    let parse = |key| chrono::NaiveDate::parse_from_str(value.get(key)?.as_str()?, "%Y-%m-%d").ok();
+    DateRange::new(parse(from)?, parse(to)?).ok()
+}
+
+fn source_period(text: &str) -> Option<DateRange> {
+    if let Some((from, to)) = text.split_once('/') {
+        if let (Ok(from), Ok(to)) = (
+            chrono::NaiveDate::parse_from_str(from, "%Y-%m-%d"),
+            chrono::NaiveDate::parse_from_str(to, "%Y-%m-%d"),
+        ) {
+            return DateRange::new(from, to).ok();
+        }
+    }
+    if let Ok(day) = dsheng_core::analysis::periods::parse_calendar_date(text) {
+        return DateRange::new(day, day).ok();
+    }
+    dsheng_core::import::headers::parse_period_header(text, None)
+}
+
+fn period_contains(window: DateRange, source: DateRange) -> bool {
+    window.from <= source.from && source.to <= window.to
+}
+
+type PickedCells<'a> = std::collections::BTreeMap<usize, Vec<&'a CellSnap>>;
+type CellPeriods = std::collections::BTreeMap<(usize, usize), DateRange>;
+
+/// 当前值与比较值分开选取；宽泛旧 evidence 列表不能绕过真实单元格期间。
+#[allow(clippy::too_many_arguments)]
+fn constrain_period_cells<'a>(
+    picked: &mut PickedCells<'a>,
+    rows: &'a std::collections::BTreeMap<usize, Vec<CellSnap>>,
+    layout: &Value,
+    window: DateRange,
+    source_id: &str,
+    file_label: &str,
+    sheet: &str,
+    comparisons: &std::collections::BTreeMap<String, Vec<DateRange>>,
+    current_source: bool,
+) -> CellPeriods {
+    let transposed = layout.get("transposed");
+    let period_col = layout["period_col"].as_u64().map(|c| c as usize);
+    let mut row_periods = std::collections::BTreeMap::new();
+    let mut col_periods = std::collections::BTreeMap::new();
+    if let Some(t) = transposed {
+        for key in ["period_rows", "cumulative_rows"] {
+            for pair in t[key].as_array().into_iter().flatten() {
+                if let (Some(row), Some(period)) =
+                    (pair[0].as_u64(), pair[1].as_str().and_then(source_period))
+                {
+                    row_periods.insert(row as usize, period);
+                }
+            }
+        }
+    } else if let Some(col) = period_col {
+        for (row, cells) in rows {
+            if let Some(period) = cells.iter().find(|c| c.col_no == col).and_then(|c| {
+                source_period(&c.raw_text)
+                    .or_else(|| c.typed_value.as_deref().and_then(source_period))
+            }) {
+                row_periods.insert(*row, period);
+            }
+        }
+    }
+    for pair in layout["trend_period_cols"].as_array().into_iter().flatten() {
+        if let (Some(col), Some(period)) =
+            (pair[0].as_u64(), pair[1].as_str().and_then(source_period))
+        {
+            col_periods.insert(col as usize, period);
+        }
+    }
+    let dated_layout = transposed.is_some() || period_col.is_some() || !col_periods.is_empty();
+    if !dated_layout {
+        if window.from == window.to || !current_source {
+            // 无日期汇总不能声称属于某一天，旧日度分析须重新导入日期明确的来源。
+            picked.clear();
+            return CellPeriods::new();
+        }
+        return picked
+            .iter()
+            .flat_map(|(r, cs)| cs.iter().map(move |c| ((*r, c.col_no), window)))
+            .collect();
+    }
+    let header_start = transposed
+        .and_then(|t| t["header_row"].as_u64())
+        .or_else(|| layout["header"]["row"].as_u64())
+        .unwrap_or(1) as usize;
+    let header_count = layout["header"]["row_count"].as_u64().unwrap_or(1) as usize;
+    let is_header = |row: usize| row >= header_start && row < header_start + header_count;
+    let mut context_cols = std::collections::BTreeSet::new();
+    if transposed.is_some() {
+        context_cols.insert(0);
+    }
+    if let Some(col) = period_col {
+        context_cols.insert(col);
+    }
+    if let Some(col) = layout["label_col"].as_u64() {
+        context_cols.insert(col as usize);
+    }
+    for key in ["metric_label", "unit", "scope"] {
+        if let Some(col) = layout["header"]["columns"][key].as_u64() {
+            context_cols.insert(col as usize);
+        }
+    }
+    let mut selected: PickedCells<'a> = Default::default();
+    let mut periods = CellPeriods::new();
+    for (row, cells) in picked.iter() {
+        if is_header(*row) {
+            continue;
+        }
+        for cell in cells {
+            let Some(period) = row_periods
+                .get(row)
+                .or_else(|| col_periods.get(&cell.col_no))
+                .copied()
+            else {
+                continue;
+            };
+            let a1 = format!(
+                "{}{row}",
+                dsheng_core::import::headers::column_letter(cell.col_no)
+            );
+            let allowed_base = [source_id, file_label].iter().any(|source| {
+                comparisons
+                    .get(&format!("cell:{source}:{sheet}:{a1}"))
+                    .is_some_and(|ranges| ranges.iter().any(|base| period_contains(*base, period)))
+            });
+            if (current_source && period_contains(window, period)) || allowed_base {
+                selected.entry(*row).or_default().push(cell);
+                periods.insert((*row, cell.col_no), period);
+            }
+        }
+    }
+    // 解释比较锚点只需同一行标签/日期，以及选中列的表头；不会补回别期数值。
+    let selected_columns: std::collections::BTreeSet<usize> = selected
+        .values()
+        .flat_map(|cs| cs.iter().map(|c| c.col_no))
+        .collect();
+    for (row, cells) in selected.iter_mut() {
+        if let Some(all) = rows.get(row) {
+            for c in all {
+                if context_cols.contains(&c.col_no) && !col_periods.contains_key(&c.col_no) {
+                    cells.push(c);
+                    if let Some(period) = row_periods.get(row) {
+                        periods.insert((*row, c.col_no), *period);
+                    }
+                }
+            }
+        }
+    }
+    if !selected.is_empty() {
+        for (row, cells) in picked.iter().filter(|(row, _)| is_header(**row)) {
+            let headers = cells
+                .iter()
+                .filter(|c| {
+                    col_periods.is_empty()
+                        || selected_columns.contains(&c.col_no)
+                        || context_cols.contains(&c.col_no)
+                })
+                .copied()
+                .collect();
+            selected.insert(*row, headers);
+        }
+    }
+    *picked = selected;
+    periods
 }
 
 fn source_scope_unavailable() -> CliError {
@@ -1168,6 +1378,7 @@ fn revision_source_scope(
     workspace_id: Uuid,
     run_id: &str,
     revision: u32,
+    include_bases: bool,
 ) -> CliResult<std::collections::BTreeSet<(String, String)>> {
     #[derive(serde::Deserialize)]
     struct BaseRevision {
@@ -1192,7 +1403,7 @@ fn revision_source_scope(
     let mut snapshots = vec![current_sources];
     let bases: Vec<BaseRevision> =
         serde_json::from_str(&base_refs).map_err(|_| source_scope_unavailable())?;
-    for base in bases {
+    for base in bases.into_iter().filter(|_| include_bases) {
         snapshots.push(read_snapshot(&base.run_id, base.revision_no)?.0);
     }
 
@@ -1255,7 +1466,37 @@ pub fn trimmed_source_selection(
     extra_evidence: &[String],
 ) -> CliResult<TrimmedSourceSelection> {
     crate::store::sources::ensure_sidecar_tables(conn)?;
-    let source_scope = revision_source_scope(conn, workspace_id, run_id, revision)?;
+    let source_scope = revision_source_scope(conn, workspace_id, run_id, revision, true)?;
+    let current_source_scope = revision_source_scope(conn, workspace_id, run_id, revision, false)?;
+    let snapshot = load_snapshot(conn, run_id, revision)?;
+    let window = DateRange::new(snapshot.period_from, snapshot.period_to)
+        .map_err(|_| source_scope_unavailable())?;
+    let mut comparison_anchors: std::collections::BTreeMap<String, Vec<DateRange>> =
+        Default::default();
+    if let Some(metrics) = snapshot.metrics.as_array() {
+        for metric in metrics {
+            for key in ["mom", "yoy"] {
+                let comparison = &metric[key];
+                if comparison["base_value"].is_null() {
+                    continue;
+                }
+                let Some(base) = json_period(comparison, "base_from", "base_to") else {
+                    continue;
+                };
+                for id in comparison["evidence_ids"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                {
+                    comparison_anchors
+                        .entry(id.to_string())
+                        .or_default()
+                        .push(base);
+                }
+            }
+        }
+    }
     // 工作区指标名全集（行/列识别口径与扫描期一致）
     let metric_names: std::collections::HashSet<String> =
         crate::store::sources::metric_label_names(conn, workspace_id)?
@@ -1418,15 +1659,16 @@ pub fn trimmed_source_selection(
         let mut label_to_source: std::collections::HashMap<&str, &SourceRow> = Default::default();
         for s in &sources {
             label_to_source.entry(s.file_label.as_str()).or_insert(s);
+            label_to_source.insert(s.source_id.as_str(), s);
         }
         for id in evidence_ids {
             let Some((file_label, sheet, row, col)) = parse_cell_evidence(&id) else {
                 continue; // manual:/content-hash 证据不经单元格域（manual_inputs 另投影）
             };
-            if !label_to_source.contains_key(file_label.as_str()) {
+            let Some(source) = label_to_source.get(file_label.as_str()) else {
                 continue;
-            }
-            anchors.push((file_label, sheet, row, col));
+            };
+            anchors.push((source.file_label.clone(), sheet, row, col));
         }
         anchors.sort();
         anchors.dedup();
@@ -1435,6 +1677,8 @@ pub fn trimmed_source_selection(
     // 逐来源/逐 sheet 计算选定范围
     let mut manifest = Vec::new();
     let mut records: Vec<SourceRecordProjection> = Vec::new();
+    let mut evidence_periods = std::collections::BTreeMap::new();
+    let mut evidence_aliases: std::collections::BTreeMap<String, Vec<String>> = Default::default();
     let mut scope_rows = Vec::new();
     for source in &sources {
         let Some(sheets) = layouts.get(&source.source_id) else {
@@ -1548,9 +1792,21 @@ pub fn trimmed_source_selection(
                     trim_note = format!("已按证据行裁剪：{}/{} 行", picked.len(), total_rows);
                 }
             }
+            let cell_periods = constrain_period_cells(
+                &mut picked,
+                rows_of_sheet,
+                layout,
+                window,
+                &source.source_id,
+                &source.file_label,
+                sheet,
+                &comparison_anchors,
+                current_source_scope.contains(&(source.source_id.clone(), sheet.clone())),
+            );
             if picked.is_empty() {
                 continue;
             }
+            trim_note.push_str("；已按分析期间及必要比较证据裁剪");
             // 去重同行重复引用（锚点＋列选可能重叠）并按列排序
             let mut ordered: Vec<(usize, Vec<&CellSnap>)> = Vec::new();
             for (row_no, mut row_cells) in picked {
@@ -1583,8 +1839,14 @@ pub fn trimmed_source_selection(
                 selected_range: range_str.clone(),
                 content_hash: source.content_hash.clone(),
                 selection_hash: dsheng_core::analysis::fingerprint::sha256_hex(&format!(
-                    "{}|{range_str}|{}",
-                    source.source_id, source.content_hash
+                    "{}|{range_str}|{}|{}",
+                    source.source_id,
+                    source.content_hash,
+                    ordered
+                        .iter()
+                        .flat_map(|(row, cs)| cs.iter().map(move |c| format!("{row}:{}", c.col_no)))
+                        .collect::<Vec<_>>()
+                        .join(",")
                 )),
             });
             scope_rows.push(json!({
@@ -1606,8 +1868,17 @@ pub fn trimmed_source_selection(
                         "{}{row_no}",
                         dsheng_core::import::headers::column_letter(cell.col_no)
                     );
+                    let evidence_id = format!("cell:{}:{sheet_or_csv}:{a1}", source.source_id);
+                    evidence_aliases
+                        .entry(format!("cell:{}:{sheet_or_csv}:{a1}", source.file_label))
+                        .or_default()
+                        .push(evidence_id.clone());
+                    evidence_aliases.insert(evidence_id.clone(), vec![evidence_id.clone()]);
+                    if let Some(period) = cell_periods.get(&(row_no, cell.col_no)) {
+                        evidence_periods.insert(evidence_id.clone(), *period);
+                    }
                     records.push(SourceRecordProjection {
-                        evidence_id: format!("cell:{}:{sheet_or_csv}:{a1}", source.source_id),
+                        evidence_id,
                         source_id: Uuid::parse_str(&source.source_id).unwrap_or(Uuid::nil()),
                         file_label: source.file_label.clone(),
                         sheet: sheet_label.clone(),
@@ -1662,6 +1933,8 @@ pub fn trimmed_source_selection(
         manifest,
         records,
         scope_rows,
+        evidence_periods,
+        evidence_aliases,
     })
 }
 
@@ -1715,6 +1988,8 @@ fn parse_cell_evidence(id: &str) -> Option<(String, String, usize, usize)> {
 fn manual_projections(
     conn: &Connection,
     workspace_id: Uuid,
+    run_id: &str,
+    snapshot: &RunSnapshot,
 ) -> CliResult<Vec<ManualInputProjection>> {
     let mut stmt = conn.prepare(
         // manualInput.metric_id 同样投影定义身份（manual_inputs 行存写入时的
@@ -1723,9 +1998,10 @@ fn manual_projections(
                 mi.unit, mi.confirmed, mi.source_note, mi.input_revision, mi.raw_text
          FROM manual_inputs mi
          JOIN metric_definitions md ON md.metric_id = mi.metric_id
-         WHERE mi.workspace_id = ?1",
+         WHERE mi.workspace_id = ?1
+           AND mi.period_key = (SELECT period_key FROM analysis_runs WHERE run_id = ?2 AND workspace_id = ?1)",
     )?;
-    let rows = stmt.query_map(params![workspace_id.to_string()], |r| {
+    let rows = stmt.query_map(params![workspace_id.to_string(), run_id], |r| {
         Ok((
             r.get::<_, String>(0)?,
             r.get::<_, String>(1)?,
@@ -1758,7 +2034,7 @@ fn manual_projections(
             input_revision: revision as u32,
             measure_role: serde_json::from_value(json!(role))
                 .unwrap_or(MeasureRoleProjection::Actual),
-            period: None,
+            period: Some(format!("{}/{}", snapshot.period_from, snapshot.period_to)),
             scope_key: scope,
             raw_text: raw.unwrap_or_default(),
         });
@@ -1770,29 +2046,40 @@ fn conflict_projections(
     conn: &Connection,
     workspace_id: Uuid,
     run_id: &str,
+    snapshot: &RunSnapshot,
+    selection: &TrimmedSourceSelection,
 ) -> CliResult<Vec<SourceConflictProjection>> {
     let mut stmt = conn.prepare(
         "SELECT conflict_id, metric_id, measure_role, period_from, period_to, scope_key, unit,
                 candidate_values_json, resolution_status, resolution_id, selected_evidence_id,
                 resolution_note
-         FROM source_conflicts WHERE workspace_id = ?1 AND run_id = ?2",
+         FROM source_conflicts WHERE workspace_id = ?1 AND run_id = ?2
+           AND period_from >= ?3 AND period_to <= ?4",
     )?;
-    let rows = stmt.query_map(params![workspace_id.to_string(), run_id], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, String>(3)?,
-            r.get::<_, String>(4)?,
-            r.get::<_, String>(5)?,
-            r.get::<_, String>(6)?,
-            r.get::<_, String>(7)?,
-            r.get::<_, String>(8)?,
-            r.get::<_, Option<String>>(9)?,
-            r.get::<_, Option<String>>(10)?,
-            r.get::<_, Option<String>>(11)?,
-        ))
-    })?;
+    let rows = stmt.query_map(
+        params![
+            workspace_id.to_string(),
+            run_id,
+            snapshot.period_from.to_string(),
+            snapshot.period_to.to_string()
+        ],
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, String>(5)?,
+                r.get::<_, String>(6)?,
+                r.get::<_, String>(7)?,
+                r.get::<_, String>(8)?,
+                r.get::<_, Option<String>>(9)?,
+                r.get::<_, Option<String>>(10)?,
+                r.get::<_, Option<String>>(11)?,
+            ))
+        },
+    )?;
     let mut out = Vec::new();
     for row in rows {
         let (
@@ -1813,11 +2100,41 @@ fn conflict_projections(
         else {
             continue;
         };
-        let candidates: Vec<ConflictCandidateValue> =
+        let mut candidates: Vec<ConflictCandidateValue> =
             serde_json::from_str::<Value>(&candidates_raw)
                 .ok()
                 .and_then(|v| serde_json::from_value(clone_with_numbers(&v)).ok())
                 .unwrap_or_default();
+        let period = DateRange::new(
+            chrono::NaiveDate::parse_from_str(&from, "%Y-%m-%d")
+                .map_err(|_| source_scope_unavailable())?,
+            chrono::NaiveDate::parse_from_str(&to, "%Y-%m-%d")
+                .map_err(|_| source_scope_unavailable())?,
+        )
+        .map_err(|_| source_scope_unavailable())?;
+        let mut candidate_aliases = std::collections::BTreeMap::new();
+        for candidate in &mut candidates {
+            if candidate.evidence_id.starts_with("cell:") {
+                let matches: Vec<_> = selection
+                    .evidence_aliases
+                    .get(&candidate.evidence_id)
+                    .into_iter()
+                    .flatten()
+                    .filter(|id| {
+                        selection
+                            .evidence_periods
+                            .get(*id)
+                            .is_some_and(|source| period_contains(period, *source))
+                    })
+                    .collect();
+                let [canonical] = matches.as_slice() else {
+                    return Err(source_scope_unavailable());
+                };
+                candidate_aliases.insert(candidate.evidence_id.clone(), (*canonical).clone());
+                candidate.evidence_id = (*canonical).clone();
+            }
+        }
+        let selected = selected.map(|id| candidate_aliases.get(&id).cloned().unwrap_or(id));
         out.push(SourceConflictProjection {
             conflict_id: conflict_uuid,
             metric_id: metric_uuid,

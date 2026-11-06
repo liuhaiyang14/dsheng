@@ -125,7 +125,7 @@ fn old_revision_with_blank_source_id_excludes_new_file_versions_and_other_sheets
 }
 
 #[test]
-fn only_the_exact_explicit_comparison_revision_adds_baseline_sources() {
+fn unused_baseline_revisions_do_not_expand_the_model_source_scope() {
     let f = Fixture::new("generation-source-base");
     let conn = Connection::open(&f.db).unwrap();
     let (current_id, current_hash) = source(&conn, &f);
@@ -160,7 +160,9 @@ fn only_the_exact_explicit_comparison_revision_adds_baseline_sources() {
         .iter()
         .map(|m| m.source_id.to_string())
         .collect();
-    assert_eq!(ids, [current_id, base_id].into_iter().collect());
+    // Binding a revision only grants eligibility; it does not send its whole source.
+    // This undated fixture has no actual baseline anchors.
+    assert_eq!(ids, [current_id].into_iter().collect());
     assert!(selected
         .records
         .iter()

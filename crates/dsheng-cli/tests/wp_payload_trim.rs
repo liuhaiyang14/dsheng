@@ -333,7 +333,7 @@ fn transposed_trend_sheet_trims_to_metric_columns() {
     let payload = payload_of(&material);
     let records = payload["source_records"].as_array().unwrap();
     assert!(!records.is_empty());
-    // 指标列（B/C）＋period 列（A）整列；不存在其他列的记录
+    // 指标列（B/C）＋period 列（A）；不存在其他列的记录
     for r in records {
         let col: String = r["cell_or_row"]
             .as_str()
@@ -347,9 +347,9 @@ fn transposed_trend_sheet_trims_to_metric_columns() {
             r["cell_or_row"]
         );
     }
-    // 表头行＋4 个月行＋累计行＋注释行（A 列属 period 列，整列含注释行）
+    // 只发送表头、本期十月及环比九月锚点；累计和无期间注释不发送。
     let rows: std::collections::BTreeSet<u32> = rows_of(&payload);
-    assert!(rows.contains(&1) && rows.contains(&5) && rows.contains(&8));
+    assert_eq!(rows, [1, 4, 5].into_iter().collect());
     let manifest = payload["source_manifest"].as_array().unwrap();
     assert_eq!(manifest.len(), 1);
     let range = manifest[0]["selected_range"].as_str().unwrap();
