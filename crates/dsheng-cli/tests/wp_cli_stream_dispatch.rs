@@ -107,7 +107,7 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
         &provider,
         &material,
         dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .unwrap();
@@ -126,7 +126,7 @@ fn send_confirmed_forwards_chunk_progress_with_attempt_binding() {
         &provider,
         &material,
         confirmation_id,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
         &mut recorder,
         &mut |event| events.push(event),

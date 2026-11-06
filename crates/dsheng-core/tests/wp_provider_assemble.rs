@@ -125,7 +125,7 @@ fn task_input() -> TaskInputProjection {
             run_id: "run-1".into(),
             analysis_revision_no: 1,
             analysis_input_fingerprint: "f".repeat(64),
-            prompt_version: TaskPromptVersion::V23,
+            prompt_version: TaskPromptVersion::V24,
             workflow: TaskWorkflowMarker::Task,
             schema_version: TaskSchemaVersion::V2,
         },
@@ -161,7 +161,7 @@ fn task_input() -> TaskInputProjection {
             prior_task_outcomes: vec![],
         },
         task_skill_context: TaskSkillContextProjection {
-            rules_version: TaskPromptVersion::V23,
+            rules_version: TaskPromptVersion::V24,
             required_fields: RequiredFieldsConst,
             category_options: CategoryOptionsConst,
         },
@@ -184,7 +184,7 @@ fn diagnosis_input(
             run_id: "run-1".into(),
             analysis_revision_no: 1,
             analysis_input_fingerprint: "f".repeat(64),
-            prompt_version: DiagnosisPromptVersion::V20,
+            prompt_version: DiagnosisPromptVersion::V21,
             workflow: DiagnosisWorkflowMarker::Diagnosis,
             report_id: None,
             generation_session_id: "sess-1".into(),
@@ -279,6 +279,8 @@ fn typed_task_input_passes_schema() {
             serde_json::to_string_pretty(&value).unwrap()
         );
     }
+    assert_eq!(value["request"]["prompt_version"], "2.4");
+    assert_eq!(value["task_skill_context"]["rules_version"], "2.4");
     // 数值词法保留（不经 f64）
     assert_eq!(value["metrics"][0]["actual"].to_string(), "100.25");
 }
@@ -289,6 +291,8 @@ fn typed_diagnosis_input_passes_schema_round1_and_continuation() {
     if let Err(errors) = validate_diagnosis_input(&round1) {
         panic!("诊断输入（首轮）未通过 schema: {errors:?}");
     }
+
+    assert_eq!(round1["request"]["prompt_version"], "2.1");
 
     let mut round2 = diagnosis_input(
         2,
@@ -334,10 +338,13 @@ fn typed_diagnosis_input_passes_schema_round1_and_continuation() {
 fn typed_projection_negative_cases() {
     // 错误的 prompt_version 常量 → schema 拒绝
     let mut bad = task_input();
-    bad.request.prompt_version = TaskPromptVersion::V23; // 唯一合法值，改为 JSON 篡改
+    bad.request.prompt_version = TaskPromptVersion::V24; // 唯一合法值，改为 JSON 篡改
     let mut value = serde_json::to_value(bad).unwrap();
-    value["request"]["prompt_version"] = json!("2.2");
+    value["request"]["prompt_version"] = json!("2.3");
     assert!(validate_task_input(&value).is_err());
+    let mut old_diagnosis = serde_json::to_value(diagnosis_input(1, None)).unwrap();
+    old_diagnosis["request"]["prompt_version"] = json!("2.0");
+    assert!(validate_diagnosis_input(&old_diagnosis).is_err());
     // user_context 超 8000 字符
     let mut bad2 = task_input();
     bad2.user_context = Some("长".repeat(8_001));
@@ -358,6 +365,8 @@ fn four_combination_message_assembly() {
         .map(|f| dsheng_core::contracts::prompts::resource(f).unwrap())
         .collect::<String>();
     assert_eq!(task.system, expected_system, "system 为文件序列直接拼接");
+    assert!(task.system.contains("供用户查看的思考文字使用简体中文"));
+    assert!(task.system.contains("不得混入最终 JSON 正文"));
     assert!(task.user.contains(&payload));
     assert!(task.user.contains("\"$defs\""));
 
@@ -371,6 +380,10 @@ fn four_combination_message_assembly() {
             .map(|x| dsheng_core::contracts::prompts::resource(x).unwrap())
             .collect::<String>();
         assert_eq!(d.system, expected, "诊断 system = system.md + 单个框架文件");
+        assert!(d.system.contains("供用户查看的思考文字使用简体中文"));
+        assert!(d
+            .system
+            .contains("JSON 字段名、枚举值、ID、证据引用、公式、原文引用"));
         // 只拼接所选框架，不混拼
         let frameworks_in_system = [
             d.system.contains("5WHY 框架") || d.system.contains("5WHY"),

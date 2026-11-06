@@ -40,7 +40,7 @@ fn minimal_diagnosis_input() -> DiagnosisInputProjection {
             run_id: "run-1".into(),
             analysis_revision_no: 1,
             analysis_input_fingerprint: "f".repeat(64),
-            prompt_version: DiagnosisPromptVersion::V20,
+            prompt_version: DiagnosisPromptVersion::V21,
             workflow: DiagnosisWorkflowMarker::Diagnosis,
             report_id: None,
             generation_session_id: "sess-1".into(),

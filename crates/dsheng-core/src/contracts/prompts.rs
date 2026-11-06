@@ -1,6 +1,7 @@
 //! 冻结提示词资源嵌入与版本/哈希管理（prompts/v1/versions.json）。
 //!
-//! 提示词正文已冻结（2026-11-02 用户批准）：实现层不得修改正文；
+//! 提示词正文按用户批准版本管理（2026-11-06 授权新增中文展示偏好）；
+//! 业务规则与输出形状沿用 2026-11-02 冻结版本，不在组装层临时追加指令；
 //! 每次构建/测试都校验嵌入资源 SHA-256 与 versions.json 的
 //! current_resource_hashes 一致；发现不一致即构建失败。
 //!
@@ -124,9 +125,9 @@ pub fn verify_frozen_hashes() -> Result<(), Vec<(String, String, String)>> {
     }
 }
 
-/// 冻结版本常量（与 versions.json/计划 §8.2 一致）。
-pub const TASK_PROMPT_VERSION: &str = "2.3";
-pub const DIAGNOSIS_PROMPT_VERSION: &str = "2.0";
+/// 当前版本常量（与 versions.json 及本轮用户授权的语言修订一致）。
+pub const TASK_PROMPT_VERSION: &str = "2.4";
+pub const DIAGNOSIS_PROMPT_VERSION: &str = "2.1";
 pub const TASK_OUTPUT_SCHEMA_VERSION: &str = "2";
 pub const DIAGNOSIS_SCHEMA_VERSION: &str = "3";
 pub const INPUT_CONTRACT_VERSION: &str = "2";

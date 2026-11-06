@@ -541,7 +541,7 @@ fn s5_generation_retry_positive_after_failed_terminal() {
         &provider,
         &material,
         dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .unwrap();

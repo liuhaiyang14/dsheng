@@ -541,11 +541,11 @@ pub enum InputSchemaVersion {
     V2,
 }
 
-/// const "2.3"（任务 prompt 版本）。
+/// const "2.4"（任务 prompt 版本）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum TaskPromptVersion {
-    #[serde(rename = "2.3")]
-    V23,
+    #[serde(rename = "2.4")]
+    V24,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -786,11 +786,11 @@ pub struct DiagnosisRequestProjection {
     pub context_policy_version: ContextPolicyVersion,
 }
 
-/// const "2.0"（诊断 prompt 版本）。
+/// const "2.1"（诊断 prompt 版本）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DiagnosisPromptVersion {
-    #[serde(rename = "2.0")]
-    V20,
+    #[serde(rename = "2.1")]
+    V21,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -3,7 +3,7 @@
   "status": "candidate",
   "prompt_bundles": {
     "task": {
-      "prompt_version": "2.3",
+      "prompt_version": "2.4",
       "files": [
         "task/system.md",
         "task/user.md"
@@ -14,7 +14,7 @@
       "input_schema_version": "2"
     },
     "diagnosis_5why": {
-      "prompt_version": "2.0",
+      "prompt_version": "2.1",
       "files": [
         "diagnosis/system.md",
         "diagnosis/user.md",
@@ -26,7 +26,7 @@
       "input_schema_version": "2"
     },
     "diagnosis_5w": {
-      "prompt_version": "2.0",
+      "prompt_version": "2.1",
       "files": [
         "diagnosis/system.md",
         "diagnosis/user.md",
@@ -38,7 +38,7 @@
       "input_schema_version": "2"
     },
     "diagnosis_5w2h": {
-      "prompt_version": "2.0",
+      "prompt_version": "2.1",
       "files": [
         "diagnosis/system.md",
         "diagnosis/user.md",
@@ -744,7 +744,7 @@
   "manifest_schema_version": "1",
   "schema_version_semantics": "Manifest format only; runtime output schema version comes from the selected prompt bundle.",
   "diagnosis_report_schema_version": "3",
-  "current_revision_reason": "2.0 rebuilt typed metric/scope/target input contracts and new-goal direction rules; 2.1 added explicit Schema 2 root-object wording after bare task objects; 2.2 unified the root-envelope requirement across task/system.md, task/user.md and the embedded output-schema description; 2.3 (2026-11-02, option-C decision) adds a complete schema-validated few-shot output example demonstrating the root envelope, nested task shape and null step dates with needs_review, referenced from system.md, pending live validation.",
+  "current_revision_reason": "2026-11-06 user-authorized language-only revision: task 2.4 and diagnosis 2.1 request Simplified Chinese for provider-returned displayable reasoning and natural-language result text. JSON keys, enum values, IDs, evidence references, formulas and source quotations remain unchanged; reasoning stays outside the final JSON body. Business rules, model input/output schema versions and output shape are unchanged.",
   "validation_totals": {
     "confirmed_dispatched_all_providers": 37,
     "additional_unobserved_dispatches_maximum": 5,
@@ -754,40 +754,27 @@
     "diagnosis/framework-5w.md": "1c67af076f4a7d1155c906a9bcb4223a50458d8d1af0d34e9fe89f77b0efac10",
     "diagnosis/framework-5w2h.md": "826863a3e4e5888b95a5c34464e9247cc1d39e31d454e2b7ec07af7fce417d85",
     "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
-    "diagnosis/system.md": "000f078d8a47b4f6903211838b84fbc3d82a35d2ced86c1f5cf65da1cf8bb643",
+    "diagnosis/system.md": "24c15bf696651974bc493aad8dfc4d0610513055b7eb22074f788c6b0a8dde8b",
     "diagnosis/user.md": "19325dc4cc6ea094ad696341eb19b46f81d8dd4306bebd4f8d6defd0a04380f9",
     "schema/diagnosis-report.schema.json": "70297418d31838c14e216377698618334d4deaabbde7681352c8eefee858e15b",
     "schema/diagnosis-turn-5w.schema.json": "721e1733a5e75baa3db48a0d3fa20e37cc94454885bc72c386feee1653b55d4b",
     "schema/diagnosis-turn-5w2h.schema.json": "c286dc4b1b01f68acb6d2f72b83fe35f0c3ced90fdc3a48b44a44d5e343e6c26",
     "schema/diagnosis-turn-5why.schema.json": "fcf1381052eeea6234a1ce7933c941978183e62e3cdb00916668c6d06bd9e0bd",
     "schema/task-output.schema.json": "96a5eac0feac68669cf6f11402366679c1ce9c4bfd6418a30c63649e577eaf8f",
-    "task/system.md": "283d20d3d1e3086f1674ae0d083bb86098dd385f084718001c9d96943302e636",
+    "task/system.md": "513dd9310dc8a93f0b6ef2121bdc3a9e239749f0a65293e5300e3b521f9f5105",
     "task/user.md": "6827ea65c3530b5860ced0728abb5b98b411d9413cf672e0e56d69aba5b94aae"
   },
   "current_acceptance": {
-    "state": "frozen_task_2_3_diagnosis_2_0",
-    "date": "2026-11-02",
-    "static_review_unresolved_p0": null,
-    "static_review_unresolved_p1": null,
-    "prompt_and_provider_work_package_frozen": true,
-    "engineering_ready": true,
-    "current_version_confirmed_dispatches": 44,
-    "remaining_authorized_attempts": 0,
-    "required_live_matrix": "docs/specs/prompt-context-validation.md#6",
-    "proposed_maximum_attempts": 16,
-    "proposed_is_authorized": false,
-    "limits": [
-      "Frozen by user decision 2026-11-02 after the full retest batch: all 19 dispatched scenarios passed the output contract; task 2.3 strict root-envelope 5/6 with one audited option-C fallback (envelope_locally_reconstructed=true).",
-      "Historical failures remain on record per version (2.0/2.1/2.2 bare objects, three scope-clarification timeouts) and are not rewritten by the freeze.",
-      "Documented residuals carried into engineering as non-blocking notes: user_confirmation-requirement warnings never occurred naturally; 5W/5W2H and off-topic coverage relies on main-batch evidence for the unchanged 2.0 diagnosis text; several scenarios have single samples; no statistical reliability is claimed.",
-      "The implementation MUST include the option-C adaptation layer (strict-first extraction with audited sole-bare-task envelope wrap, tools/extract_provider_json.py --policy adapt as the reference behavior) because bare-object responses still occur nondeterministically (1 of 6 in the freeze batch).",
-      "engineering_ready=true as of this freeze; remaining work is product implementation per the main plan acceptance cases."
-    ],
-    "remaining_planning_gate": "Repair task JSON reliability and complete only explicitly authorized affected regressions; keep failed and unverified scenarios open.",
+    "state": "user_authorized_language_revision_pending_live_observation",
+    "date": "2026-11-06",
+    "prompt_and_provider_work_package_frozen": false,
+    "current_task_prompt_version": "2.4",
+    "current_diagnosis_prompt_version": "2.1",
     "task_output_schema_version": "2",
-    "current_task_prompt_version": "2.3",
-    "unconfirmed_dispatches_not_counted": 1,
-    "dispatch_accounting": "44 confirmed = main 16 (10-30) + root-contract followup 6 (10-30) + recovery 3 (11-02) + full retest 19 (11-02); 1 additional launch on 10-30 has unknown status and is excluded; 1 of the 20 authorized on 11-02 remains unused.",
+    "diagnosis_output_schema_version": "3",
+    "current_version_confirmed_dispatches": 0,
+    "remaining_authorized_attempts": 0,
+    "language_revision_authorized": true,
     "envelope_policy": {
       "decision": "option_c_hybrid_adopted_2026_11_02",
       "strict_first": true,
@@ -797,19 +784,12 @@
       "implementation": "tools/extract_provider_json.py --policy adapt",
       "note": "The prompt still requires the model to output the root envelope itself; the fallback never invents business values"
     },
-    "current_version_confirmed_dispatches_note": "Counts the whole new-generation live series (task prompt 2.x texts). The current 2.3 text has 6 live dispatches (all task scenarios of the full retest batch); the other 13 full-retest dispatches exercised the unchanged diagnosis 2.0 text.",
-    "envelope_observation": {
-      "task_2_3_strict_envelope": "5 of 6 dispatches returned the root envelope directly (contract_matched)",
-      "task_2_3_fallback_case": "monthly-floor dispatch returned a bare task object; option-C adapt fallback wrapped it with envelope_locally_reconstructed=true and all semantics passed",
-      "conclusion": "envelope discipline is high but not deterministic; the audited fallback is required and sufficient under the option-C policy"
-    },
-    "freeze_decision": {
-      "decided_by": "user",
-      "decided_at": "2026-11-02",
-      "scope": "task prompt 2.3 + output schema 2 + diagnosis prompts 2.0 + turn/report schema 3 + input/context 2",
-      "basis": "Affected-matrix live passes on 2026-11-02 (19 dispatches, all contract-pass incl. one option-C fallback rescue) and independent reviews with P0/P1=0.",
-      "simultaneous_decision": "The 1 remaining authorized dispatch of the 2026-11-02 batch was voided by the user; remaining_authorized_attempts is now 0 by decision, not by exhaustion."
-    }
+    "limits": [
+      "Only language preference and version bindings changed under user authorization; prior business rules and output contracts remain in force.",
+      "Historical acceptance snapshots and the original live-validation record are retained unchanged; they are not live evidence for task 2.4 or diagnosis 2.1.",
+      "No Provider dispatch has been performed or newly authorized for this revision. Chinese reasoning is a model instruction, not a guaranteed provider language setting.",
+      "Local schema/hash and implementation regressions are verified separately; no new live-model effectiveness claim is made."
+    ]
   },
   "plan_readiness_review": {
     "date": "2026-10-30",
@@ -877,14 +857,97 @@
         "current_task_prompt_version": "1.3",
         "scope": "Historical last Provider batch; it did not test current prompt 2.0/schema 3 resources."
       }
+    },
+    {
+      "baseline_commit": "d732e81",
+      "acceptance": {
+        "state": "frozen_task_2_3_diagnosis_2_0",
+        "date": "2026-11-02",
+        "static_review_unresolved_p0": null,
+        "static_review_unresolved_p1": null,
+        "prompt_and_provider_work_package_frozen": true,
+        "engineering_ready": true,
+        "current_version_confirmed_dispatches": 44,
+        "remaining_authorized_attempts": 0,
+        "required_live_matrix": "docs/specs/prompt-context-validation.md#6",
+        "proposed_maximum_attempts": 16,
+        "proposed_is_authorized": false,
+        "limits": [
+          "Frozen by user decision 2026-11-02 after the full retest batch: all 19 dispatched scenarios passed the output contract; task 2.3 strict root-envelope 5/6 with one audited option-C fallback (envelope_locally_reconstructed=true).",
+          "Historical failures remain on record per version (2.0/2.1/2.2 bare objects, three scope-clarification timeouts) and are not rewritten by the freeze.",
+          "Documented residuals carried into engineering as non-blocking notes: user_confirmation-requirement warnings never occurred naturally; 5W/5W2H and off-topic coverage relies on main-batch evidence for the unchanged 2.0 diagnosis text; several scenarios have single samples; no statistical reliability is claimed.",
+          "The implementation MUST include the option-C adaptation layer (strict-first extraction with audited sole-bare-task envelope wrap, tools/extract_provider_json.py --policy adapt as the reference behavior) because bare-object responses still occur nondeterministically (1 of 6 in the freeze batch).",
+          "engineering_ready=true as of this freeze; remaining work is product implementation per the main plan acceptance cases."
+        ],
+        "remaining_planning_gate": "Repair task JSON reliability and complete only explicitly authorized affected regressions; keep failed and unverified scenarios open.",
+        "task_output_schema_version": "2",
+        "current_task_prompt_version": "2.3",
+        "unconfirmed_dispatches_not_counted": 1,
+        "dispatch_accounting": "44 confirmed = main 16 (10-30) + root-contract followup 6 (10-30) + recovery 3 (11-02) + full retest 19 (11-02); 1 additional launch on 10-30 has unknown status and is excluded; 1 of the 20 authorized on 11-02 remains unused.",
+        "envelope_policy": {
+          "decision": "option_c_hybrid_adopted_2026_11_02",
+          "strict_first": true,
+          "fallback": "adaptation layer may wrap one sole bare-task object (validated against the task subschema) into the Schema 2 root envelope; envelope_locally_reconstructed must be recorded wherever the result is stored",
+          "fallback_summary_rule": "reuse the bare task object summary string when non-empty, else empty string",
+          "refused_cases": "multiple bare-task candidates, or a bare object failing the task subschema",
+          "implementation": "tools/extract_provider_json.py --policy adapt",
+          "note": "The prompt still requires the model to output the root envelope itself; the fallback never invents business values"
+        },
+        "current_version_confirmed_dispatches_note": "Counts the whole new-generation live series (task prompt 2.x texts). The current 2.3 text has 6 live dispatches (all task scenarios of the full retest batch); the other 13 full-retest dispatches exercised the unchanged diagnosis 2.0 text.",
+        "envelope_observation": {
+          "task_2_3_strict_envelope": "5 of 6 dispatches returned the root envelope directly (contract_matched)",
+          "task_2_3_fallback_case": "monthly-floor dispatch returned a bare task object; option-C adapt fallback wrapped it with envelope_locally_reconstructed=true and all semantics passed",
+          "conclusion": "envelope discipline is high but not deterministic; the audited fallback is required and sufficient under the option-C policy"
+        },
+        "freeze_decision": {
+          "decided_by": "user",
+          "decided_at": "2026-11-02",
+          "scope": "task prompt 2.3 + output schema 2 + diagnosis prompts 2.0 + turn/report schema 3 + input/context 2",
+          "basis": "Affected-matrix live passes on 2026-11-02 (19 dispatches, all contract-pass incl. one option-C fallback rescue) and independent reviews with P0/P1=0.",
+          "simultaneous_decision": "The 1 remaining authorized dispatch of the 2026-11-02 batch was voided by the user; remaining_authorized_attempts is now 0 by decision, not by exhaustion."
+        }
+      },
+      "current_revision_reason": "2.0 rebuilt typed metric/scope/target input contracts and new-goal direction rules; 2.1 added explicit Schema 2 root-object wording after bare task objects; 2.2 unified the root-envelope requirement across task/system.md, task/user.md and the embedded output-schema description; 2.3 (2026-11-02, option-C decision) adds a complete schema-validated few-shot output example demonstrating the root envelope, nested task shape and null step dates with needs_review, referenced from system.md, pending live validation.",
+      "resource_hashes": {
+        "diagnosis/framework-5w.md": "1c67af076f4a7d1155c906a9bcb4223a50458d8d1af0d34e9fe89f77b0efac10",
+        "diagnosis/framework-5w2h.md": "826863a3e4e5888b95a5c34464e9247cc1d39e31d454e2b7ec07af7fce417d85",
+        "diagnosis/framework-5why.md": "29a4e3c390c57fbe9f9e75a2c7c00aebe31a71ce2d13b17501d2d957b6a3603c",
+        "diagnosis/system.md": "000f078d8a47b4f6903211838b84fbc3d82a35d2ced86c1f5cf65da1cf8bb643",
+        "diagnosis/user.md": "19325dc4cc6ea094ad696341eb19b46f81d8dd4306bebd4f8d6defd0a04380f9",
+        "schema/diagnosis-report.schema.json": "70297418d31838c14e216377698618334d4deaabbde7681352c8eefee858e15b",
+        "schema/diagnosis-turn-5w.schema.json": "721e1733a5e75baa3db48a0d3fa20e37cc94454885bc72c386feee1653b55d4b",
+        "schema/diagnosis-turn-5w2h.schema.json": "c286dc4b1b01f68acb6d2f72b83fe35f0c3ced90fdc3a48b44a44d5e343e6c26",
+        "schema/diagnosis-turn-5why.schema.json": "fcf1381052eeea6234a1ce7933c941978183e62e3cdb00916668c6d06bd9e0bd",
+        "schema/task-output.schema.json": "96a5eac0feac68669cf6f11402366679c1ce9c4bfd6418a30c63649e577eaf8f",
+        "task/system.md": "283d20d3d1e3086f1674ae0d083bb86098dd385f084718001c9d96943302e636",
+        "task/user.md": "6827ea65c3530b5860ced0728abb5b98b411d9413cf672e0e56d69aba5b94aae"
+      },
+      "input_contract_hashes": {
+        "contracts/v1/diagnosis-input.schema.json": "e54bd7728f368474fb44e6fdbc5569f496094306ab4b9f6ba2cca3c2b3d7ebd4",
+        "contracts/v1/task-input.schema.json": "aa013fedc4630755ea1388c605fe9f6edb03b45bcb64e463d7bb060874680991"
+      },
+      "live_validation_record": "historical_live_validation_through_2026_11_02"
     }
   ],
   "context_policy_version": "2",
   "current_input_contract_hashes": {
-    "contracts/v1/diagnosis-input.schema.json": "e54bd7728f368474fb44e6fdbc5569f496094306ab4b9f6ba2cca3c2b3d7ebd4",
-    "contracts/v1/task-input.schema.json": "aa013fedc4630755ea1388c605fe9f6edb03b45bcb64e463d7bb060874680991"
+    "contracts/v1/diagnosis-input.schema.json": "988dc343675df1ba814493adb1c3116bd81e4584b69e48ae525349406c770494",
+    "contracts/v1/task-input.schema.json": "8d0d82449ad92652e95b43b5964f3ff700c2a88e448920a5f168c915642255c8"
   },
   "current_live_validation": {
+    "state": "not_dispatched",
+    "date": "2026-11-06",
+    "prompt_versions": {
+      "task": "2.4",
+      "diagnosis_5why": "2.1",
+      "diagnosis_5w": "2.1",
+      "diagnosis_5w2h": "2.1"
+    },
+    "confirmed_dispatches": 0,
+    "remaining_authorized_attempts": 0,
+    "note": "No actual Provider call. Prior live validation is preserved verbatim in historical_live_validation_through_2026_11_02 and referenced by the d732e81 historical acceptance snapshot."
+  },
+  "historical_live_validation_through_2026_11_02": {
     "batch_id": "zai-glm53-current-16",
     "date": "2026-10-30",
     "provider": "Z.ai Coding Plan",

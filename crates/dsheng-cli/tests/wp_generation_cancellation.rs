@@ -30,7 +30,7 @@ fn preview(
         &provider,
         &material,
         GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .unwrap();
@@ -104,7 +104,7 @@ fn stop_before_attempt_consumption_is_atomic_and_cannot_send() {
         &provider,
         &material,
         confirmation,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
         &mut dispatch,
         &mut |event| events.push(event),
@@ -129,7 +129,7 @@ fn waiting_event_allows_cross_connection_stop_before_network() {
         &provider,
         &material,
         confirmation,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
         &mut dispatch,
         &mut |event| {
@@ -208,7 +208,7 @@ fn cancellation_without_chunks_wins_over_late_transport_error_for_both_paths() {
             &provider,
             &material,
             confirmation,
-            "2.3",
+            dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
             "2",
             &mut dispatch,
             &mut |_| {},
@@ -314,6 +314,17 @@ fn task_candidate_and_success_commit_together_and_finished_cannot_be_cancelled()
     )
     .unwrap();
     assert_eq!(status(&conn, &f, attempt)["terminal_state"], "success");
+    let candidate_prompt: String = conn
+        .query_row(
+            "SELECT prompt_version FROM task_candidates WHERE candidate_generation_id = ?1",
+            [&candidate],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        candidate_prompt,
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION
+    );
     let saved: String = conn
         .query_row(
             "SELECT output_json FROM task_candidates WHERE candidate_generation_id = ?1",

@@ -67,7 +67,7 @@ fn task_input(metric: MetricProjection) -> TaskInputProjection {
             run_id: "run-1".into(),
             analysis_revision_no: 1,
             analysis_input_fingerprint: "f".repeat(64),
-            prompt_version: TaskPromptVersion::V23,
+            prompt_version: TaskPromptVersion::V24,
             workflow: TaskWorkflowMarker::Task,
             schema_version: TaskSchemaVersion::V2,
         },
@@ -113,7 +113,7 @@ fn task_input(metric: MetricProjection) -> TaskInputProjection {
             prior_task_outcomes: vec![],
         },
         task_skill_context: TaskSkillContextProjection {
-            rules_version: TaskPromptVersion::V23,
+            rules_version: TaskPromptVersion::V24,
             required_fields: RequiredFieldsConst,
             category_options: CategoryOptionsConst,
         },

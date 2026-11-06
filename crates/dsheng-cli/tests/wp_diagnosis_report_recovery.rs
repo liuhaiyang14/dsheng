@@ -247,7 +247,7 @@ fn repeated_identical_generation_is_rejected_before_preview() {
         &provider,
         &material,
         dsheng_core::contracts::provider::GenerationOperation::DiagnosisGenerate,
-        "2.0",
+        dsheng_core::contracts::prompts::DIAGNOSIS_PROMPT_VERSION,
         "3",
     )
     .unwrap_err();

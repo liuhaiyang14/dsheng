@@ -636,7 +636,7 @@ pub fn build_diagnosis_payload(
             run_id: run_id.to_string(),
             analysis_revision_no: revision,
             analysis_input_fingerprint: fingerprint.clone(),
-            prompt_version: DiagnosisPromptVersion::V20,
+            prompt_version: DiagnosisPromptVersion::V21,
             workflow: DiagnosisWorkflowMarker::Diagnosis,
             report_id: None,
             generation_session_id: session_id_of(conn, workspace_id, run_id),
@@ -758,7 +758,7 @@ pub fn build_task_payload(
             run_id: run_id.to_string(),
             analysis_revision_no: revision,
             analysis_input_fingerprint: fingerprint.clone(),
-            prompt_version: TaskPromptVersion::V23,
+            prompt_version: TaskPromptVersion::V24,
             workflow: TaskWorkflowMarker::Task,
             schema_version: TaskSchemaVersion::V2,
         },
@@ -789,7 +789,7 @@ pub fn build_task_payload(
             prior_task_outcomes: vec![],
         },
         task_skill_context: TaskSkillContextProjection {
-            rules_version: TaskPromptVersion::V23,
+            rules_version: TaskPromptVersion::V24,
             required_fields: RequiredFieldsConst,
             category_options: CategoryOptionsConst,
         },
@@ -3019,7 +3019,7 @@ pub fn save_task_candidate(
                 analysis_revision_no, analysis_input_fingerprint, generation_input_fingerprint,
                 candidate_revision_no, attempt_id, output_json, envelope_locally_reconstructed,
                 state, prompt_version, schema_version, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, 'candidate', '2.3', '2', ?10)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, 'candidate', (SELECT prompt_version FROM generation_attempts WHERE attempt_id = ?7), '2', ?10)",
             params![
                 candidate_id,
                 workspace_id.to_string(),

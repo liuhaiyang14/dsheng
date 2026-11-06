@@ -60,7 +60,7 @@ fn s3_preview_creates_confirmation_without_dispatch() {
         &provider,
         &material,
         dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .expect("预览成功");
@@ -89,7 +89,7 @@ fn s3_unconfirmed_send_paths_never_dispatch() {
         &provider,
         &material,
         dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .unwrap();
@@ -109,7 +109,7 @@ fn s3_unconfirmed_send_paths_never_dispatch() {
         &provider,
         &material,
         uuid::Uuid::new_v4(),
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
         &mut recorder,
         &mut |_| {},
@@ -129,7 +129,7 @@ fn s3_unconfirmed_send_paths_never_dispatch() {
         &provider,
         &drifted,
         confirmation_id,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
         &mut recorder,
         &mut |_| {},
@@ -155,7 +155,7 @@ fn s3_confirmed_gate_dispatches_exactly_once_and_marks_terminal() {
         &provider,
         &material,
         dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .unwrap();
@@ -175,7 +175,7 @@ fn s3_confirmed_gate_dispatches_exactly_once_and_marks_terminal() {
         &provider,
         &material,
         confirmation_id,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
         &mut recorder,
         &mut |_| {},
@@ -213,7 +213,7 @@ fn s3_confirmed_gate_dispatches_exactly_once_and_marks_terminal() {
         &provider,
         &material,
         confirmation_id,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
         &mut second,
         &mut |_| {},
@@ -416,7 +416,7 @@ fn s3_generation_status_cancel_and_retry_guards() {
         &provider,
         &material,
         dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .unwrap();
@@ -624,7 +624,7 @@ fn s3_candidate_saving_is_pure_local() {
         &provider,
         &material,
         dsheng_core::contracts::provider::GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .unwrap();

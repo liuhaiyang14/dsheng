@@ -94,7 +94,7 @@ fn inflight_attempt(conn: &mut Connection, f: &Fixture) -> (uuid::Uuid, uuid::Uu
         &provider,
         &material,
         GenerationOperation::TaskGenerate,
-        "2.3",
+        dsheng_core::contracts::prompts::TASK_PROMPT_VERSION,
         "2",
     )
     .unwrap();
