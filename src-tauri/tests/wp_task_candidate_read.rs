@@ -381,3 +381,179 @@ fn recovered_candidate_can_be_applied_without_another_generation_request() {
         .unwrap();
     assert_eq!(attempts, 0, "恢复和应用均不生成或重复收费调用");
 }
+
+#[test]
+fn new_and_ignored_candidates_preserve_existing_edited_task_and_progress() {
+    let f = Fixture::new("desktop-task-apply-existing");
+    let conn = Connection::open(&f.db).unwrap();
+    conn.execute_batch("CREATE TRIGGER forbid_candidate_test_dispatch BEFORE INSERT ON generation_attempts BEGIN SELECT RAISE(ABORT,'candidate application must stay local'); END;").unwrap();
+    let fp = fingerprint(&conn, &f);
+    let env = DesktopEnv::with_db(&f.db);
+    let created = ok(task::task_create(
+        &env,
+        json!({
+            "schema_version":"1", "workspace_id":f.workspace, "run_id":f.run_id,
+            "analysis_revision_no":1, "input_fingerprint":fp, "mutation_id":Uuid::new_v4(),
+            "cycle_role":"review", "content":{
+                "title":"已有现场核对任务", "summary":"人工维护的正式任务", "category":"other"
+            }, "steps":[{"action":"核对现场执行记录"}]
+        }),
+    ));
+    let existing_id = created["task_id"].as_str().unwrap().to_string();
+    ok(task::task_update(
+        &env,
+        json!({
+            "schema_version":"1", "workspace_id":f.workspace, "task_id":existing_id,
+            "expected_task_revision":1, "mutation_id":Uuid::new_v4(),
+            "operation":{"kind":"content", "patch":{"title":"人工修订的现场核对任务","summary":"保留人工补充说明"}}
+        }),
+    ));
+    ok(task::task_update(
+        &env,
+        json!({
+            "schema_version":"1", "workspace_id":f.workspace, "task_id":existing_id,
+            "expected_task_revision":2, "mutation_id":Uuid::new_v4(),
+            "operation":{"kind":"progress", "progress_mode":"manual", "progress":"37.5",
+                "status":"in_progress", "adjustment_reason":"按现场执行情况记录", "blocked_reason":null}
+        }),
+    ));
+    let existing_before = ok(task::task_show(
+        &env,
+        f.workspace.to_string(),
+        existing_id.clone(),
+    ));
+    assert_eq!(existing_before["progress"], "37.5");
+    let event_count = || {
+        conn.query_row(
+            "SELECT count(*) FROM task_events WHERE task_id=?1",
+            [&existing_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap()
+    };
+    let original_event_count = event_count();
+
+    let mut raw = output(&f);
+    let template = raw["tasks"][0].clone();
+    raw["tasks"] = json!(["selected-a", "ignored-b", "selected-c"].map(|key| {
+        let mut candidate = template.clone();
+        candidate["task_key"] = json!(key);
+        candidate["title"] = json!(format!("新增合成任务 {key}"));
+        candidate
+    }));
+    let candidate_id = seed(
+        &conn,
+        &f,
+        1,
+        &fp,
+        "candidate",
+        "2026-11-06T00:00:00Z",
+        &raw.to_string(),
+    );
+    let recovered = ok(task::task_candidate_latest(
+        &env,
+        f.workspace.to_string(),
+        f.run_id.clone(),
+        1,
+    ));
+    assert_eq!(recovered["candidate"]["tasks"].as_array().unwrap().len(), 3);
+    let mut input = json!({
+        "schema_version":"1", "workspace_id":f.workspace, "run_id":f.run_id,
+        "analysis_revision_no":1, "input_fingerprint":recovered["analysis_input_fingerprint"],
+        "candidate_generation_id":candidate_id, "candidate_revision_no":1,
+        "expected_tasks":[{"task_id":existing_id,"task_revision_no":existing_before["task_revision_no"]}],
+        "mutation_id":Uuid::new_v4(), "mappings":[
+            {"action":"new","candidate_task_key":"selected-a"},
+            {"action":"ignore","candidate_task_key":"ignored-b"},
+            {"action":"new","candidate_task_key":"selected-c"}
+        ]
+    });
+    // Reproduce the old desktop payload: unrelated existing tasks are not update targets.
+    let rejected = task::task_reconcile_dry_run(&env, input.clone());
+    assert_eq!(rejected["ok"], false);
+    assert!(rejected["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("expected_tasks_mismatch"));
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM tasks", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT state FROM task_candidates WHERE candidate_generation_id=?1",
+            [&candidate_id],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "candidate"
+    );
+    assert_eq!(event_count(), original_event_count);
+
+    // Only new/ignore mappings means no existing task revision belongs in the request.
+    input["expected_tasks"] = json!([]);
+    let dry = ok(task::task_reconcile_dry_run(&env, input.clone()));
+    assert_eq!(dry["created_new"], json!(["selected-a", "selected-c"]));
+    assert_eq!(dry["ignored"], json!(["ignored-b"]));
+    ok(task::task_reconcile_apply(
+        &env,
+        input,
+        dry["apply_token"].as_str().unwrap().to_string(),
+    ));
+    let listed = ok(task::task_list(
+        &env,
+        f.workspace.to_string(),
+        Some(f.run_id.clone()),
+    ));
+    let tasks = listed["tasks"].as_array().unwrap();
+    assert_eq!(tasks.len(), 3);
+    for key in ["selected-a", "selected-c"] {
+        let view = tasks
+            .iter()
+            .find(|t| t["title"] == format!("新增合成任务 {key}"))
+            .unwrap();
+        assert_task_read_contract(view);
+        assert_eq!(view["target_value"], "10000000000000000.125");
+        assert_eq!(view["progress"], "0");
+        assert_eq!(view["status"], "not_started");
+    }
+    assert!(!tasks.iter().any(|t| t["title"] == "新增合成任务 ignored-b"));
+    assert_eq!(
+        ok(task::task_show(
+            &env,
+            f.workspace.to_string(),
+            existing_id.clone()
+        )),
+        existing_before
+    );
+    assert_eq!(
+        event_count(),
+        original_event_count,
+        "new/ignore must not alter existing task history"
+    );
+    assert_eq!(
+        conn.query_row(
+            "SELECT state FROM task_candidates WHERE candidate_generation_id=?1",
+            [&candidate_id],
+            |row| row.get::<_, String>(0)
+        )
+        .unwrap(),
+        "applied"
+    );
+    assert_eq!(
+        ok(task::task_candidate_latest(
+            &env,
+            f.workspace.to_string(),
+            f.run_id.clone(),
+            1
+        )),
+        Value::Null
+    );
+    assert_eq!(
+        conn.query_row("SELECT count(*) FROM generation_attempts", [], |row| row
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+}

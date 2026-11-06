@@ -817,16 +817,16 @@ export class FixtureClient implements DshengClient {
     return null;
   }
 
-  async taskReconcileDryRun(
-    input: TaskReconcileInput,
-  ): Promise<TaskReconcileDryRunResult> {
-    this.requireWorkspace(input.workspace_id);
-    if (!this.candidates.has(input.candidate_generation_id)) {
+  private validateReconcileExpectedTasks(input: TaskReconcileInput): void {
+    const targets = new Set(input.mappings.flatMap((mapping) =>
+      mapping.action === 'update' || mapping.action === 'replace' ? [mapping.existing_task_id] : []));
+    const expectedIds = new Set(input.expected_tasks.map((task) => task.task_id));
+    if (expectedIds.size !== input.expected_tasks.length || expectedIds.size !== targets.size
+      || [...targets].some((id) => !expectedIds.has(id))) {
       throw new DshengCliError({
         code: 'INPUT_CONTRACT_INVALID',
-        message: '候选不存在或已被应用',
-        field: 'candidate_generation_id',
-        details: null,
+        message: 'expected_tasks 必须与更新或替换的任务集合一致',
+        field: 'expected_tasks', details: null,
       });
     }
     for (const expected of input.expected_tasks) {
@@ -848,6 +848,21 @@ export class FixtureClient implements DshengClient {
         });
       }
     }
+  }
+
+  async taskReconcileDryRun(
+    input: TaskReconcileInput,
+  ): Promise<TaskReconcileDryRunResult> {
+    this.requireWorkspace(input.workspace_id);
+    if (!this.candidates.has(input.candidate_generation_id)) {
+      throw new DshengCliError({
+        code: 'INPUT_CONTRACT_INVALID',
+        message: '候选不存在或已被应用',
+        field: 'candidate_generation_id',
+        details: null,
+      });
+    }
+    this.validateReconcileExpectedTasks(input);
     return {
       diff: { mappings: input.mappings },
       apply_token: `demo-token-${nextUuid()}`,
@@ -859,6 +874,7 @@ export class FixtureClient implements DshengClient {
     input: TaskReconcileInput,
     _applyToken: string,
   ): Promise<TaskView[]> {
+    this.validateReconcileExpectedTasks(input);
     const candidate = this.candidates.get(input.candidate_generation_id);
     if (!candidate) {
       throw new DshengCliError({

@@ -5,7 +5,7 @@
  * 诊断报告等任何事件都不自动触发任务生成。任务页不提供根因追问。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
@@ -88,6 +88,10 @@ export function TaskScreen() {
   const [candidate, setCandidate] = useState<TaskCandidateView | null>(null);
   const [applySelection, setApplySelection] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const applyInFlight = useRef(false);
+  const noticeRef = useRef<HTMLDivElement>(null);
   const generation = useGeneration(app.client, app.activeWorkspaceId);
   const sending = generation.active;
   const [notice, setNotice] = useState<string | null>(null);
@@ -96,6 +100,12 @@ export function TaskScreen() {
   const [timelineTo, setTimelineTo] = useState(detail?.period.to ?? '');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [timelineEntries, setTimelineEntries] = useState<TimelineEntryView[]>([]);
+
+  useEffect(() => {
+    if (!candidate && notice?.startsWith('候选已应用')) {
+      noticeRef.current?.scrollIntoView?.({ block: 'center' });
+    }
+  }, [candidate, notice]);
 
   useEffect(() => {
     app.setContextLock(sending
@@ -201,6 +211,7 @@ export function TaskScreen() {
     ));
     if (result.status === 'succeeded') {
       const c = result.value;
+      setApplyError(null);
       setCandidate(c);
       setApplySelection(Object.fromEntries(c.tasks.map((t) => [t.task_key, true])));
       setNotice('候选已保存。请逐项确认后应用；应用只创建/更新任务，不重复发送请求。');
@@ -223,6 +234,7 @@ export function TaskScreen() {
         throw new Error('已保存结果缺少分析校验信息，暂时无法应用。请勿重复生成。');
       }
       setLastFingerprint(saved.analysis_input_fingerprint);
+      setApplyError(null);
       setCandidate(restored);
       setApplySelection(Object.fromEntries(restored.tasks.map((task) => [task.task_key, true])));
       generation.reset();
@@ -238,12 +250,17 @@ export function TaskScreen() {
 
   /** 本地差异确认（reconcile）：用户逐项选择 new/ignore 后应用。 */
   const applyCandidate = async () => {
-    if (!app.client || !app.activeWorkspaceId || !candidate || !runId || !detail || historical) return;
+    if (!app.client || !app.activeWorkspaceId || !candidate || !runId || !detail || historical || busy || applyInFlight.current) return;
     if (!lastFingerprint) {
-      setNotice('候选缺少分析校验信息，暂时无法应用。请读取本地保存的结果，无需重新生成。');
+      const message = '候选缺少分析校验信息，暂时无法应用。请读取本地保存的结果，无需重新生成。';
+      setApplyError(message);
+      setNotice(message);
       return;
     }
+    applyInFlight.current = true;
+    setApplying(true);
     setBusy(true);
+    setApplyError(null);
     setNotice(null);
     try {
       const input: TaskReconcileInput = {
@@ -254,10 +271,8 @@ export function TaskScreen() {
         input_fingerprint: lastFingerprint,
         candidate_generation_id: candidate.candidate_generation_id,
         candidate_revision_no: candidate.candidate_revision_no,
-        expected_tasks: tasks.map((t) => ({
-          task_id: t.task_id,
-          task_revision_no: t.task_revision_no,
-        })),
+        // Only update/replace mappings bind existing task revisions; this flow is new/ignore.
+        expected_tasks: [],
         mutation_id: crypto.randomUUID(),
         mappings: candidate.tasks.map((t) =>
           applySelection[t.task_key]
@@ -268,11 +283,16 @@ export function TaskScreen() {
       const dry = await app.client.taskReconcileDryRun(input);
       await app.client.taskReconcileApply(input, dry.apply_token);
       setCandidate(null);
-      setNotice('候选已应用：新任务已创建（初始待开始）。');
+      const created = input.mappings.filter((mapping) => mapping.action === 'new').length;
+      setNotice(`候选已应用：新增 ${created} 项任务，忽略 ${input.mappings.length - created} 项。`);
       await app.reloadWorkspaceData();
     } catch (err) {
-      setNotice(friendlyError(err));
+      const message = friendlyError(err);
+      setApplyError(message);
+      setNotice(message);
     } finally {
+      applyInFlight.current = false;
+      setApplying(false);
       setBusy(false);
     }
   };
@@ -333,7 +353,7 @@ export function TaskScreen() {
       </div>
 
       {notice ? (
-        <div className="notice workspace-empty" data-testid="task-notice">
+        <div ref={noticeRef} className="notice workspace-empty" data-testid="task-notice" role="status">
           <span>{notice}</span>
         </div>
       ) : null}
@@ -474,7 +494,7 @@ export function TaskScreen() {
       </div>
 
       {candidate ? (
-        <div className="panel" style={{ marginTop: 14 }} data-testid="candidate-panel">
+        <div className="panel" style={{ marginTop: 14 }} data-testid="candidate-panel" aria-busy={applying}>
           <div className="panel-head">
             <span className="panel-title">生成建议（候选 · 未应用）</span>
             <span className="panel-note">
@@ -489,6 +509,7 @@ export function TaskScreen() {
                   type="checkbox"
                   className="check"
                   checked={applySelection[t.task_key] ?? false}
+                  disabled={applying}
                   onChange={(e) =>
                     setApplySelection((prev) => ({ ...prev, [t.task_key]: e.target.checked }))
                   }
@@ -501,14 +522,18 @@ export function TaskScreen() {
                 </span>
               </label>
             ))}
+            {applyError ? <div className="notice" role="alert" data-testid="candidate-apply-error">{applyError}</div> : null}
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
               <button type="button" className="primary" onClick={() => void applyCandidate()} disabled={busy || candidate.tasks.length === 0}>
-                应用所选（本地确认）
+                {applying ? '正在应用…' : '应用所选（本地确认）'}
               </button>
               <button
                 type="button"
                 className="outline"
+                disabled={applying}
                 onClick={() => {
+                  if (applyInFlight.current) return;
+                  setApplyError(null);
                   setCandidate(null);
                   setNotice('已收起候选，可通过「读取已生成结果」再次查看。');
                 }}

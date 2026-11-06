@@ -1,7 +1,7 @@
 {
   "name": "dsheng-ui",
   "private": true,
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "两表一单 · 桌面 UI（纯前端阶段；Tauri 壳由主 Agent 集成时接入）",
   "type": "module",
   "scripts": {

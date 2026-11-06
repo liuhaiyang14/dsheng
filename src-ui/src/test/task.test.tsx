@@ -8,7 +8,7 @@ import { FixtureClient } from '../api/fixtureClient';
 import { fixtureAnalysisRun, fixtureTasks, fixtureWorkspaces } from '../api/fixtureData';
 import { sortTimelineEntries, TimelineBoard } from '../components/TimelineBoard';
 import { TaskDrawer } from '../components/TaskDrawer';
-import type { TaskCandidateView, TaskView, TimelineEntryView, WorkspaceView } from '../api';
+import type { TaskCandidateView, TaskReconcileDryRunResult, TaskView, TimelineEntryView, WorkspaceView } from '../api';
 
 afterEach(cleanup);
 vi.stubGlobal('crypto', {
@@ -55,6 +55,7 @@ describe('S6 显式生成门禁（P0）', () => {
 
   it('显式按钮流：参数 → 预览（可选引用报告）→ 确认 → 候选 → 应用 → 打开任务详情', async () => {
     const client = new FixtureClient();
+    const drySpy = vi.spyOn(client, 'taskReconcileDryRun');
     await generateFlow(client);
     // 候选面板出现两条候选
     const panel = screen.getByTestId('candidate-panel');
@@ -68,12 +69,59 @@ describe('S6 显式生成门禁（P0）', () => {
         '建立高折扣订单预警阈值',
       );
     });
+    expect(drySpy.mock.calls[0][0].expected_tasks).toEqual([]);
+    expect(drySpy.mock.calls[0][0].mappings.every((mapping) => mapping.action === 'new')).toBe(true);
     fireEvent.click(within(screen.getByTestId('task-list-table')).getByText('建立高折扣订单预警阈值'));
     const drawer = await screen.findByTestId('task-drawer');
     expect(within(drawer).getByLabelText('任务名称')).toHaveValue('建立高折扣订单预警阈值');
     expect(within(drawer).getByTestId('task-smart-check')).toHaveTextContent('生成时未给出期限，保留待确认');
     expect(within(drawer).getAllByRole('textbox', { name: /行动步骤/ }).length).toBeGreaterThan(0);
     expect(screen.queryByText('页面暂时无法显示')).toBeNull();
+  });
+
+  it('候选应用失败在操作旁显示原因并保留勾选，等待中不能重复应用或收起', async () => {
+    const client = new FixtureClient();
+    let rejectPreview!: (reason: Error) => void;
+    const drySpy = vi.spyOn(client, 'taskReconcileDryRun').mockImplementationOnce(() =>
+      new Promise<TaskReconcileDryRunResult>((_resolve, reject) => { rejectPreview = reject; }));
+    const applySpy = vi.spyOn(client, 'taskReconcileApply');
+    await generateFlow(client);
+    const panel = screen.getByTestId('candidate-panel');
+    const boxes = within(panel).getAllByRole('checkbox');
+    fireEvent.click(boxes[1]);
+    fireEvent.click(within(panel).getByRole('button', { name: '应用所选（本地确认）' }));
+    const waiting = within(panel).getByRole('button', { name: '正在应用…' });
+    expect(waiting).toBeDisabled();
+    expect(within(panel).getByRole('button', { name: '暂时收起' })).toBeDisabled();
+    boxes.forEach((box) => expect(box).toBeDisabled());
+    fireEvent.click(waiting);
+    expect(drySpy).toHaveBeenCalledTimes(1);
+    rejectPreview(new Error('任务保存失败，请重新应用'));
+    await waitFor(() => expect(within(panel).getByRole('alert')).toHaveTextContent('任务保存失败，请重新应用'));
+    expect(boxes[0]).toBeChecked();
+    expect(boxes[1]).not.toBeChecked();
+    expect(applySpy).not.toHaveBeenCalled();
+    const failedInput = drySpy.mock.calls[0][0];
+    expect(failedInput.expected_tasks).toEqual([]);
+    expect(failedInput.mappings.map((mapping) => mapping.action)).toEqual(['new', 'ignore']);
+    // The fixture must reject the old UI payload too, rather than masking the production contract.
+    const originalInput = { ...failedInput, expected_tasks: [{ task_id: fixtureTasks[0].task_id, task_revision_no: fixtureTasks[0].task_revision_no }] };
+    await expect(client.taskReconcileDryRun(originalInput)).rejects.toThrow('expected_tasks');
+    fireEvent.click(within(panel).getByRole('button', { name: '应用所选（本地确认）' }));
+    await waitFor(() => expect(screen.queryByTestId('candidate-panel')).toBeNull());
+    expect(screen.getByTestId('task-notice')).toHaveTextContent('新增 1 项任务，忽略 1 项');
+  });
+
+  it('全部取消勾选仍可忽略全部候选，成功时不误报新增任务', async () => {
+    const client = new FixtureClient();
+    const applySpy = vi.spyOn(client, 'taskReconcileApply');
+    await generateFlow(client);
+    const panel = screen.getByTestId('candidate-panel');
+    within(panel).getAllByRole('checkbox').forEach((box) => fireEvent.click(box));
+    fireEvent.click(within(panel).getByRole('button', { name: '应用所选（本地确认）' }));
+    await waitFor(() => expect(screen.queryByTestId('candidate-panel')).toBeNull());
+    expect(screen.getByTestId('task-notice')).toHaveTextContent('新增 0 项任务，忽略 2 项');
+    expect(applySpy.mock.calls[0][0].mappings.every((mapping) => mapping.action === 'ignore')).toBe(true);
   });
 
   it('取消预览不确认不发送', async () => {
