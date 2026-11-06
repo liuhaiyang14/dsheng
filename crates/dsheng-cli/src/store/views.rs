@@ -6,14 +6,132 @@
 //!   （当地 today 经 `analysis::periods::local_calendar_date`）。
 
 use crate::error::{CliError, CliResult};
+use dsheng_core::contracts::cli::CliErrorCode;
 use dsheng_core::contracts::decimal::to_canonical_string;
 use dsheng_core::contracts::domain::DateRange;
 use dsheng_core::contracts::tasks::ActorSource;
+use dsheng_core::generation::task_candidate::{
+    CandidateState, TaskCandidateView, TaskCandidateViewEntry, TaskCandidateViewStep,
+};
 use dsheng_core::repository::task_store::load_task;
-use dsheng_core::repository::tasks::{derive_overdue, StepRow, TaskRow};
-use rusqlite::{params, Connection};
+use dsheng_core::repository::tasks::{
+    derive_overdue, normalize_candidate_output, StepRow, TaskRow,
+};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use uuid::Uuid;
+
+/// 已保存的模型候选 → 冻结读视图；与 reconcile 使用同一规范化规则。
+/// CLI 的生成成功收据不含 tasks，不能直接交给桌面候选列表。
+pub fn task_candidate_view(
+    conn: &Connection,
+    workspace_id: Uuid,
+    candidate_id: &str,
+) -> CliResult<TaskCandidateView> {
+    let candidate_generation_id = Uuid::parse_str(candidate_id)
+        .map_err(|_| CliError::invalid("candidate_generation_id 非法"))?;
+    let saved = conn
+        .query_row(
+            "SELECT candidate_revision_no, run_id, analysis_revision_no, state,
+                envelope_locally_reconstructed, output_json
+         FROM task_candidates WHERE candidate_generation_id = ?1 AND workspace_id = ?2",
+            params![candidate_id, workspace_id.to_string()],
+            |row| {
+                Ok((
+                    row.get::<_, u32>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, u32>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, bool>(4)?,
+                    row.get::<_, String>(5)?,
+                ))
+            },
+        )
+        .optional()?
+        .ok_or_else(|| {
+            CliError::new(
+                CliErrorCode::WorkspaceMismatch,
+                "候选不存在或不属于当前企业",
+            )
+        })?;
+    let invalid = || {
+        CliError::new(
+            CliErrorCode::DataValidationFailed,
+            "已保存的任务候选格式无效，无法显示；请勿重复生成",
+        )
+    };
+    let raw: Value = serde_json::from_str(&saved.5).map_err(|_| invalid())?;
+    let tasks = normalize_candidate_output(&raw).map_err(|_| invalid())?;
+    let state: CandidateState = serde_json::from_value(json!(saved.3)).map_err(|_| invalid())?;
+    Ok(TaskCandidateView {
+        candidate_generation_id,
+        candidate_revision_no: saved.0,
+        run_id: saved.1,
+        analysis_revision_no: saved.2,
+        state,
+        envelope_locally_reconstructed: saved.4,
+        tasks: tasks
+            .into_iter()
+            .map(|task| TaskCandidateViewEntry {
+                task_key: task.task_key,
+                title: task.title,
+                summary: task.summary,
+                category: task.category,
+                target_value: task.target_value,
+                owner: task.owner,
+                steps: task
+                    .steps
+                    .into_iter()
+                    .map(|step| TaskCandidateViewStep {
+                        step_id: step.step_id,
+                        action: step.action,
+                    })
+                    .collect(),
+            })
+            .collect(),
+    })
+}
+
+/// 只恢复当前分析版本仍可应用的最后一份候选，不发送模型请求、不改写候选。
+/// 指纹作为恢复元数据放在 wrapper 中，不扩展冻结的 taskCandidateView。
+pub fn latest_task_candidate(
+    conn: &Connection,
+    workspace_id: Uuid,
+    run_id: &str,
+    revision_no: u32,
+) -> CliResult<Value> {
+    let tx = conn.unchecked_transaction()?;
+    let (current_revision, fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
+        &tx,
+        &workspace_id.to_string(),
+        run_id,
+    )?;
+    if current_revision != revision_no {
+        return Err(CliError::new(
+            CliErrorCode::InputRevisionChanged,
+            "所选分析版本已变化，请刷新当前期间后读取已生成结果",
+        ));
+    }
+    let candidate_id: Option<String> = tx
+        .query_row(
+            "SELECT candidate_generation_id FROM task_candidates
+         WHERE workspace_id = ?1 AND run_id = ?2 AND analysis_revision_no = ?3
+           AND analysis_input_fingerprint = ?4 AND state = 'candidate'
+         ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            params![workspace_id.to_string(), run_id, revision_no, fingerprint],
+            |row| row.get(0),
+        )
+        .optional()?;
+    let data = match candidate_id {
+        Some(id) => json!({
+            "candidate": task_candidate_view(&tx, workspace_id, &id)?,
+            "analysis_input_fingerprint": fingerprint,
+        }),
+        None => Value::Null,
+    };
+    tx.commit()?;
+    Ok(data)
+}
 
 fn date_str(d: chrono::NaiveDate) -> String {
     d.format("%Y-%m-%d").to_string()

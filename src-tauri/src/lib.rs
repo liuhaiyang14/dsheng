@@ -62,6 +62,7 @@ pub fn run() {
             contracts::commands::diagnosis_export,
             contracts::commands::task_generate_preview,
             contracts::commands::task_generate_confirm,
+            contracts::commands::task_candidate_latest,
             contracts::commands::task_reconcile_dry_run,
             contracts::commands::task_reconcile_apply,
             contracts::commands::task_list,

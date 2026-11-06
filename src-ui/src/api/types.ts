@@ -926,6 +926,12 @@ export interface TaskCandidateView {
   }[];
 }
 
+/** 本地恢复元数据；保持冻结的候选读视图字段不变。 */
+export interface TaskCandidateRecoveryView {
+  candidate: TaskCandidateView;
+  analysis_input_fingerprint: string;
+}
+
 export interface TimelineEntryView {
   task_id: string;
   task_title: string;

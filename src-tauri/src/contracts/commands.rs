@@ -243,6 +243,16 @@ pub async fn task_generate_confirm(
 }
 
 #[tauri::command(async)]
+pub fn task_candidate_latest(
+    state: tauri::State<'_, DesktopEnv>,
+    workspace_id: String,
+    run_id: String,
+    revision_no: u32,
+) -> Value {
+    core::task::task_candidate_latest(&state, workspace_id, run_id, revision_no)
+}
+
+#[tauri::command(async)]
 pub fn task_reconcile_dry_run(state: tauri::State<'_, DesktopEnv>, input: Value) -> Value {
     core::task::task_reconcile_dry_run(&state, input)
 }

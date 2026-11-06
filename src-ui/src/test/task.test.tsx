@@ -5,10 +5,10 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
-import { fixtureTasks } from '../api/fixtureData';
+import { fixtureAnalysisRun, fixtureTasks, fixtureWorkspaces } from '../api/fixtureData';
 import { sortTimelineEntries, TimelineBoard } from '../components/TimelineBoard';
 import { TaskDrawer } from '../components/TaskDrawer';
-import type { TaskView, TimelineEntryView, WorkspaceView } from '../api';
+import type { TaskCandidateView, TaskView, TimelineEntryView, WorkspaceView } from '../api';
 
 afterEach(cleanup);
 vi.stubGlobal('crypto', {
@@ -19,18 +19,24 @@ vi.stubGlobal('crypto', {
 async function openTasks(client: FixtureClient) {
   render(<App runtime={{ mode: 'fixture', client }} />);
   await screen.findByTestId('foot-workspace');
-  (screen.getAllByText('任务单')[0].closest('button') as HTMLButtonElement).click();
+  fireEvent.click(screen.getAllByText('任务单')[0].closest('button') as HTMLButtonElement);
   await screen.findByTestId('generate-task-button');
 }
 
-async function generateFlow(client: FixtureClient) {
+async function sendTasks(client: FixtureClient) {
   await openTasks(client);
   fireEvent.click(screen.getByTestId('generate-task-button'));
   await screen.findByTestId('generate-param-modal');
   fireEvent.click(screen.getByTestId('request-task-preview'));
   await screen.findByTestId('preview-modal');
   fireEvent.click(screen.getByTestId('preview-confirm'));
+}
+
+async function generateFlow(client: FixtureClient) {
+  await sendTasks(client);
   await screen.findByTestId('candidate-panel');
+  fireEvent.click(screen.getByTestId('generation-close'));
+  await waitFor(() => expect(screen.queryByTestId('preview-modal')).toBeNull());
 }
 
 describe('S6 显式生成门禁（P0）', () => {
@@ -76,6 +82,51 @@ describe('S6 显式生成门禁（P0）', () => {
     await waitFor(() => expect(screen.queryByTestId('preview-modal')).toBeNull());
     expect(confirmSpy).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ['仅返回保存回执', (candidate: TaskCandidateView) => ({
+      candidate_generation_id: candidate.candidate_generation_id,
+      candidate_revision_no: candidate.candidate_revision_no,
+      task_count: candidate.tasks.length,
+    })],
+    ['任务缺少步骤列表', (candidate: TaskCandidateView) => ({
+      ...candidate, tasks: candidate.tasks.map((task) => ({ ...task, steps: undefined })),
+    })],
+    ['任务标题是对象', (candidate: TaskCandidateView) => ({
+      ...candidate, tasks: candidate.tasks.map((task) => ({ ...task, title: { text: task.title } })),
+    })],
+    ['结果属于其他分析', (candidate: TaskCandidateView) => ({ ...candidate, run_id: 'another-run' })],
+  ])('%s时留在可关闭的错误弹窗，不崩溃、不重发、不应用', async (_label, malformed) => {
+    const client = new FixtureClient();
+    const original = client.taskGenerateConfirm.bind(client);
+    const confirmSpy = vi.spyOn(client, 'taskGenerateConfirm').mockImplementation(async (id) =>
+      malformed(await original(id)) as unknown as TaskCandidateView);
+    const applySpy = vi.spyOn(client, 'taskReconcileApply');
+    await sendTasks(client);
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => expect(within(dialog).getByRole('alert')).toHaveTextContent('已收到生成结果'));
+    expect(within(dialog).getByTestId('generation-progress-stage')).toHaveTextContent('生成失败');
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('请勿重复生成');
+    expect(screen.queryByTestId('candidate-panel')).toBeNull();
+    expect(screen.queryByText('页面暂时无法显示')).toBeNull();
+    expect(screen.getByTestId('task-list-table')).toBeTruthy();
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(applySpy).not.toHaveBeenCalled();
+    expect(within(dialog).queryByText('重试连接并发送')).toBeNull();
+    fireEvent.click(within(dialog).getByRole('button', { name: '关闭' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByTestId('generate-task-button')).not.toBeDisabled();
+  });
+
+  it('合法空候选明确显示无建议，不伪造任务或允许空应用', async () => {
+    const client = new FixtureClient();
+    const original = client.taskGenerateConfirm.bind(client);
+    vi.spyOn(client, 'taskGenerateConfirm').mockImplementation(async (id) => ({ ...await original(id), tasks: [] }));
+    await generateFlow(client);
+    expect(screen.getByTestId('candidate-panel')).toHaveTextContent('本次没有生成可应用的任务建议');
+    expect(screen.getByRole('button', { name: '应用所选（本地确认）' })).toBeDisabled();
+    expect(screen.queryByText('页面暂时无法显示')).toBeNull();
+  });
 });
 
 describe('S6 任务列表呈现', () => {
@@ -92,6 +143,76 @@ describe('S6 任务列表呈现', () => {
     // 进度为核心返回字符串：33.33 与 99.99 场景由组件测试单独覆盖
     expect(table.textContent).toContain('33.33% · 进行中');
     expect(table.textContent).toContain('40% · 有阻塞');
+  });
+});
+
+describe('本地恢复已生成候选', () => {
+  it('显式读取已存候选后可应用，并使用原指纹，不重新预览或请求模型', async () => {
+    const client = new FixtureClient();
+    // 仅预置 FixtureClient 的本地演示状态；没有网络或真实模型调用。
+    const initialPreview = await client.taskGeneratePreview({
+      workspace_id: fixtureWorkspaces[0].workspace_id, run_id: fixtureAnalysisRun.run_id,
+    });
+    await client.taskGenerateConfirm(initialPreview.confirmation_id);
+    const previewSpy = vi.spyOn(client, 'taskGeneratePreview');
+    const confirmSpy = vi.spyOn(client, 'taskGenerateConfirm');
+    const readSpy = vi.spyOn(client, 'taskCandidateLatest');
+    const drySpy = vi.spyOn(client, 'taskReconcileDryRun');
+    await openTasks(client);
+    expect(readSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('candidate-panel')).toBeNull();
+    fireEvent.click(screen.getByTestId('read-saved-task-candidate'));
+    const panel = await screen.findByTestId('candidate-panel');
+    expect(panel).toHaveTextContent('建立高折扣订单预警阈值');
+    expect(screen.getByTestId('task-notice')).toHaveTextContent('已读取本地保存的候选，未调用模型');
+    expect(readSpy).toHaveBeenCalledWith(fixtureWorkspaces[0].workspace_id, fixtureAnalysisRun.run_id, fixtureAnalysisRun.current_revision_no);
+    fireEvent.click(screen.getByRole('button', { name: '暂时收起' }));
+    await waitFor(() => expect(screen.queryByTestId('candidate-panel')).toBeNull());
+    expect(readSpy).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByTestId('read-saved-task-candidate'));
+    await screen.findByTestId('candidate-panel');
+    expect(readSpy).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole('button', { name: '应用所选（本地确认）' }));
+    await waitFor(() => expect(screen.getByTestId('task-notice')).toHaveTextContent('已应用'));
+    expect(drySpy.mock.calls[0][0].input_fingerprint).toBe(initialPreview.analysis_input_fingerprint);
+    expect(screen.getByTestId('task-list-table')).toHaveTextContent('建立高折扣订单预警阈值');
+    expect(previewSpy).not.toHaveBeenCalled();
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('无可恢复候选时明确提示，不生成替代结果', async () => {
+    const client = new FixtureClient();
+    const confirmSpy = vi.spyOn(client, 'taskGenerateConfirm');
+    await openTasks(client);
+    fireEvent.click(screen.getByTestId('read-saved-task-candidate'));
+    await waitFor(() => expect(screen.getByTestId('task-notice')).toHaveTextContent('本期没有可恢复的待应用结果'));
+    expect(screen.queryByTestId('candidate-panel')).toBeNull();
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('恢复接口返回不完整结果时不挂载坏候选，也不会重发', async () => {
+    const client = new FixtureClient();
+    vi.spyOn(client, 'taskCandidateLatest').mockResolvedValue({ candidate: {}, analysis_input_fingerprint: 'saved-fingerprint' } as never);
+    const confirmSpy = vi.spyOn(client, 'taskGenerateConfirm');
+    await openTasks(client);
+    fireEvent.click(screen.getByTestId('read-saved-task-candidate'));
+    await waitFor(() => expect(screen.getByTestId('task-notice')).toHaveTextContent('任务候选数据不完整'));
+    expect(screen.queryByText('页面暂时无法显示')).toBeNull();
+    expect(screen.queryByTestId('candidate-panel')).toBeNull();
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it('生成预览缺少指纹时不能用时间戳替代并应用', async () => {
+    const client = new FixtureClient();
+    const original = client.taskGeneratePreview.bind(client);
+    vi.spyOn(client, 'taskGeneratePreview').mockImplementation(async (request) => ({
+      ...await original(request), analysis_input_fingerprint: '',
+    }));
+    const drySpy = vi.spyOn(client, 'taskReconcileDryRun');
+    await generateFlow(client);
+    fireEvent.click(screen.getByRole('button', { name: '应用所选（本地确认）' }));
+    expect(screen.getByTestId('task-notice')).toHaveTextContent('候选缺少分析校验信息');
+    expect(drySpy).not.toHaveBeenCalled();
   });
 });
 

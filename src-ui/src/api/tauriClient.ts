@@ -37,6 +37,7 @@ import type {
   ProviderView,
   ScanSummaryView,
   TaskCandidateView,
+  TaskCandidateRecoveryView,
   TaskEditInput,
   TaskReconcileInput,
   TaskView,
@@ -249,6 +250,9 @@ export class TauriClient implements DshengClient {
   }
   taskGenerateConfirm(confirmationId: string): Promise<TaskCandidateView> {
     return this.invoke('task_generate_confirm', { confirmationId });
+  }
+  taskCandidateLatest(workspaceId: string, runId: string, revisionNo: number): Promise<TaskCandidateRecoveryView | null> {
+    return this.invoke('task_candidate_latest', { workspaceId, runId, revisionNo });
   }
   taskReconcileDryRun(
     input: TaskReconcileInput,

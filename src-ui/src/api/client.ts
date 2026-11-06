@@ -35,6 +35,7 @@ import type {
   ProviderView,
   ScanSummaryView,
   TaskCandidateView,
+  TaskCandidateRecoveryView,
   TaskEditInput,
   TaskReconcileInput,
   TaskView,
@@ -201,6 +202,8 @@ export interface DshengClient {
   // ---- 任务生成（显式按钮 → preview → confirm） ----
   taskGeneratePreview(request: TaskGenerateRequest): Promise<ConfirmationPreview>;
   taskGenerateConfirm(confirmationId: string): Promise<TaskCandidateView>;
+  /** 只读取回本期已保存且尚未应用的候选，不调用模型。 */
+  taskCandidateLatest(workspaceId: string, runId: string, revisionNo: number): Promise<TaskCandidateRecoveryView | null>;
   taskReconcileDryRun(
     input: TaskReconcileInput,
   ): Promise<TaskReconcileDryRunResult>;

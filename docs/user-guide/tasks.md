@@ -15,6 +15,7 @@ dsheng task generate --workspace <id> --run <run-id> --diagnosis-report <report-
 - 可选引用的诊断报告必须与当前分析 revision/指纹一致；过期引用返回
   `STALE_DIAGNOSIS_REFERENCE`（重选或取消引用），不会静默剔除。无报告也照常生成。
 - 生成结果是一份**候选（candidate）**，不会直接改动你的任务列表。
+- 若生成后页面异常或关闭，可在同一企业、同一期间点击「读取已生成结果」，取回与当前分析版本一致的待应用候选。此操作只读取本地数据库，不重新调用模型；已应用、已丢弃或分析已变更的结果不会被恢复。
 
 ## 候选合并（reconcile）：new / update / replace / ignore
 

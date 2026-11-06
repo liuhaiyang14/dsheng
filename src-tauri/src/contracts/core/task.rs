@@ -11,8 +11,9 @@ use super::{
 };
 use crate::contracts::env::{ConfirmationKind, DesktopEnv};
 use dsheng_cli::cli as args;
-use dsheng_cli::error::CliResult;
+use dsheng_cli::error::{CliError, CliResult};
 use dsheng_cli::store::generation::ProgressSink;
+use dsheng_core::contracts::cli::CliErrorCode;
 use serde_json::Value;
 
 /// task generate（preview/confirm 共用；flags 与 CLI 同形）。
@@ -59,7 +60,61 @@ pub fn task_generate_confirm(
 ) -> Value {
     envelope((|| {
         let request = env.lookup_confirmation(ConfirmationKind::TaskGenerate, &confirmation_id)?;
-        task_generate_call(env, &request, Some(confirmation_id), true, progress)
+        let receipt = task_generate_call(env, &request, Some(confirmation_id), true, progress)?;
+        task_candidate_from_receipt(env, &request, &receipt)
+    })())
+}
+
+/// CLI 生成收据只含 ID；桌面按已保存记录返回完整候选读视图。
+/// 独立边界供无网络的集成回归使用。
+pub fn task_candidate_from_receipt(
+    env: &DesktopEnv,
+    request: &Value,
+    receipt: &Value,
+) -> CliResult<Value> {
+    let db = env.db_arg()?;
+    let conn =
+        rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    let workspace =
+        dsheng_cli::ctx::resolve_workspace(&conn, opt_str(request, "workspace_id").as_ref())?;
+    let candidate_id = req_str(receipt, "candidate_generation_id")?;
+    let candidate = dsheng_cli::store::views::task_candidate_view(
+        &conn,
+        workspace.workspace_id,
+        &candidate_id,
+    )?;
+    if candidate.run_id != req_str(request, "run_id")? {
+        return Err(CliError::new(
+            CliErrorCode::InputRevisionChanged,
+            "生成结果不属于当前分析",
+        ));
+    }
+    serde_json::to_value(candidate).map_err(|_| {
+        CliError::new(
+            CliErrorCode::DataValidationFailed,
+            "任务候选无法转换为显示结果",
+        )
+    })
+}
+
+/// 当前期间已保存且未应用的候选恢复；数据库只读，不会派发模型请求。
+pub fn task_candidate_latest(
+    env: &DesktopEnv,
+    workspace_id: String,
+    run_id: String,
+    revision_no: u32,
+) -> Value {
+    envelope((|| {
+        let db = env.db_arg()?;
+        let conn =
+            rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let workspace = dsheng_cli::ctx::resolve_workspace(&conn, Some(&workspace_id))?;
+        dsheng_cli::store::views::latest_task_candidate(
+            &conn,
+            workspace.workspace_id,
+            &run_id,
+            revision_no,
+        )
     })())
 }
 

@@ -136,6 +136,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         args: &["confirmationId"],
     },
     CommandSpec {
+        name: "task_candidate_latest",
+        args: &["workspaceId", "runId", "revisionNo"],
+    },
+    CommandSpec {
         name: "task_reconcile_dry_run",
         args: &["input"],
     },

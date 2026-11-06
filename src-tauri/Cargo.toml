@@ -1,7 +1,7 @@
 [package]
 name = "dsheng-app"
 description = "dsheng 桌面应用（Tauri 2 壳；业务逻辑全部在 dsheng-core）"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 publish = false
 default-run = "dsheng-app"
@@ -34,10 +34,11 @@ rust_xlsxwriter = "0.102"
 zip = { version = "9", default-features = false, features = ["deflate"] }
 png = "0.18"
 rust_decimal = "1"
+# 本地候选恢复显式以只读模式打开数据库。
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
 # 集成测试合成数据注入（候选/provider 种子行；与 dsheng-cli 测试同版本）
-rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 

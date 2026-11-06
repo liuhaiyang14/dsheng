@@ -43,6 +43,25 @@ function friendlyError(err: unknown): string {
   return raw;
 }
 
+function readTaskCandidate(value: unknown, runId: string, analysisRevision: number): TaskCandidateView {
+  const record = (item: unknown): item is Record<string, unknown> => item != null && typeof item === 'object' && !Array.isArray(item);
+  const text = (item: unknown): item is string => typeof item === 'string';
+  const nullableText = (item: unknown) => item === null || text(item);
+  const validTask = (item: unknown) => record(item)
+    && text(item.task_key) && item.task_key.length > 0 && text(item.title) && text(item.summary)
+    && text(item.category) && Object.prototype.hasOwnProperty.call(TASK_CATEGORY_LABELS, item.category)
+    && nullableText(item.target_value) && nullableText(item.owner)
+    && Array.isArray(item.steps) && item.steps.every((step: unknown) => record(step) && text(step.step_id) && text(step.action));
+  if (!record(value) || !text(value.candidate_generation_id) || !value.candidate_generation_id
+    || typeof value.candidate_revision_no !== 'number' || !Number.isInteger(value.candidate_revision_no) || value.candidate_revision_no < 1
+    || value.run_id !== runId || value.analysis_revision_no !== analysisRevision || value.state !== 'candidate'
+    || typeof value.envelope_locally_reconstructed !== 'boolean' || !Array.isArray(value.tasks)
+    || !value.tasks.every(validTask) || new Set(value.tasks.map((task) => task.task_key)).size !== value.tasks.length) {
+    throw new Error('已收到生成结果，但任务候选数据不完整或与当前分析不一致，暂时无法显示。本次不会自动重试，请勿重复生成。');
+  }
+  return value as unknown as TaskCandidateView;
+}
+
 export function TaskScreen() {
   const app = useApp();
   const hasData = workspaceHasData(app.data);
@@ -74,7 +93,7 @@ export function TaskScreen() {
   useEffect(() => {
     app.setContextLock(sending
       ? '正在生成任务；请等待完成或在生成弹窗停止后再切换企业、期间或页面。'
-      : candidate ? '本页有待应用的任务候选，请先应用或全部忽略，再切换企业、期间或页面。' : null);
+      : candidate ? '本页有待应用的任务候选，请先应用或暂时收起，再切换企业、期间或页面。' : null);
     return () => app.setContextLock(null);
   }, [app.setContextLock, sending, candidate]);
 
@@ -125,7 +144,7 @@ export function TaskScreen() {
 
   /** 显式按钮第一步：打开生成参数（可选引用诊断报告）。 */
   const openGenerate = () => {
-    if (historical || sending || app.loading) return;
+    if (historical || sending || app.loading || busy || candidate) return;
     if (!hasData || !detail) {
       setNotice('请先为当前企业档案导入数据并完成字段映射。');
       return;
@@ -157,11 +176,15 @@ export function TaskScreen() {
 
   /** 显式按钮第三步：确认发送 → 候选；停止成功时不应用迟到候选。 */
   const confirmSend = async () => {
-    if (!app.client || !preview || sending || app.loading) return;
+    if (!app.client || !preview || !detail || sending || app.loading) return;
     const client = app.client;
     const confirmationId = preview.confirmation_id;
+    const expectedRunId = detail.run_id;
+    const expectedRevision = detail.analysis_revision_no;
     app.setContextLock('正在生成任务；请等待完成或在生成弹窗停止后再切换企业、期间或页面。');
-    const result = await generation.run(confirmationId, () => client.taskGenerateConfirm(confirmationId));
+    const result = await generation.run(confirmationId, async () => readTaskCandidate(
+      await client.taskGenerateConfirm(confirmationId), expectedRunId, expectedRevision,
+    ));
     if (result.status === 'succeeded') {
       const c = result.value;
       setCandidate(c);
@@ -170,9 +193,42 @@ export function TaskScreen() {
     }
   };
 
+  /** 只读恢复已保存候选；不会请求模型或重新消费发送确认。 */
+  const readSavedCandidate = async () => {
+    if (!app.client || !app.activeWorkspaceId || !runId || !detail || historical || sending || app.loading || busy || candidate) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      const saved = await app.client.taskCandidateLatest(app.activeWorkspaceId, runId, detail.analysis_revision_no);
+      if (!saved) {
+        setNotice('本期没有可恢复的待应用结果。');
+        return;
+      }
+      const restored = readTaskCandidate(saved.candidate, runId, detail.analysis_revision_no);
+      if (typeof saved.analysis_input_fingerprint !== 'string' || !saved.analysis_input_fingerprint) {
+        throw new Error('已保存结果缺少分析校验信息，暂时无法应用。请勿重复生成。');
+      }
+      setLastFingerprint(saved.analysis_input_fingerprint);
+      setCandidate(restored);
+      setApplySelection(Object.fromEntries(restored.tasks.map((task) => [task.task_key, true])));
+      generation.reset();
+      setPreview(null);
+      setGenerateModalOpen(false);
+      setNotice('已读取本地保存的候选，未调用模型。请逐项确认后应用。');
+    } catch (error) {
+      setNotice(friendlyError(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /** 本地差异确认（reconcile）：用户逐项选择 new/ignore 后应用。 */
   const applyCandidate = async () => {
     if (!app.client || !app.activeWorkspaceId || !candidate || !runId || !detail || historical) return;
+    if (!lastFingerprint) {
+      setNotice('候选缺少分析校验信息，暂时无法应用。请读取本地保存的结果，无需重新生成。');
+      return;
+    }
     setBusy(true);
     setNotice(null);
     try {
@@ -181,7 +237,7 @@ export function TaskScreen() {
         workspace_id: app.activeWorkspaceId,
         run_id: runId,
         analysis_revision_no: detail.analysis_revision_no,
-        input_fingerprint: lastFingerprint || detail.captured_at,
+        input_fingerprint: lastFingerprint,
         candidate_generation_id: candidate.candidate_generation_id,
         candidate_revision_no: candidate.candidate_revision_no,
         expected_tasks: tasks.map((t) => ({
@@ -243,11 +299,16 @@ export function TaskScreen() {
           </div>
         </div>
         <div className="head-controls">
+          <button type="button" className="outline" onClick={() => void readSavedCandidate()}
+            disabled={busy || sending || historical || app.loading || candidate != null}
+            data-testid="read-saved-task-candidate">
+            读取已生成结果
+          </button>
           <button
             type="button"
             className="primary"
             onClick={openGenerate}
-            disabled={busy || sending || historical || app.loading}
+            disabled={busy || sending || historical || app.loading || candidate != null}
             data-testid="generate-task-button"
           >
             生成任务单
@@ -405,6 +466,7 @@ export function TaskScreen() {
             </span>
           </div>
           <div className="panel-body">
+            {candidate.tasks.length === 0 ? <p>本次没有生成可应用的任务建议。</p> : null}
             {candidate.tasks.map((t) => (
               <label key={t.task_key} style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <input
@@ -424,7 +486,7 @@ export function TaskScreen() {
               </label>
             ))}
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-              <button type="button" className="primary" onClick={() => void applyCandidate()} disabled={busy}>
+              <button type="button" className="primary" onClick={() => void applyCandidate()} disabled={busy || candidate.tasks.length === 0}>
                 应用所选（本地确认）
               </button>
               <button
@@ -432,10 +494,10 @@ export function TaskScreen() {
                 className="outline"
                 onClick={() => {
                   setCandidate(null);
-                  setNotice('已忽略候选；候选快照仍可追溯。');
+                  setNotice('已收起候选，可通过「读取已生成结果」再次查看。');
                 }}
               >
-                全部忽略
+                暂时收起
               </button>
             </div>
           </div>

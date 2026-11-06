@@ -39,6 +39,7 @@ import type {
   ProviderView,
   ScanSummaryView,
   TaskCandidateView,
+  TaskCandidateRecoveryView,
   TaskEditInput,
   TaskEditOperation,
   TaskReconcileInput,
@@ -131,6 +132,7 @@ export class FixtureClient implements DshengClient {
     { preview: import('./types').ConfirmationPreview; payload: unknown }
   >();
   private candidates = new Map<string, TaskCandidateView>();
+  private candidateBindings = new Map<string, { workspaceId: string; fingerprint: string }>();
   /** 已取消的生成 attempt（面板取消按钮演示/测试断言用）。 */
   readonly cancelledAttempts: string[] = [];
 
@@ -719,7 +721,7 @@ export class FixtureClient implements DshengClient {
   }
 
   async taskGenerateConfirm(confirmationId: string): Promise<TaskCandidateView> {
-    this.consumeConfirmation(confirmationId, 'task_generate');
+    const pending = this.consumeConfirmation(confirmationId, 'task_generate');
     const candidate: TaskCandidateView = {
       candidate_generation_id: nextUuid(),
       candidate_revision_no: 1,
@@ -756,7 +758,25 @@ export class FixtureClient implements DshengClient {
       ],
     };
     this.candidates.set(candidate.candidate_generation_id, candidate);
+    this.candidateBindings.set(candidate.candidate_generation_id, {
+      workspaceId: pending.preview.workspace_id,
+      fingerprint: pending.preview.analysis_input_fingerprint,
+    });
     return structuredClone(candidate);
+  }
+
+  async taskCandidateLatest(workspaceId: string, runId: string, revisionNo: number): Promise<TaskCandidateRecoveryView | null> {
+    this.requireWorkspace(workspaceId);
+    const run = this.analyzedRuns.get(runId) ?? fixtureAnalysisRun;
+    for (const candidate of [...this.candidates.values()].reverse()) {
+      const binding = this.candidateBindings.get(candidate.candidate_generation_id);
+      if (binding?.workspaceId === workspaceId && candidate.run_id === runId
+        && candidate.analysis_revision_no === revisionNo && candidate.state === 'candidate'
+        && run.current_revision_no === revisionNo && binding.fingerprint === run.analysis_input_fingerprint) {
+        return { candidate: structuredClone(candidate), analysis_input_fingerprint: binding.fingerprint };
+      }
+    }
+    return null;
   }
 
   async taskReconcileDryRun(

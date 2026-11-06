@@ -328,7 +328,7 @@ fn task_candidate_and_success_commit_together_and_finished_cannot_be_cancelled()
     let saved: String = conn
         .query_row(
             "SELECT output_json FROM task_candidates WHERE candidate_generation_id = ?1",
-            [candidate],
+            [&candidate],
             |r| r.get(0),
         )
         .unwrap();
@@ -336,6 +336,12 @@ fn task_candidate_and_success_commit_together_and_finished_cannot_be_cancelled()
         serde_json::from_str::<Value>(&saved).unwrap(),
         local_output()
     );
+    let view = dsheng_cli::store::views::task_candidate_view(&conn, f.workspace, &candidate)
+        .expect("已保存成功候选可直接显示，不重复调用 Provider");
+    assert_eq!(view.candidate_generation_id.to_string(), candidate);
+    assert_eq!(view.run_id, f.run_id);
+    assert_eq!(view.analysis_revision_no, material.analysis_revision_no);
+    assert!(view.tasks.is_empty(), "合法空建议仍返回完整 tasks 数组");
     assert_eq!(
         gen::cancel_by_confirmation(&mut conn, f.workspace, confirmation).unwrap()["cancelled"],
         false
