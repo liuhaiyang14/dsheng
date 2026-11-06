@@ -471,6 +471,15 @@ pub fn validate_candidates(
                 format!("重复 task_key {}", task.task_key),
             ));
         }
+        // 目标期间绑定本轮获准窗口，不能通过改成别月或部分月绕过月度下限。
+        if let Some(period) = task.target_period {
+            if period != (input.period.target_from, input.period.target_to) {
+                return Err(error(
+                    CliErrorCode::SemanticValidationFailed,
+                    format!("任务 {} 的目标期间与本轮批准窗口不一致", task.task_key),
+                ));
+            }
+        }
         // category/metric 关系
         if task.category != TaskCategory::Other {
             let metric_id = task.metric_id.ok_or_else(|| {

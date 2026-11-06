@@ -404,11 +404,12 @@ fn monthly_floor_full_month_revenue_up() {
 
 #[test]
 fn monthly_floor_not_applied_outside_full_month_or_scope() {
-    // 非完整月（10-02 起）→ 不套下限，仅显式目标
-    let input = task_input(metric(
+    // 输入批准非完整月（10-02 起）→ 不套下限，仅显式目标。
+    let mut input = task_input(metric(
         TargetConstraintScopeProjection::MonthlyRevenueFloor,
         DirectionProjection::Up,
     ));
+    input.period.target_from = NaiveDate::from_ymd_opt(2026, 10, 2).unwrap();
     let mut root = model_task_output(json!(100), vec![]);
     root["tasks"][0]["target_period"] = json!({"from": "2026-10-02", "to": "2026-10-31"});
     let set = parse_task_output(&extract_matched(root)).unwrap();
@@ -588,7 +589,19 @@ fn monthly_floor_accepts_only_the_approved_anchored_month() {
     ));
     input.period.target_from = NaiveDate::from_ymd_opt(2026, 10, 15).unwrap();
     input.period.target_to = NaiveDate::from_ymd_opt(2026, 11, 14).unwrap();
-    let wrong_month =
-        parse_task_output(&extract_matched(model_task_output(json!(110), vec!["x"]))).unwrap();
-    assert!(validate_candidates(&wrong_month, &input, &identity()).is_err());
+    for target in [100, 110] {
+        let wrong_month = parse_task_output(&extract_matched(model_task_output(
+            json!(target),
+            vec!["x"],
+        )))
+        .unwrap();
+        let error = validate_candidates(&wrong_month, &input, &identity()).unwrap_err();
+        assert_eq!(error.code, CliErrorCode::SemanticValidationFailed);
+        assert!(error.detail.contains("目标期间与本轮批准窗口不一致"));
+    }
+    let mut wrong_partial = model_task_output(json!(100), vec![]);
+    wrong_partial["tasks"][0]["target_period"] = json!({"from":"2026-10-16","to":"2026-11-14"});
+    let wrong_partial = parse_task_output(&extract_matched(wrong_partial)).unwrap();
+    let error = validate_candidates(&wrong_partial, &input, &identity()).unwrap_err();
+    assert!(error.detail.contains("目标期间与本轮批准窗口不一致"));
 }
