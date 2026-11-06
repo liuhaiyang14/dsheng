@@ -133,6 +133,13 @@ fn selected_report_projects_actual_three_frameworks_without_elevating_user_or_hy
             assert!(findings[0].statement.contains("排期表"));
             assert_eq!(findings[0].fact_status, FactStatusProjection::Hypothesis);
         }
+        if framework == "5why" {
+            assert!(findings[0].statement.contains("追问层级：第 1 层"));
+        } else {
+            assert!(findings
+                .iter()
+                .any(|finding| finding.statement.contains("分析维度：When")));
+        }
         assert_eq!(projected.evidence_ids, vec!["evidence-one"]);
     }
 }

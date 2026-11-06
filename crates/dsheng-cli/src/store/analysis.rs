@@ -1580,19 +1580,19 @@ pub fn history_detail(
         workspace_id,
         "run",
     )?;
-    let (current, fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
+    let (current, _current_fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
         conn,
         &workspace_id.to_string(),
         run_id,
     )
     .map_err(CliError::from)?;
     let revision = revision.unwrap_or(current);
-    let (normalized_raw, captured_at): (String, String) = conn
+    let (normalized_raw, captured_at, fingerprint): (String, String, String) = conn
         .query_row(
-            "SELECT normalized_metrics_json, created_at FROM run_revisions
+            "SELECT normalized_metrics_json, created_at, analysis_input_fingerprint FROM run_revisions
              WHERE run_id = ?1 AND revision_no = ?2",
             params![run_id, revision as i64],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "revision 不存在"))?;
     let normalized: Value = serde_json::from_str(&normalized_raw)
@@ -1622,10 +1622,15 @@ pub fn history_detail(
         ),
         None => (0, json!([])),
     };
-    let _ = fingerprint;
+    let task_plan_period =
+        dsheng_core::repository::task_create::saved_task_periods(conn, run_id, revision)
+            .ok()
+            .map(|(_, plan)| plan);
     Ok(json!({
         "run_id": run_id,
         "analysis_revision_no": revision,
+        "analysis_input_fingerprint": fingerprint,
+        "task_plan_period": task_plan_period,
         "task_snapshot_no": snapshot_no,
         "captured_at": captured_at,
         "metrics": normalized.get("metrics").cloned().unwrap_or(json!([])),

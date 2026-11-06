@@ -13,7 +13,7 @@ it('发送前列出历史任务范围与所选诊断信息', async () => {
     diagnosis_framework: '5w', diagnosis_fact_count: 2, diagnosis_hypothesis_count: 1,
   };
   render(<PreviewModal preview={preview} title="生成任务" confirmLabel="确认发送" onConfirm={vi.fn()} onCancel={vi.fn()} />);
-  expect(screen.getByTestId('preview-task-history')).toHaveTextContent('2 项已应用任务');
+  expect(screen.getByTestId('preview-task-history')).toHaveTextContent('2 项正式任务');
   expect(screen.getByTestId('preview-task-history')).toHaveTextContent('回款跟进');
   expect(screen.getByTestId('preview-task-diagnosis')).toHaveTextContent('5W · 交付延迟待核实');
   expect(screen.getByTestId('preview-task-diagnosis')).toHaveTextContent('事实及用户陈述 2 项');

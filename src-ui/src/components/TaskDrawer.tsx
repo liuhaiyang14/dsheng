@@ -17,6 +17,7 @@ import {
   TASK_STATUS_LABELS,
   groupDecimal,
   type DshengClient,
+  type MetricRowView,
   type StepOperation,
   type SmartCheckView,
   type TaskEditInput,
@@ -25,6 +26,7 @@ import {
   type WorkspaceView,
 } from '../api';
 import { Tag } from './bits';
+import { normalizeTaskDecimal } from './taskForm';
 
 const STATUS_OPTIONS: TaskStatus[] = ['not_started', 'in_progress', 'completed', 'blocked'];
 const CATEGORY_OPTIONS = Object.entries(TASK_CATEGORY_LABELS) as [
@@ -33,7 +35,6 @@ const CATEGORY_OPTIONS = Object.entries(TASK_CATEGORY_LABELS) as [
 ][];
 
 const PROGRESS_INPUT_PATTERN = /^(?:(?:0|[1-9][0-9]?)(?:\.[0-9]?[1-9])?|100)$/;
-const DECIMAL_INPUT_PATTERN = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]{0,5}[1-9])?$/;
 
 const SMART_DIMENSION_LABELS = { S: '具体性 S', M: '可衡量 M', A: '可实现 A', R: '相关性 R', T: '时限 T' };
 const SMART_STATUS_LABELS = { met: '通过', needs_confirmation: '待确认', not_applicable: '不适用' };
@@ -71,20 +72,38 @@ export function TaskDrawer({
   client,
   onClose,
   onSaved,
+  metrics = [],
+  periodEnd,
+  readOnly = false,
 }: {
   task: TaskView;
   workspace: WorkspaceView;
   client: DshengClient;
   onClose: () => void;
   onSaved: () => void;
+  metrics?: MetricRowView[];
+  periodEnd?: string;
+  readOnly?: boolean;
 }) {
   const [current, setCurrent] = useState<TaskView>(task);
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const locked = readOnly || current.lifecycle !== 'active';
+  const extraKeys = ['metric_id', 'planned_value', 'actual_value', 'current_value', 'unit', 'mp_label', 'mp_unit', 'resource_need', 'success_criteria', 'note', 'review_note'] as const;
+  type ExtraKey = typeof extraKeys[number];
+  const valuesOf = (value: TaskView) => Object.fromEntries(extraKeys.map((key) => [key, value[key] ?? ''])) as Record<ExtraKey, string>;
+  const [extra, setExtra] = useState(() => valuesOf(task));
+  const updateExtra = (key: ExtraKey, value: string) => { setExtra((previous) => ({ ...previous, [key]: value })); setDirty(true); };
+  const close = () => {
+    if (busy) return;
+    if (dirty && !window.confirm('还有未保存的修改，确认放弃并关闭？')) return;
+    onClose();
+  };
 
   /** 以核心返回的任务视图重置全部编辑态。 */
   const syncFromTask = (t: TaskView) => {
+    setExtra(valuesOf(t));
     setTitle(t.title);
     setSummary(t.summary);
     setCategory(t.category);
@@ -112,7 +131,7 @@ export function TaskDrawer({
 
   // 外部（store 刷新）带来的任务版本变化时重新同步；本地保存已自行同步。
   useEffect(() => {
-    if (task.task_revision_no !== current.task_revision_no) {
+    if (task.task_id !== current.task_id || task.task_revision_no !== current.task_revision_no) {
       setCurrent(task);
       syncFromTask(task);
       setDirty(false);
@@ -165,7 +184,7 @@ export function TaskDrawer({
       ...prev,
       {
         client_step_key: `step-${Date.now()}-${prev.length}`,
-        action: '新行动步骤',
+        action: '',
         owner: null,
         start_date: null,
         due_date: null,
@@ -180,7 +199,7 @@ export function TaskDrawer({
 
   const removeStep = (index: number) => {
     if (steps.length <= 1) {
-      setNotice('任务必须保留至少一条行动步骤（核心规则 AT_LEAST_ONE_STEP）。');
+      setNotice('任务必须保留至少一条行动步骤。');
       return;
     }
     setSteps((prev) => prev.filter((_, i) => i !== index));
@@ -199,15 +218,10 @@ export function TaskDrawer({
   };
 
   const toggleStepDone = (index: number, done: boolean) => {
-    const nextStatus: TaskStatus = done ? 'completed' : 'not_started';
-    patchStep(index, { status: nextStatus, blocked_reason: null });
-    if (done && current.status === 'completed') {
-      // 任务将从已完成重开（核心会写 reopened 事件），需要用户确认。
-      if (!window.confirm('取消勾选步骤将把已完成任务重开（保留旧完成事件）。继续？')) {
-        patchStep(index, { status: 'not_started', blocked_reason: null });
-        return;
-      }
-    }
+    if (!steps[index].step_id || locked || busy) return;
+    if (!done && current.status === 'completed'
+      && !window.confirm('取消勾选步骤将把已完成任务重开（保留旧完成事件）。继续？')) return;
+    patchStep(index, { status: done ? 'completed' : 'not_started', blocked_reason: null });
   };
 
   /** 由编辑态生成 step_operations：删除 → 更新 → 排序(move) → 新增(add)。 */
@@ -284,6 +298,7 @@ export function TaskDrawer({
   };
 
   const saveTask = async () => {
+    if (locked || busy) return;
     setNotice(null);
     // UI 层预校验（核心仍为最终权威）
     if (!title.trim()) {
@@ -294,30 +309,50 @@ export function TaskDrawer({
       setNotice('计划开始日期不能晚于截止日期。');
       return;
     }
-    if (targetValue && !DECIMAL_INPUT_PATTERN.test(targetValue)) {
-      setNotice('目标数值必须是规范十进制字符串（≤6 位小数，无千分位/指数）。');
+    const numericValues = { target_value: normalizeTaskDecimal(targetValue), planned_value: normalizeTaskDecimal(extra.planned_value), actual_value: normalizeTaskDecimal(extra.actual_value), current_value: normalizeTaskDecimal(extra.current_value) };
+    if (Object.values(numericValues).some((value) => value === null)) {
+      setNotice('数值请填写普通数字，最多六位小数，不加千分位或单位。');
       return;
     }
-    if (targetValue !== (current.target_value ?? '') && !sourceNote.trim()) {
+    const numericChanged = Object.entries(numericValues).some(([key, value]) => value !== (current[key as keyof typeof numericValues] ?? ''));
+    if (numericChanged && !sourceNote.trim()) {
       setNotice('修改目标/实绩等数值必须注明人工调整依据（source_note）。');
+      return;
+    }
+    if ((category !== current.category || extra.metric_id !== (current.metric_id ?? '')) && category !== 'other' && !extra.metric_id) {
+      setNotice('请选择关联指标；无关联指标的任务请选择“其他事项”。');
+      return;
+    }
+    if (steps.some((step) => !step.action.trim())) {
+      setNotice('每一项行动都需要填写内容。');
+      return;
+    }
+    if (steps.some((step) => step.start_date && step.due_date && step.start_date > step.due_date)) {
+      setNotice('行动开始日期不能晚于截止日期。');
       return;
     }
     const stepOperations = buildStepOperations();
     const patch: Record<string, unknown> = {};
+    for (const key of extraKeys) {
+      const value = key in numericValues ? numericValues[key as keyof typeof numericValues]! : extra[key];
+      if (value !== (current[key] ?? '')) patch[key] = key === 'note' || key === 'review_note' ? value : value || null;
+    }
     if (title !== current.title) patch.title = title;
     if (summary !== current.summary) patch.summary = summary;
     if (category !== current.category) patch.category = category;
     if ((owner || null) !== current.owner) patch.owner = owner || null;
     if ((plannedStart || null) !== current.planned_start) patch.planned_start = plannedStart || null;
     if ((dueDate || null) !== current.due_date) patch.due_date = dueDate || null;
-    if (targetValue !== (current.target_value ?? '')) {
-      patch.target_value = targetValue === '' ? null : targetValue;
+    if (numericValues.target_value !== (current.target_value ?? '')) {
+      patch.target_value = numericValues.target_value || null;
     }
     const hasPatch = Object.keys(patch).length > 0;
     if (!hasPatch && stepOperations.length === 0) {
       setNotice('当前没有待保存的修改。');
       return;
     }
+    if (current.status === 'completed' && steps.some((step) => !step.step_id)
+      && !window.confirm('新增未完成的行动项会重开已完成任务，并保留原完成记录。继续保存？')) return;
     const input: TaskEditInput = {
       schema_version: '1',
       workspace_id: workspace.workspace_id,
@@ -328,7 +363,7 @@ export function TaskDrawer({
         kind: 'content',
         ...(hasPatch ? { patch } : {}),
         ...(stepOperations.length > 0 ? { step_operations: stepOperations } : {}),
-        ...(patch.target_value !== undefined ? { source_note: sourceNote.trim() } : {}),
+        ...(numericChanged ? { source_note: sourceNote.trim() } : {}),
       },
     };
     setBusy(true);
@@ -339,7 +374,7 @@ export function TaskDrawer({
       setDirty(false);
       setSourceNote('');
       syncFromTask(updated);
-      setNotice('已保存（核心已校验并递增版本）。');
+      setNotice('已保存。');
       onSaved();
     } catch (err) {
       setNotice(err instanceof Error ? `保存失败：${err.message}` : String(err));
@@ -349,6 +384,7 @@ export function TaskDrawer({
   };
 
   const saveProgress = async () => {
+    if (locked || busy) return;
     setNotice(null);
     let progress: string | null = null;
     let adjustmentReasonSubmit: string | null = null;
@@ -409,8 +445,10 @@ export function TaskDrawer({
       setCurrent(updated);
       setAdjustmentReason('');
       setBlockedReason('');
+      setProgressMode(updated.progress_mode);
+      setNextStatus(updated.status);
       setManualProgress(updated.progress);
-      setNotice('进度已保存（核心按规则校验）。');
+      setNotice('进度已保存。');
       onSaved();
     } catch (err) {
       setNotice(err instanceof Error ? `保存失败：${err.message}` : String(err));
@@ -428,7 +466,7 @@ export function TaskDrawer({
       : { tone: 'gold' as const, text: 'SMART：内容已改待复核' };
 
   const cycleRole: keyof typeof CYCLE_ROLE_LABELS = current.target_period &&
-    current.target_period.from >= '2026-11-01'
+    periodEnd != null && current.target_period.from > periodEnd
     ? 'plan'
     : 'review';
 
@@ -449,7 +487,7 @@ export function TaskDrawer({
 
   return (
     <>
-      <div className="drawer-scrim" onClick={onClose} />
+      <div className="drawer-scrim" onClick={close} />
       <aside className="drawer" aria-label="任务详情" data-testid="task-drawer">
         <div className="drawer-head">
           <div>
@@ -462,13 +500,15 @@ export function TaskDrawer({
               {current.overdue ? ' · 已延期（按截止日派生）' : ''}
             </div>
           </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label="关闭详情">
+          <button type="button" className="icon-button" onClick={close} aria-label="关闭详情">
             ×
           </button>
         </div>
         <div className="drawer-body">
+          {locked ? <p className="notice">当前记录只读，不能修改。</p> : null}
+          <fieldset className="task-edit-fields" disabled={locked || busy}>
           <div className="progress-head">
-            <span>整体进度（核心计算值）</span>
+            <span>整体进度</span>
             <span className="progress-value" data-testid="drawer-progress">
               {groupDecimal(current.progress)}%
             </span>
@@ -512,11 +552,15 @@ export function TaskDrawer({
                 </select>
               </div>
               <div className="detail-field">
-                <label>关联指标（核心校验 category 与 metric 关系）</label>
-                <strong>{current.metric_label ?? '未关联（仅“其他事项”可无指标）'}</strong>
+                <label htmlFor="task-metric">关联指标</label>
+                <select id="task-metric" className="input" value={extra.metric_id} onChange={(e) => updateExtra('metric_id', e.target.value)}>
+                  <option value="">未关联（其他事项）</option>
+                  {extra.metric_id && !metrics.some((metric) => metric.metric_id === extra.metric_id) ? <option value={extra.metric_id}>{current.metric_label ?? '当前关联指标'}</option> : null}
+                  {metrics.map((metric) => <option key={metric.metric_id} value={metric.metric_id}>{metric.metric_label} · {metric.unit}</option>)}
+                </select>
               </div>
               <div className="detail-field">
-                <label htmlFor="task-target">目标数值（十进制字符串）</label>
+                <label htmlFor="task-target">目标数值</label>
                 <input
                   id="task-target"
                   className="input"
@@ -530,10 +574,11 @@ export function TaskDrawer({
                 <label htmlFor="task-source-note">人工调整依据（改数值必填）</label>
                 <input id="task-source-note" className="input" value={sourceNote} onChange={(e) => setSourceNote(e.target.value)} placeholder="注明来源，不充当模型事实" />
               </div>
-              <div className="detail-field">
-                <label>当前实绩（核心返回）</label>
-                <strong>{current.actual_value != null ? groupDecimal(current.actual_value) : '待计算'}</strong>
-              </div>
+              {([['planned_value', '预定数值'], ['actual_value', '实绩数值'], ['current_value', '当前数值'], ['unit', '数值单位']] as const).map(([key, label]) => (
+                <div className="detail-field" key={key}><label htmlFor={`task-${key}`}>{label}</label>
+                  <input id={`task-${key}`} className="input" value={extra[key]} onChange={(e) => updateExtra(key, e.target.value)} />
+                </div>
+              ))}
               <div className="detail-field">
                 <label htmlFor="task-owner">责任岗位</label>
                 <input id="task-owner" className="input" value={owner} onChange={(e) => { setOwner(e.target.value); markDirty(); }} />
@@ -550,17 +595,18 @@ export function TaskDrawer({
                 <label>完成日期</label>
                 <strong>{current.completed_at ? current.completed_at.slice(0, 10) : '未完成'}</strong>
               </div>
-              <div className="detail-field">
-                <label>MP 名称 / 单位</label>
-                <strong>{current.mp_label ?? '—'}{current.mp_unit ? ` / ${current.mp_unit}` : ''}</strong>
-              </div>
+              {([['mp_label', '改善指标名称'], ['mp_unit', '改善指标单位'], ['resource_need', '所需资源'], ['success_criteria', '完成标准'], ['note', '备注'], ['review_note', '复盘记录']] as const).map(([key, label]) => (
+                <div className="detail-field" key={key}><label htmlFor={`task-${key}`}>{label}</label>
+                  <textarea id={`task-${key}`} className="input" value={extra[key]} onChange={(e) => updateExtra(key, e.target.value)} />
+                </div>
+              ))}
             </div>
           </div>
 
           <div className="detail-section">
             <div className="step-heading">
               <h4>
-                行动步骤 <span className="panel-note">保存后核心按计数重算进度</span>
+                行动步骤 <span className="panel-note">保存后更新进度</span>
               </h4>
               <button type="button" className="outline" onClick={addStep}>
                 添加步骤
@@ -572,6 +618,7 @@ export function TaskDrawer({
                   type="checkbox"
                   className="check"
                   checked={step.status === 'completed'}
+                  disabled={!step.step_id}
                   onChange={(e) => toggleStepDone(index, e.target.checked)}
                   aria-label={`完成步骤 ${index + 1}`}
                 />
@@ -589,6 +636,12 @@ export function TaskDrawer({
                       ? ` · ${step.start_date ?? '未设开始'} 至 ${step.due_date ?? '未设截止'}`
                       : ' · 日期未设置'}
                   </small>
+                  {!step.step_id ? <small>新行动项保存后可更新完成状态。</small> : null}
+                  <div className="task-step-fields">
+                    {([['owner', '负责人', 'text'], ['start_date', '开始日期', 'date'], ['due_date', '截止日期', 'date'], ['done_criteria', '验收标准', 'text']] as const).map(([key, label, type]) => (
+                      <label key={key}>{label}<input type={type} className="input" value={step[key] ?? ''} aria-label={`行动 ${index + 1} ${label}`} onChange={(e) => patchStep(index, { [key]: e.target.value || null })} /></label>
+                    ))}
+                  </div>
                 </div>
                 <div className="step-actions">
                   <button type="button" className="step-order" title="上移" aria-label="上移行动步骤" disabled={index === 0} onClick={() => moveStep(index, -1)}>↑</button>
@@ -600,7 +653,7 @@ export function TaskDrawer({
           </div>
 
           <div className="detail-section" data-testid="task-smart-check">
-            <h4>SMART 校核（只读，核心返回） <Tag tone={smartLabel.tone}>{smartLabel.text}</Tag></h4>
+            <h4>SMART 评价 <Tag tone={smartLabel.tone}>{smartLabel.text}</Tag></h4>
             {smartAvailable ? (
               <>
                 {smartCheck.smart_status === 'stale' ? (
@@ -618,7 +671,7 @@ export function TaskDrawer({
                 </div>
               </>
             ) : (
-              <p className="panel-note">SMART 评价暂不可用，任务信息和行动步骤仍可查看与修改。</p>
+              <p className="panel-note">暂无 SMART 评价，任务信息和行动项仍可查看与修改。</p>
             )}
           </div>
 
@@ -705,21 +758,22 @@ export function TaskDrawer({
               ) : null}
             </div>
           </div>
+          </fieldset>
         </div>
         <div className="drawer-actions">
           <div>
             <span className="save-note">
-              演示状态保留在当前页面；正式版写入本地 SQLite（原子事务，失败整体回滚）。
+              保存到本地，不调用模型；修改内容后，原 SMART 评价标记为待复核。
             </span>
             <div className="task-save-status" data-testid="task-save-status">
               {notice ?? (dirty ? '有未保存更改' : '当前任务无待保存更改')}
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="outline" onClick={() => void saveTask()} disabled={busy}>
+            <button type="button" className="outline" onClick={() => void saveTask()} disabled={busy || locked}>
               保存任务
             </button>
-            <button type="button" className="primary" onClick={() => void saveProgress()} disabled={busy}>
+            <button type="button" className="primary" onClick={() => void saveProgress()} disabled={busy || locked}>
               保存进度
             </button>
           </div>

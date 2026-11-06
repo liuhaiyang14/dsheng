@@ -28,6 +28,35 @@ pub fn dispatch_with_progress(
     progress: Option<crate::store::generation::ProgressSink>,
 ) -> CliResult<serde_json::Value> {
     match action {
+        cli::TaskAction::Create {
+            workspace,
+            input_json,
+        } => {
+            let mut conn = ctx::open_db(db)?;
+            let ws = ctx::resolve_workspace(&conn, workspace.as_ref())?;
+            let raw = jsonio::read_json(&input_json)?;
+            let input: dsheng_core::contracts::tasks::TaskCreateInput =
+                serde_json::from_value(raw.clone())
+                    .map_err(|e| CliError::invalid(format!("人工任务输入无效：{e}")))?;
+            if input.workspace_id != ws.workspace_id {
+                return Err(CliError::new(
+                    CliErrorCode::WorkspaceMismatch,
+                    "人工任务不属于当前企业",
+                ));
+            }
+            let outcome = dsheng_core::repository::task_create::TaskCreateService {
+                conn: &mut conn,
+                now: chrono::Utc::now(),
+                actor: dsheng_core::contracts::tasks::ActorSource::Cli,
+            }
+            .apply_raw(&raw)
+            .map_err(CliError::from)?;
+            views::task_view(
+                &conn,
+                ws.workspace_id,
+                ctx::uuid_arg(&outcome.task_id, "task_id")?,
+            )
+        }
         cli::TaskAction::Generate { .. } => {
             super::generation_cmd::task_generate_with_progress(action, db, progress)
         }

@@ -1,7 +1,19 @@
 # dsheng（两表一单）工程交接文档
 
-> 更新时间：2026-11-06 · 当前修复版本：0.1.7
+> 更新时间：2026-11-06 · 当前修复版本：0.1.8
 > 本轮为本地修复与 macOS arm64 验证，不包含远端推送或 GitHub Release 发布。
+
+## 0.1.8 人工任务与完整编辑
+
+- **新建入口**：任务单新增「新增任务」，选择本期任务或下期计划，手动填写任务及至少一项行动。无需 Provider、诊断报告或 AI 候选；保存即成为正式任务。期间取当前所选分析的不可变策略/计划窗口，历史详情同时提供指纹与准确计划期间，不按今天或当前设置重新猜测。
+- **编辑入口**：任务详情补齐关联指标、预定/实绩/当前数值、单位、资源、完成标准、备注和复盘；行动项可修改内容、负责人、起止日与验收标准，并支持增删和排序。修正旧的固定期间判断、重开确认时机、未保存行动可勾完成等问题；编辑期间锁定企业/期间切换，历史版本和失效任务只读。取消操作保留执行状态，普通内容修改不重置进度；自动进度按行动项更新，旧 SMART 评价待复核，手工任务不伪造 AI 评价。
+- **本地创建链路**：新增 CLI `task create` 和桌面 `task_create`，统一核心事务、版本/指纹/企业校验、幂等编号、任务事件及期间关联；重复提交返回同一任务，非法输入不留部分记录。新增 task-create 输入合同和明确的数值依据/日期错误码，CLI 现为 55 条命令、71 个错误码，无新增数据库迁移。
+- **已有保存缺陷**：修复可空字段的 null 被当作「未修改」，现在显式清空负责人、日期或数值能落库，省略字段保持原值；类型序列化不再凭空产生清空操作。补齐此前丢失的备注、复盘和数值依据，使用现有事件及快照持久化，不新增数据表。金额输入按字符串规范化，保留精度并接受 100.00 等常见写法。
+- **后续输入**：人工新建任务也进入后续期间正式任务检视；本地备注和人工数值依据随执行记录一起传入。诊断引用额外保留追问层级和分析维度；不改变事实状态，不触发模型调用。
+
+- **验证**：Rust workspace 450 项、桌面接口 34 项、前端 159 项通过；Clippy 零警告、workspace 格式检查、合同/哈希校验、使用手册命令核对及前端生产构建通过。合成数据库覆盖无 Provider 创建→列表/详情→修改/新增行动→重读、相同提交幂等、错误回滚、字段清空与省略、精确金额和进度保留。浏览器明确使用 FixtureClient，完成手动新建、编辑、新增行动与保存，1/3 项完成显示 33.33%。没有调用真实模型或访问用户业务库。
+
+- **本地产物**：`target/release-dist/v0.1.8/dsheng_0.1.8_macos_arm64.dmg` 与同目录便携 ZIP；版本及 SHA-256 见 [0.1.8 清单](docs/release/manifest-v0.1.8.json)。只读挂载已核对 DMG 内版本、标识和本次构建可执行一致。没有替换或启动用户正在使用的应用，未发布远端。
 
 ## 0.1.7 多任务规则与任务输入闭环
 
@@ -97,7 +109,7 @@
 | 任务单生成 | ✅ | 同上；候选生成后需 task reconcile 应用 |
 | 模板下载 | ✅ | 三份空白工作簿＋字段说明 |
 | 历史查询/版本快照 | ✅ | 不可变 revision，可追溯 |
-| CLI（54 命令） | ✅ | 与桌面共用同一 Rust core 和 SQLite |
+| CLI（55 命令） | ✅ | 与桌面共用同一 Rust core 和 SQLite |
 | Agent Skill | ✅ | skills/dsheng-agent/，本地验证脚本 57 断言全过 |
 | 中文使用手册 | ✅ | docs/user-guide/ 11 篇＋PDF |
 
@@ -122,7 +134,7 @@ cd src-ui && npm install && cd ..
 # 5. 构建桌面应用
 bash scripts/package/macos.sh
 
-# 6. 产物在 target/release-dist/dsheng_0.1.7_macos_arm64.dmg
+# 6. 产物在 target/release-dist/dsheng_0.1.8_macos_arm64.dmg
 ```
 
 ### 日常开发命令
@@ -161,7 +173,7 @@ crates/dsheng-core/   共享 Rust 核心
   src/generation/     生成层（提示词组装/输入投影/输出校验/上下文不变量）
   prompts/v1/         冻结提示词资源（2.3/2.0，SHA-256 哈希守卫）
 
-crates/dsheng-cli/    独立 CLI（dsheng 二进制，54 命令）
+crates/dsheng-cli/    独立 CLI（dsheng 二进制，55 命令）
 contracts/v1/         机器可读合同（JSON Schema/指标目录/DC/TS 算例）
 docs/specs/           四份实施规格（冻结）
 docs/engineering/     工程文档（验收映射/交付清单/复审记录/派发台账）
@@ -289,7 +301,7 @@ scripts/package/      打包脚本（macos.sh / cli_dist.sh / preflight.sh）
 
 | 文件 | 用途 |
 | --- | --- |
-| `contracts/v1/cli-surface.json` | 54 条 CLI 命令＋69 个错误码（唯一事实来源） |
+| `contracts/v1/cli-surface.json` | 55 条 CLI 命令＋71 个错误码（唯一事实来源） |
 | `contracts/v1/read-views.schema.json` | 读侧输出视图（UI/CLI 共用） |
 | `contracts/v1/metric-catalog.json` | 26 个指标定义（含别名/公式/聚合方式） |
 | `crates/dsheng-core/prompts/v1/versions.json` | 提示词版本/哈希/冻结状态 |

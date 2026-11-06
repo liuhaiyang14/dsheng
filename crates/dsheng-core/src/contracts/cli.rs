@@ -104,6 +104,10 @@ pub enum CliErrorCode {
     StepOutsideTaskPeriod,
     #[serde(rename = "AT_LEAST_ONE_STEP")]
     AtLeastOneStep,
+    #[serde(rename = "SOURCE_NOTE_REQUIRED")]
+    SourceNoteRequired,
+    #[serde(rename = "DATE_ORDER_INVALID")]
+    DateOrderInvalid,
     // ---- exit 4：Provider/发送后失败 ----
     #[serde(rename = "NETWORK_ERROR")]
     NetworkError,
@@ -206,7 +210,9 @@ impl CliErrorCode {
             | DuplicateReconcileTarget
             | StateProgressMismatch
             | StepOutsideTaskPeriod
-            | AtLeastOneStep => 3,
+            | AtLeastOneStep
+            | SourceNoteRequired
+            | DateOrderInvalid => 3,
             // 4
             NetworkError
             | TlsError
@@ -284,6 +290,8 @@ impl CliErrorCode {
             StateProgressMismatch => "STATE_PROGRESS_MISMATCH",
             StepOutsideTaskPeriod => "STEP_OUTSIDE_TASK_PERIOD",
             AtLeastOneStep => "AT_LEAST_ONE_STEP",
+            SourceNoteRequired => "SOURCE_NOTE_REQUIRED",
+            DateOrderInvalid => "DATE_ORDER_INVALID",
             NetworkError => "NETWORK_ERROR",
             TlsError => "TLS_ERROR",
             RedirectRejected => "REDIRECT_REJECTED",

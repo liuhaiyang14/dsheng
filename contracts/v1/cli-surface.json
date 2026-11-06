@@ -377,6 +377,17 @@
       "output_contract": "contracts/v1/read-views.schema.json#/$defs/taskView"
     },
     {
+      "command": "task create",
+      "syntax": "dsheng task create --workspace <id> --input-json <file|-> --json",
+      "kind": "local_write",
+      "provider_calls_maximum": 0,
+      "input_contract": "contracts/v1/task-create.schema.json",
+      "output_contract": "contracts/v1/read-views.schema.json#/$defs/taskView",
+      "notes": [
+        "人工创建任务及至少一项行动；按所选分析确定检视或计划期间；不调用 Provider。"
+      ]
+    },
+    {
       "command": "task update",
       "syntax": "dsheng task update --workspace <id> --task <id> --patch-json <file|-> --json",
       "kind": "local_write",
@@ -816,6 +827,14 @@
     "INPUT_CONTRACT_INVALID": {
       "exit_code": 2,
       "meaning": "Metric, target, conflict, unit, scope or evidence projection is inconsistent"
+    },
+    "SOURCE_NOTE_REQUIRED": {
+      "exit_code": 3,
+      "meaning": "人工新增或修改数值时缺少调整依据；清空既有数值同样需要依据。"
+    },
+    "DATE_ORDER_INVALID": {
+      "exit_code": 3,
+      "meaning": "任务或行动项的开始日期晚于结束日期。"
     }
   },
   "compatibility": {

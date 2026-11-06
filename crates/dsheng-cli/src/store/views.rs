@@ -390,7 +390,7 @@ pub fn task_view(conn: &Connection, workspace_id: Uuid, task_id: Uuid) -> CliRes
         "due_date": opt_date(task.due_date),
         "resource_need": task.resource_need,
         "success_criteria": task.success_criteria,
-        "note": Value::Null,
+        "note": dsheng_core::repository::task_store::current_task_note(conn, task_id)?,
         "review_note": task.review_note,
         "target_period": range_json(task.target_period),
         "lifecycle": serde_json::to_value(task.lifecycle).unwrap_or(json!("active")),

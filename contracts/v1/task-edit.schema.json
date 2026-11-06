@@ -122,7 +122,7 @@
                   ]
                 },
                 "note": {
-                  "type": "string"
+                  "type": ["string", "null"]
                 },
                 "review_note": {
                   "type": "string"

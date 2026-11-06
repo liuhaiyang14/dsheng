@@ -149,6 +149,10 @@ pub const COMMANDS: &[CommandSpec] = &[
     },
     // ---- 任务读写 / 时间线 ----
     CommandSpec {
+        name: "task_create",
+        args: &["input"],
+    },
+    CommandSpec {
         name: "task_list",
         args: &["workspaceId", "runId"],
     },

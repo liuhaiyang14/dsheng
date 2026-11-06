@@ -20,6 +20,7 @@ pub mod analysis_runs;
 pub mod history_delete;
 pub mod migration;
 pub mod reconcile;
+pub mod task_create;
 pub mod task_store;
 pub mod tasks;
 

@@ -12,6 +12,7 @@ import { Tag } from '../components/bits';
 import { GenerationDialog } from '../components/GenerationDialog';
 import { useGeneration } from '../components/useGeneration';
 import { TaskDrawer } from '../components/TaskDrawer';
+import { TaskCreateDialog } from '../components/TaskCreateDialog';
 import { TimelineBoard } from '../components/TimelineBoard';
 import {
   CYCLE_ROLE_LABELS,
@@ -71,6 +72,8 @@ export function TaskScreen() {
   const runId = detail?.run_id ?? null;
 
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [createdTask, setCreatedTask] = useState<TaskView | null>(null);
   const [reports, setReports] = useState<DiagnosisReportSummaryView[]>([]);
   const [useReport, setUseReport] = useState(false);
   const [reportId, setReportId] = useState('');
@@ -93,9 +96,11 @@ export function TaskScreen() {
   useEffect(() => {
     app.setContextLock(sending
       ? '正在生成任务；请等待完成或在生成弹窗停止后再切换企业、期间或页面。'
-      : candidate ? '本页有待应用的任务候选，请先应用或暂时收起，再切换企业、期间或页面。' : null);
+      : candidate ? '本页有待应用的任务候选，请先应用或暂时收起，再切换企业、期间或页面。'
+        : createOpen ? '正在填写新任务，请先保存或关闭后再切换企业、期间或页面。'
+          : selectedTaskId ? '请先关闭任务详情，再切换企业、期间或页面。' : null);
     return () => app.setContextLock(null);
-  }, [app.setContextLock, sending, candidate]);
+  }, [app.setContextLock, sending, candidate, createOpen, selectedTaskId]);
 
   // 进入页面：只读加载诊断报告列表（供生成预览选择），绝不触发生成。
   useEffect(() => {
@@ -138,8 +143,8 @@ export function TaskScreen() {
   }, [app.client, app.activeWorkspaceId, runId, timelineFrom, timelineTo, timelineGrain, statusFilter, tasks]);
 
   const selectedTask = useMemo(
-    () => tasks.find((t) => t.task_id === selectedTaskId) ?? null,
-    [tasks, selectedTaskId],
+    () => tasks.find((t) => t.task_id === selectedTaskId) ?? (createdTask?.task_id === selectedTaskId ? createdTask : null),
+    [tasks, selectedTaskId, createdTask],
   );
 
   /** 显式按钮第一步：打开生成参数（可选引用诊断报告）。 */
@@ -263,7 +268,7 @@ export function TaskScreen() {
     }
   };
 
-  if (!hasData || !detail) {
+  if (!detail) {
     return (
       <div>
         <div className="screen-head">
@@ -299,6 +304,8 @@ export function TaskScreen() {
           </div>
         </div>
         <div className="head-controls">
+          <button type="button" className="outline" disabled={busy || sending || historical || app.loading || candidate != null}
+            onClick={() => { if (!detail?.analysis_input_fingerprint) { setNotice('请刷新当前期间后再新建任务。'); return; } setCreateOpen(true); }} data-testid="manual-create-task-button">新增任务</button>
           <button type="button" className="outline" onClick={() => void readSavedCandidate()}
             disabled={busy || sending || historical || app.loading || candidate != null}
             data-testid="read-saved-task-candidate">
@@ -638,11 +645,20 @@ export function TaskScreen() {
         />
       ) : null}
 
+      {createOpen && app.client && app.activeWorkspaceId && detail ? (
+        <TaskCreateDialog client={app.client} workspaceId={app.activeWorkspaceId} detail={detail}
+          onClose={() => setCreateOpen(false)}
+          onCreated={(task) => { setCreatedTask(task); setCreateOpen(false); setSelectedTaskId(task.task_id); void app.reloadWorkspaceData(); }} />
+      ) : null}
+
       {selectedTask && app.client && app.activeWorkspace ? (
         <TaskDrawer
           task={selectedTask}
           workspace={app.activeWorkspace}
           client={app.client}
+          metrics={detail?.metrics ?? []}
+          periodEnd={detail?.period.to}
+          readOnly={historical || sending || busy || app.loading || candidate != null}
           onClose={() => setSelectedTaskId(null)}
           onSaved={() => void app.reloadWorkspaceData()}
         />

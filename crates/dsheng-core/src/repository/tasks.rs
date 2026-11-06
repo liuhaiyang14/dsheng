@@ -27,6 +27,8 @@ use uuid::Uuid;
 /// 任务服务错误码（task-lifecycle / cli-surface 词法）。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TaskServiceError {
+    #[error("{0}")]
+    InvalidInput(String),
     #[error("REVISION_CONFLICT")]
     RevisionConflict,
     #[error("WORKSPACE_MISMATCH")]
@@ -692,9 +694,8 @@ pub fn validate_task_edit(input: &TaskEditInput) -> Result<(), TaskServiceError>
     validate_task_edit_with_raw(input, None)
 }
 
-/// 带原始 JSON 的校验：冻结类型 `Option<Option<T>>` 无法区分“未提供”与
-/// “显式 null”（serde 将 null 反序列化为外层 None），空 patch 判定与数值
-/// 显式 null 以原始 JSON 为准（SC-04/SC-28）。
+/// 带原始 JSON 的校验：可空字段通过自定义反序列化区分“未提供”与“显式 null”；
+/// 仍保留原始 JSON 检查，确保空 patch 与显式清空遵循实际提交内容（SC-04/SC-28）。
 pub fn validate_task_edit_with_raw(
     input: &TaskEditInput,
     raw: Option<&serde_json::Value>,
@@ -724,6 +725,13 @@ fn validate_task_edit_inner(input: &TaskEditInput) -> Result<(), TaskServiceErro
                 return Err(TaskServiceError::EmptyPatch);
             }
             if let Some(patch) = patch {
+                if patch
+                    .title
+                    .as_deref()
+                    .is_some_and(|title| title.trim().is_empty())
+                {
+                    return Err(TaskServiceError::InvalidInput("任务名称不能为空".into()));
+                }
                 if patch.touches_numbers()
                     && source_note
                         .as_deref()
@@ -737,7 +745,23 @@ fn validate_task_edit_inner(input: &TaskEditInput) -> Result<(), TaskServiceErro
             }
             if let Some(ops) = ops {
                 for op in ops {
+                    if let StepOperation::Add { content, .. } = op {
+                        if content.action.trim().is_empty() {
+                            return Err(TaskServiceError::InvalidInput("行动内容不能为空".into()));
+                        }
+                        if matches!((content.start_date, content.due_date), (Some(start), Some(end)) if start > end)
+                        {
+                            return Err(TaskServiceError::DateOrderInvalid);
+                        }
+                    }
                     if let StepOperation::Update { patch, .. } = op {
+                        if patch
+                            .action
+                            .as_deref()
+                            .is_some_and(|action| action.trim().is_empty())
+                        {
+                            return Err(TaskServiceError::InvalidInput("行动内容不能为空".into()));
+                        }
                         if step_patch_is_empty(patch) {
                             return Err(TaskServiceError::EmptyPatch);
                         }

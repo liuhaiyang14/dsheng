@@ -393,9 +393,23 @@ export interface TaskContentPatch {
   due_date?: IsoDate | null;
   resource_need?: string | null;
   success_criteria?: string | null;
-  note?: string;
+  note?: string | null;
   review_note?: string;
   target_period?: DateRange;
+}
+
+/** 人工新建任务：只写本地，目标期间由核心按所选分析和周期角色确定。 */
+export interface TaskCreateInput {
+  schema_version: '1';
+  workspace_id: string;
+  run_id: string;
+  analysis_revision_no: number;
+  input_fingerprint: string;
+  mutation_id: string;
+  cycle_role: CycleRole;
+  source_note: string | null;
+  content: Omit<TaskContentPatch, 'target_period'> & Required<Pick<TaskContentPatch, 'title' | 'summary' | 'category'>>;
+  steps: StepContent[];
 }
 
 export interface StepContent {
@@ -969,6 +983,9 @@ export interface HistoryEntryView {
 
 export interface HistoryDetailView {
   run_id: string;
+  /** 旧版本读视图可缺省；本地新建任务必须绑定该保存版本的指纹。 */
+  analysis_input_fingerprint?: string;
+  task_plan_period?: DateRange | null;
   analysis_revision_no: number;
   task_snapshot_no: number;
   captured_at: IsoDateTime;

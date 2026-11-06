@@ -1,4 +1,4 @@
-//! 已应用任务的当前执行记录 → 任务生成的历史检视输入（只读）。
+//! 正式任务（人工新建或已应用的生成结果）的当前执行记录 → 任务生成的历史检视输入（只读）。
 //!
 //! 检视窗口使用本次分析的来源期间：包含该期间任务及更早未完成事项，
 //! 不把为下一期刚生成的候选/任务当作本期执行结果，也不冒充期末历史快照。
@@ -15,7 +15,7 @@ use serde_json::Number;
 use std::collections::{BTreeSet, HashSet};
 use uuid::Uuid;
 
-/// 读取同企业已应用任务；证据仅保留本次模型输入确实携带的 ID。
+/// 读取同企业正式任务（人工新建或已应用的生成结果）；证据仅保留本次模型输入确实携带的 ID。
 pub fn prior_task_outcomes(
     conn: &Connection,
     workspace_id: Uuid,
@@ -67,13 +67,17 @@ pub fn prior_task_outcomes(
             TaskStatus::Blocked => TaskOutcomeStatus::Blocked,
         };
         let mut note = vec![format!(
-            "本地已应用任务的当前执行记录（任务版本 r{}），非期末快照；执行状态不等于经营成效已核实。目标期间：{} 至 {}。",
+            "本地正式任务（人工新建或已应用的生成结果）的当前执行记录（任务版本 r{}），非期末快照；执行状态不等于经营成效已核实。目标期间：{} 至 {}。",
             task.task_revision_no, period.from, period.to
         )];
         if period.to < source_period.from {
             note.push("较早期间遗留的未完成事项。".into());
         }
         push_note(&mut note, "任务说明", Some(&task.summary));
+        let manual_note = dsheng_core::repository::task_store::current_task_note(conn, id)?;
+        push_note(&mut note, "本地备注", manual_note.as_deref());
+        let source_note = dsheng_core::repository::task_store::current_task_source_note(conn, id)?;
+        push_note(&mut note, "数值依据记录", source_note.as_deref());
         push_note(&mut note, "责任人记录", task.owner.as_deref());
         push_note(&mut note, "目标值记录", task.target_value.as_deref());
         push_note(&mut note, "计划值记录", task.planned_value.as_deref());

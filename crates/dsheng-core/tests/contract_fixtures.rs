@@ -87,11 +87,12 @@ fn cli_surface_catalog_matches_rust_enum() {
     let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let errors = v["errors"].as_object().expect("errors 对象");
     let commands = v["commands"].as_array().unwrap();
-    assert_eq!(
-        commands.len(),
-        54,
-        "54 条命令（2026-11-02 增补 analysis show）"
-    );
+    assert_eq!(commands.len(), 55, "55 条命令（增补本地 task create）");
+    let manual_create = commands
+        .iter()
+        .find(|command| command["command"] == "task create")
+        .expect("人工创建命令必须进入正式命令合同");
+    assert_eq!(manual_create["provider_calls_maximum"], 0);
     for (code, spec) in errors {
         let parsed: dsheng_core::contracts::cli::CliErrorCode =
             serde_json::from_value(serde_json::Value::String(code.clone()))
@@ -112,6 +113,7 @@ fn task_and_diagnosis_input_schemas_are_valid_json() {
         "contracts/v1/task-input.schema.json",
         "contracts/v1/diagnosis-input.schema.json",
         "contracts/v1/task-edit.schema.json",
+        "contracts/v1/task-create.schema.json",
         "contracts/v1/task-reconcile.schema.json",
         "contracts/v1/settings.schema.json",
         "crates/dsheng-core/prompts/v1/schema/task-output.schema.json",

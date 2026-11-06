@@ -599,3 +599,14 @@ tr:last-child td { border-bottom: 0; }
 .generation-dialog .notice.error { display: block; line-height: 1.7; overflow-wrap: anywhere; }
 @keyframes generation-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .generation-spinner { animation: none; } }
+
+/* 本地任务编辑：表单分组与行动项详细信息。 */
+.task-edit-fields { border: 0; margin: 0; padding: 0; min-width: 0; }
+.task-edit-fields:disabled { opacity: .72; }
+.task-step-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; margin-top: 10px; }
+.task-step-fields label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.task-step-fields .input { min-width: 0; width: 100%; }
+.task-create-dialog { width: min(820px, calc(100vw - 32px)); }
+.task-create-dialog .modal-body { max-height: 68vh; overflow: auto; }
+.task-create-step { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 16px; }
+@media (max-width: 640px) { .task-step-fields { grid-template-columns: 1fr; } }

@@ -424,7 +424,7 @@ describe('S6 详情抽屉', () => {
     source.smart_check = smart as unknown as TaskView['smart_check'];
     render(<TaskDrawer task={source} workspace={workspace} client={client} onClose={() => {}} onSaved={() => {}} />);
     const section = screen.getByTestId('task-smart-check');
-    expect(section).toHaveTextContent('SMART 评价暂不可用');
+    expect(section).toHaveTextContent('暂无 SMART 评价');
     expect(section).not.toHaveTextContent('通过');
     expect(section).not.toHaveTextContent('生成时评价');
     expect(screen.getByTestId('drawer-step-count')).toHaveTextContent(`${source.steps.length} 个步骤`);

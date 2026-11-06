@@ -2,7 +2,7 @@
 """_verify_commands.py —— 手册命令一致性检查。
 
 扫描 docs/user-guide/*.md（不含本文件与 checklist 的非命令文本）中出现的每一条
-`dsheng <cmd> …` 命令，逐条与 contracts/v1/cli-surface.json 的 54 条命令比对：
+`dsheng <cmd> …` 命令，逐条与 contracts/v1/cli-surface.json 的 55 条命令比对：
 
 1. 命令路径（子命令序列）必须能在合同 commands 里找到对应条目；
 2. 命令中的 `--flag` 必须出现在合同 syntax 的 flag 集合或文档化全局/别名集合中。
@@ -156,7 +156,7 @@ def main():
         for f, ln, msg in bad:
             print(f"  {f}:{ln}  {msg}")
         return 1
-    print("\n全部命令与 contracts/v1/cli-surface.json 一致（54 条命令集合内；flag 均有出处）。")
+    print("\n全部命令与 contracts/v1/cli-surface.json 一致（55 条命令集合内；flag 均有出处）。")
     return 0
 
 

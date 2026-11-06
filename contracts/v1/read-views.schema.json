@@ -375,6 +375,8 @@
       "properties": {
         "run_id": { "$ref": "#/$defs/uuidString" },
         "analysis_revision_no": { "type": "integer", "minimum": 1 },
+        "analysis_input_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "task_plan_period": { "anyOf": [{ "$ref": "#/$defs/dateRange" }, { "type": "null" }] },
         "task_snapshot_no": { "type": "integer", "minimum": 0 },
         "captured_at": { "$ref": "#/$defs/isoDateTime" },
         "metrics": { "type": "array", "items": { "$ref": "#/$defs/metricRowView" } },

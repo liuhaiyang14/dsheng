@@ -39,6 +39,7 @@ import type {
   TaskCandidateView,
   TaskCandidateRecoveryView,
   TaskEditInput,
+  TaskCreateInput,
   TaskReconcileInput,
   TaskView,
   TimelineEntryView,
@@ -275,6 +276,9 @@ export class TauriClient implements DshengClient {
   }
   taskShow(workspaceId: string, taskId: string): Promise<TaskView> {
     return this.invoke('task_show', { workspaceId, taskId });
+  }
+  taskCreate(input: TaskCreateInput): Promise<TaskView> {
+    return this.invoke('task_create', { input });
   }
   taskUpdate(input: TaskEditInput): Promise<import('./client').TaskUpdateSummary> {
     return this.invoke('task_update', { input });

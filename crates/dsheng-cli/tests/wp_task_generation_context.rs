@@ -173,6 +173,29 @@ fn first_period_applied_tasks_flow_into_second_period_and_changed_progress_inval
         .unwrap()
         .iter()
         .any(|t| t["progress"] == json!(37.5) && t["status"] == "in_progress"));
+    let content_edit = json!({"schema_version":"1","workspace_id":f.workspace,"task_id":outcomes[0]["task_id"],
+        "expected_task_revision":2,"mutation_id":Uuid::new_v4(),
+        "operation":{"kind":"content","patch":{"note":"合成备注：需要核对回款","target_value":"125","unit":"元"},
+            "source_note":"合成目标依据"}});
+    TaskEditService {
+        conn: &mut conn,
+        now: Utc::now(),
+        actor: ActorSource::Ui,
+    }
+    .apply_raw(&content_edit)
+    .unwrap();
+    let updated = payload(&conn, &f, &next_run);
+    let changed: Value = serde_json::from_str(&updated.payload_json).unwrap();
+    let edited = changed["business_review"]["prior_task_outcomes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["task_id"] == outcomes[0]["task_id"])
+        .unwrap();
+    assert_eq!(edited["progress"], json!(37.5), "修改内容保留执行进度");
+    let note = edited["outcome_note"].as_str().unwrap();
+    assert!(note.contains("合成备注：需要核对回款"));
+    assert!(note.contains("合成目标依据"));
     let mut dispatch = NoNetwork::default();
     let err = gen::send_confirmed(
         &mut conn,

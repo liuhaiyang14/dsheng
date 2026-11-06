@@ -65,6 +65,7 @@ pub fn run() {
             contracts::commands::task_candidate_latest,
             contracts::commands::task_reconcile_dry_run,
             contracts::commands::task_reconcile_apply,
+            contracts::commands::task_create,
             contracts::commands::task_list,
             contracts::commands::task_show,
             contracts::commands::task_update,

@@ -41,6 +41,7 @@ import type {
   TaskCandidateView,
   TaskCandidateRecoveryView,
   TaskEditInput,
+  TaskCreateInput,
   TaskEditOperation,
   TaskReconcileInput,
   TaskStatus,
@@ -125,6 +126,7 @@ export class FixtureClient implements DshengClient {
   private scans: Record<string, ScanSummaryView>;
   private tasks: TaskView[];
   private reports: DiagnosisReport[];
+  private manualCreates = new Map<string, { signature: string; taskId: string }>();
   private analyzedRuns = new Map<string, AnalysisRunView>();
   private history: typeof fixtureHistory;
   private pendingConfirmations = new Map<
@@ -973,6 +975,58 @@ export class FixtureClient implements DshengClient {
     return structuredClone(task);
   }
 
+  async taskCreate(input: TaskCreateInput): Promise<TaskView> {
+    this.requireWorkspace(input.workspace_id);
+    const key = `${input.workspace_id}:${input.mutation_id}`;
+    const signature = JSON.stringify(input);
+    const previous = this.manualCreates.get(key);
+    if (previous) {
+      if (previous.signature !== signature) throw new DshengCliError({ code: 'IDEMPOTENCY_CONFLICT', message: '同一保存操作的内容已变化', field: null, details: null });
+      return this.taskShow(input.workspace_id, previous.taskId);
+    }
+    const entry = this.history.find((item) => item.workspace_id === input.workspace_id && item.run_id === input.run_id);
+    const run = this.analyzedRuns.get(input.run_id) ?? fixtureAnalysisRun;
+    if (!entry || entry.current_revision_no !== input.analysis_revision_no || run.analysis_input_fingerprint !== input.input_fingerprint) {
+      throw new DshengCliError({ code: 'REVISION_CONFLICT', message: '当前分析已变化，请刷新后重新新建任务', field: null, details: null });
+    }
+    const { content } = input;
+    if (!content.title.trim() || input.steps.length === 0 || input.steps.some((step) => !step.action.trim())) {
+      throw new DshengCliError({ code: 'DATA_VALIDATION_FAILED', message: '请填写任务名称及至少一项行动', field: null, details: null });
+    }
+    const metric = run.metrics.find((item) => item.metric_id === content.metric_id);
+    if ((content.category !== 'other' && !metric) || (content.metric_id && !metric)) {
+      throw new DshengCliError({ code: 'DATA_VALIDATION_FAILED', message: '请选择有效的关联指标', field: null, details: null });
+    }
+    if (['target_value', 'planned_value', 'actual_value', 'current_value'].some((key) => content[key as keyof typeof content] != null) && !input.source_note?.trim()) {
+      throw new DshengCliError({ code: 'DATA_VALIDATION_FAILED', message: '填写数值需注明依据', field: null, details: null });
+    }
+    const sourcePeriod = entry.period;
+    const targetFrom = new Date(`${sourcePeriod.to}T00:00:00Z`); targetFrom.setUTCDate(targetFrom.getUTCDate() + 1);
+    const nextEnd = new Date(Date.UTC(targetFrom.getUTCFullYear(), targetFrom.getUTCMonth() + 1, targetFrom.getUTCDate() - 1));
+    const targetPeriod = input.cycle_role === 'review' ? sourcePeriod : { from: targetFrom.toISOString().slice(0, 10), to: nextEnd.toISOString().slice(0, 10) };
+    const taskId = nextUuid();
+    const task: TaskView = {
+      workspace_id: input.workspace_id, task_id: taskId, task_revision_no: 1,
+      title: content.title, summary: content.summary, category: content.category,
+      metric_id: content.metric_id ?? null, metric_label: metric?.metric_label ?? null,
+      target_value: content.target_value ?? null, planned_value: content.planned_value ?? null,
+      actual_value: content.actual_value ?? null, current_value: content.current_value ?? null,
+      unit: content.unit ?? metric?.unit ?? null, mp_label: content.mp_label ?? null, mp_unit: content.mp_unit ?? null,
+      owner: content.owner ?? null, planned_start: content.planned_start ?? null, due_date: content.due_date ?? null,
+      resource_need: content.resource_need ?? null, success_criteria: content.success_criteria ?? null,
+      note: content.note ?? null, review_note: content.review_note ?? null,
+      target_period: structuredClone(targetPeriod), lifecycle: 'active', status: 'not_started', progress: '0', progress_mode: 'auto',
+      adjustment_reason: null, blocked_reason: null, completed_at: null,
+      smart_check: { smart_status: 'stale', assessed_task_revision: 1, checks: [] },
+      steps: input.steps.map((step, index) => ({ ...step, step_id: nextUuid(), step_order: index + 1, status: 'not_started', blocked_reason: null, completed_at: null })),
+      evidence: [], events: [{ event_id: nextUuid(), task_id: taskId, task_revision_no: 1, event_seq: 1, kind: 'task_created', reason: '人工新建任务', actor_source: 'ui', occurred_at: DEMO_NOW }],
+      origin_run_id: input.run_id, overdue: false,
+    };
+    this.tasks.unshift(task);
+    this.manualCreates.set(key, { signature, taskId });
+    return structuredClone(task);
+  }
+
   async taskUpdate(input: TaskEditInput): Promise<import('./client').TaskUpdateSummary> {
     this.requireWorkspace(input.workspace_id);
     const task = this.tasks.find(
@@ -1090,6 +1144,10 @@ export class FixtureClient implements DshengClient {
       }
       if (operation.step_operations?.length) {
         structureChanged = this.applyStepOperations(task, operation.step_operations);
+        if (operation.step_operations.some((operation) => operation.op !== 'update'
+          || Object.keys(operation.patch).some((key) => key !== 'status' && key !== 'blocked_reason'))) {
+          task.smart_check = { ...task.smart_check, smart_status: 'stale' };
+        }
       }
       if (structureChanged) {
         this.recomputeAuto(task);
@@ -1461,6 +1519,12 @@ export class FixtureClient implements DshengClient {
       }));
     return {
       run_id: runId,
+      analysis_input_fingerprint: (this.analyzedRuns.get(runId) ?? fixtureAnalysisRun).analysis_input_fingerprint,
+      task_plan_period: (() => {
+        const from = new Date(`${entry.period.to}T00:00:00Z`); from.setUTCDate(from.getUTCDate() + 1);
+        const to = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, from.getUTCDate() - 1));
+        return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+      })(),
       analysis_revision_no: revision ?? entry.current_revision_no,
       task_snapshot_no: entry.task_snapshot_no,
       captured_at: entry.updated_at,

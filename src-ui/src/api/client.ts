@@ -37,6 +37,7 @@ import type {
   TaskCandidateView,
   TaskCandidateRecoveryView,
   TaskEditInput,
+  TaskCreateInput,
   TaskReconcileInput,
   TaskView,
   TimelineEntryView,
@@ -215,6 +216,7 @@ export interface DshengClient {
   // ---- 任务读写 ----
   taskList(workspaceId: string, runId?: string): Promise<TaskView[]>;
   taskShow(workspaceId: string, taskId: string): Promise<TaskView>;
+  taskCreate(input: TaskCreateInput): Promise<TaskView>;
   taskUpdate(input: TaskEditInput): Promise<TaskUpdateSummary>;
   taskTimeline(query: TaskTimelineQuery): Promise<TimelineEntryView[]>;
 

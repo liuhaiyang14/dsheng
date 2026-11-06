@@ -194,6 +194,23 @@ impl CliError {
 
 impl From<TaskServiceError> for CliError {
     fn from(e: TaskServiceError) -> Self {
+        match &e {
+            TaskServiceError::InvalidInput(message) => {
+                return CliError::new(CliErrorCode::DataValidationFailed, message.clone())
+            }
+            TaskServiceError::SourceNoteRequired => {
+                return CliError::new(
+                    CliErrorCode::SourceNoteRequired,
+                    "修改数值需要填写人工调整依据",
+                )
+                .with_details(serde_json::json!({"lex":"SOURCE_NOTE_REQUIRED"}))
+            }
+            TaskServiceError::DateOrderInvalid => {
+                return CliError::new(CliErrorCode::DateOrderInvalid, "开始日期不能晚于结束日期")
+                    .with_details(serde_json::json!({"lex":"DATE_ORDER_INVALID"}))
+            }
+            _ => {}
+        }
         // thiserror Display 输出词法码（REVISION_CONFLICT 等），统一走词法映射。
         CliError::from_task_service_text(&e.to_string())
     }

@@ -773,7 +773,7 @@ impl<'a> TaskEditService<'a> {
             TaskEditOperation::Content {
                 patch,
                 step_operations,
-                ..
+                source_note,
             } => {
                 let explicit_null = patch_metric_id_explicit_null(&input_json["operation"]);
                 // 合并后类别/指标关系（§4.1）
@@ -789,6 +789,12 @@ impl<'a> TaskEditService<'a> {
                     task.metric_id
                 };
                 super::tasks::validate_category_metric(merged_category, merged_metric)?;
+                if patch
+                    .as_deref()
+                    .is_some_and(|patch| patch.metric_id.is_some())
+                {
+                    validate_metric_workspace(&tx, &ws, merged_metric)?;
+                }
                 apply_content_edit(
                     &mut task,
                     &mut steps,
@@ -798,6 +804,42 @@ impl<'a> TaskEditService<'a> {
                     self.now,
                     &mut events,
                 )?;
+                for event in events
+                    .iter_mut()
+                    .filter(|event| event.event_type == "content_patched")
+                {
+                    let reason = [
+                        source_note.as_deref(),
+                        patch
+                            .as_deref()
+                            .and_then(|p| p.note.as_ref().and_then(|note| note.as_deref())),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .filter(|value| !value.trim().is_empty())
+                    .collect::<Vec<_>>()
+                    .join("；");
+                    if !reason.is_empty() {
+                        event.reason = Some(reason);
+                    }
+                    if let Some(source) = source_note
+                        .as_deref()
+                        .filter(|text| !text.trim().is_empty())
+                    {
+                        let mut after: serde_json::Value =
+                            serde_json::from_str(event.after_json.as_deref().unwrap_or("{}"))
+                                .map_err(|_| TaskServiceError::Db("任务修改记录无法读取".into()))?;
+                        after["source_note"] = json!(source);
+                        event.after_json = Some(after.to_string());
+                    }
+                    if let Some(note) = patch.as_deref().and_then(|p| p.note.as_ref()) {
+                        let mut after: serde_json::Value =
+                            serde_json::from_str(event.after_json.as_deref().unwrap_or("{}"))
+                                .map_err(|_| TaskServiceError::Db("任务修改记录无法读取".into()))?;
+                        after["note"] = json!(note);
+                        event.after_json = Some(after.to_string());
+                    }
+                }
                 // 目标期边界：步骤日期须在整体目标范围内（TS-39）
                 check_step_dates_in_task_period(&task, &steps)?;
             }
@@ -1015,6 +1057,47 @@ pub fn check_step_dates_in_task_period(
     Ok(())
 }
 
+pub(crate) fn validate_metric_workspace(
+    conn: &Connection,
+    workspace_id: &str,
+    metric_id: Option<Uuid>,
+) -> Result<(), TaskServiceError> {
+    if let Some(metric) = metric_id {
+        let owned: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM metric_definitions WHERE workspace_id=?1 AND (metric_id=?2 OR stable_metric_id=?2))", params![workspace_id, metric.to_string()], |row| row.get(0))?;
+        if !owned {
+            return Err(TaskServiceError::TaskCategoryMetricMismatch);
+        }
+    }
+    Ok(())
+}
+
+/// 旧表无 note 列，人工备注按事件保存；显式空字符串同样保留为清空操作。
+pub fn current_task_note(
+    conn: &Connection,
+    task_id: Uuid,
+) -> Result<Option<String>, TaskServiceError> {
+    current_task_text(conn, task_id, "note")
+}
+
+/// 最近一次人工数值依据；只读、不把它当作来源已核实事实。
+pub fn current_task_source_note(
+    conn: &Connection,
+    task_id: Uuid,
+) -> Result<Option<String>, TaskServiceError> {
+    current_task_text(conn, task_id, "source_note")
+}
+
+fn current_task_text(
+    conn: &Connection,
+    task_id: Uuid,
+    field: &str,
+) -> Result<Option<String>, TaskServiceError> {
+    use rusqlite::OptionalExtension;
+    let path = format!("$.{field}");
+    let value: Option<Option<String>> = conn.query_row("SELECT json_extract(after_json,?2) FROM task_events WHERE task_id=?1 AND json_valid(after_json) AND json_type(after_json,?2) IN ('text','null') ORDER BY event_seq DESC LIMIT 1", params![task_id.to_string(),path], |row| row.get(0)).optional()?;
+    Ok(value.flatten())
+}
+
 /// 创建完整任务（reconcile new/replace 与测试；revision 1 起步）。
 #[allow(clippy::too_many_arguments)]
 pub fn insert_full_task(
@@ -1043,10 +1126,10 @@ pub fn insert_full_task(
             actual_value, current_value, unit, mp_label, mp_unit, owner, planned_start,
             due_date, target_period_json, resource_need, success_criteria, assumptions_json,
             needs_review_json, smart_check_json, smart_status, status, lifecycle,
-            superseded_by_task_id, progress, progress_mode, completed_at, created_at, updated_at)
+            superseded_by_task_id, progress, progress_mode, completed_at, review_note, created_at, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17,
                  ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32,
-                 ?33, ?34, ?34)",
+                 ?33, ?34, ?35, ?35)",
         params![
             task.task_id.to_string(),
             task.workspace_id.to_string(),
@@ -1083,6 +1166,7 @@ pub fn insert_full_task(
             to_canonical_string(task.progress),
             progress_mode,
             task.completed_at.map(utc_iso),
+            task.review_note,
             utc_iso(now),
         ],
     )

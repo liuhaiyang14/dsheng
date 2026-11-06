@@ -79,7 +79,7 @@ export function PreviewModal({
               <div className="kv" data-testid="preview-task-history">
                 <label>历史任务</label>
                 <span>{preview.task_context_summary.prior_task_titles.length > 0 ? <>
-                  {preview.task_context_summary.prior_task_titles.length} 项已应用任务；发送其当前进度、执行记录及已有目标。
+                  {preview.task_context_summary.prior_task_titles.length} 项正式任务；发送其当前进度、执行记录及已有目标。
                   <details><summary>查看任务范围</summary>
                     <ul>{preview.task_context_summary.prior_task_titles.map((taskTitle, index) => <li key={index}>{taskTitle}</li>)}</ul>
                   </details>

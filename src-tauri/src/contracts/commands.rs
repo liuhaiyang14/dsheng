@@ -269,6 +269,11 @@ pub fn task_reconcile_apply(
 // ---- 任务读写 / 时间线 ----
 
 #[tauri::command(async)]
+pub fn task_create(state: tauri::State<'_, DesktopEnv>, input: Value) -> Value {
+    core::task::task_create(&state, input)
+}
+
+#[tauri::command(async)]
 pub fn task_list(
     state: tauri::State<'_, DesktopEnv>,
     workspace_id: String,

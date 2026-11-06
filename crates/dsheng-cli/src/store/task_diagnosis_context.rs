@@ -149,6 +149,12 @@ pub fn project_task_report(
             finding["question"].as_str().unwrap_or_default(),
             finding["answer"].as_str().unwrap_or_default(),
         )];
+        if let Some(level) = finding["level"].as_u64() {
+            text.push(format!("追问层级：第 {level} 层"));
+        }
+        if let Some(dimension) = finding["dimension"].as_str() {
+            text.push(format!("分析维度：{dimension}"));
+        }
         for (field, label) in [
             ("reasoning_summary", "依据说明"),
             ("validation_question", "待核实"),

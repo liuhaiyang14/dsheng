@@ -421,6 +421,13 @@ pub enum GenerationAction {
 
 #[derive(Subcommand, Debug)]
 pub enum TaskAction {
+    /// 人工新增任务，仅写本地数据，不调用模型。
+    Create {
+        #[arg(long)]
+        workspace: Option<String>,
+        #[arg(long)]
+        input_json: String,
+    },
     Generate {
         #[arg(long)]
         workspace: Option<String>,

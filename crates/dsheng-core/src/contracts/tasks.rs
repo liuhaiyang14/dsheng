@@ -92,6 +92,22 @@ pub enum ActorSource {
     Generation,
 }
 
+/// 人工创建任务：期间由已保存分析及所选角色决定，不接受模型候选身份。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskCreateInput {
+    pub schema_version: String,
+    pub workspace_id: uuid::Uuid,
+    pub run_id: uuid::Uuid,
+    pub analysis_revision_no: u32,
+    pub input_fingerprint: String,
+    pub mutation_id: uuid::Uuid,
+    pub cycle_role: CycleRole,
+    pub source_note: Option<String>,
+    pub content: TaskContentPatch,
+    pub steps: Vec<StepContent>,
+}
+
 /// task-edit.schema.json 顶层输入。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -148,25 +164,96 @@ pub enum PeriodLinkAction {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct TaskContentPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<TaskCategory>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub metric_id: Option<uuid::Uuid>,
     /// 规范十进制字符串或 null。
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub target_value: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub planned_value: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub actual_value: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub current_value: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub unit: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub mp_label: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub mp_unit: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub owner: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub planned_start: Option<Option<chrono::NaiveDate>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub due_date: Option<Option<chrono::NaiveDate>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub resource_need: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub success_criteria: Option<Option<String>>,
-    pub note: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub note: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub review_note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub target_period: Option<DateRange>,
 }
 
@@ -219,12 +306,39 @@ pub struct StepContent {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct StepPatch {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub action: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub owner: Option<Option<String>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub start_date: Option<Option<chrono::NaiveDate>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub due_date: Option<Option<chrono::NaiveDate>>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub done_criteria: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<TaskStatus>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_nullable",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub blocked_reason: Option<Option<String>>,
 }
 
@@ -330,6 +444,15 @@ pub enum StepMapping {
 pub enum FinalStepOrderEntry {
     Existing { step_id: uuid::Uuid },
     NewCandidate { candidate_step_id: String },
+}
+
+/// 缺省字段保留 None，显式 null 反序列化为 Some(None)，供部分更新执行清空。
+fn deserialize_nullable<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
 }
 
 /// serde 辅助：透明装箱，不改变 wire 格式。

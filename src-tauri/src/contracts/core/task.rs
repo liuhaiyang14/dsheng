@@ -160,6 +160,21 @@ pub fn task_reconcile_apply(env: &DesktopEnv, input: Value, apply_token: String)
     })())
 }
 
+/// 人工新建：仅调用本地任务服务，返回完整任务读视图，无 Provider 依赖。
+pub fn task_create(env: &DesktopEnv, input: Value) -> Value {
+    envelope((|| {
+        let workspace = Some(req_str(&input, "workspace_id")?);
+        let file = json_input_file(&input)?;
+        dispatch(
+            env,
+            task_cmd(args::TaskAction::Create {
+                workspace,
+                input_json: file.path().to_string_lossy().into_owned(),
+            }),
+        )
+    })())
+}
+
 /// dsheng task list（run_id 缺省=全 workspace）。
 pub fn task_list(env: &DesktopEnv, workspace_id: String, run_id: Option<String>) -> Value {
     envelope(dispatch(
