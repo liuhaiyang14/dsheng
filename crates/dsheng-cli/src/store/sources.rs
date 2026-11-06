@@ -8,8 +8,10 @@
 //! （幂等建表；不属冻结 schema 版本）。
 
 use crate::error::{CliError, CliResult};
+use chrono::{Datelike, Duration, NaiveDate};
+use dsheng_core::analysis::periods::{fiscal_quarter_span, natural_month_span, CalendarPolicy};
 use dsheng_core::contracts::cli::CliErrorCode;
-use dsheng_core::contracts::domain::UnitSignature;
+use dsheng_core::contracts::domain::{DateRange, UnitSignature};
 use dsheng_core::contracts::metrics::{
     compute_semantic_hash, Aggregation, ComparisonPolicy, DenominatorPolicy, FormulaNode,
     MetricDefinitionProjection, SemanticType, TargetConstraintScope,
@@ -20,7 +22,7 @@ use dsheng_core::import::template::{detect_sheet_role_with_names, SheetMatch, Sh
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use uuid::Uuid;
 
@@ -1319,8 +1321,223 @@ pub fn conflict_resolve(
     }))
 }
 
-/// scan 视图：目录摘要（read-views.scanSummaryView）。
+/// 当前桌面分析选择口径；不改变 CLI 历史回算的显式范围能力。
+struct AnalysisCalendar {
+    policy_id: String,
+    version: String,
+    grain: String,
+    calendar: CalendarPolicy,
+}
+
+fn current_analysis_calendar(conn: &Connection, workspace_id: Uuid) -> CliResult<AnalysisCalendar> {
+    conn.query_row(
+        "SELECT p.period_policy_id, p.version, p.cadence, p.week_start_day, p.fiscal_year_start_month, p.timezone_id
+         FROM workspaces w JOIN period_policies p ON p.period_policy_id = w.current_period_policy_id
+         WHERE w.workspace_id = ?1",
+        params![workspace_id.to_string()],
+        |r| Ok(AnalysisCalendar {
+            policy_id: r.get(0)?, version: r.get::<_, i64>(1)?.to_string(), grain: r.get(2)?,
+            calendar: CalendarPolicy {
+                week_start_day: r.get(3)?, fiscal_year_start_month: r.get(4)?, timezone_id: r.get(5)?,
+            },
+        }),
+    ).map_err(CliError::from)
+}
+
+fn analysis_bucket(date: NaiveDate, grain: &str, policy: &CalendarPolicy) -> CliResult<DateRange> {
+    match grain {
+        "day" => Ok(DateRange {
+            from: date,
+            to: date,
+        }),
+        "month" => Ok(natural_month_span(date)),
+        "quarter" => Ok(fiscal_quarter_span(date, policy.fiscal_year_start_month).2),
+        "week" => {
+            let offset = (date.weekday().number_from_monday() + 7 - policy.week_start_day) % 7;
+            let from = date - Duration::days(offset as i64);
+            Ok(DateRange {
+                from,
+                to: from + Duration::days(6),
+            })
+        }
+        _ => Err(CliError::invalid("当前系统分析粒度不支持期间选择")),
+    }
+}
+
+/// 桌面只允许系统策略粒度下的一个自然桶；月度文件仅覆盖数日也选完整月份。
+pub fn validate_desktop_analysis_period(
+    conn: &Connection,
+    workspace_id: Uuid,
+    from: &str,
+    to: &str,
+    requested_grain: &str,
+) -> CliResult<String> {
+    let current = current_analysis_calendar(conn, workspace_id)?;
+    if requested_grain != "auto" && requested_grain != current.grain {
+        return Err(CliError::invalid("分析粒度须使用系统设置中的当前粒度"));
+    }
+    let from = dsheng_core::analysis::periods::parse_calendar_date(from)
+        .map_err(|_| CliError::invalid("分析期间开始日期无效"))?;
+    let to = dsheng_core::analysis::periods::parse_calendar_date(to)
+        .map_err(|_| CliError::invalid("分析期间结束日期无效"))?;
+    let bucket = analysis_bucket(from, &current.grain, &current.calendar)?;
+    if from != bucket.from || to != bucket.to {
+        return Err(CliError::invalid(
+            "请选择系统粒度对应的一个完整期间，不支持自定义日期范围",
+        ));
+    }
+    // 返回该策略版本用于本次显式分析，避免历史日期自动选回旧日历口径。
+    Ok(current.version)
+}
+
+/// 提取真正带实绩的源期间，不把日期最小/最大值之间的空白日补成可用数据。
+/// 月汇总保留为月区间，不能拆成每日；无明确日期、累计行和空值不造选项。
+fn observed_source_periods(files: &[ScannedFile]) -> BTreeSet<(NaiveDate, NaiveDate)> {
+    use dsheng_core::import::headers::parse_period_header;
+    let mut periods = BTreeSet::new();
+    for file in files {
+        for (data, sheet) in &file.sheets {
+            if !matches!(sheet.role, "accounting" | "trend") {
+                continue;
+            }
+            if let Some(layout) = sheet
+                .match_info
+                .as_ref()
+                .and_then(|m| m.transposed.as_ref())
+            {
+                for (row, period) in &layout.period_rows {
+                    if layout.metric_columns.iter().any(|(col, _)| {
+                        data.rows
+                            .get(*row)
+                            .and_then(|r| r.get(*col))
+                            .and_then(|c| crate::store::analysis::cell_value(Some(c)))
+                            .is_some()
+                    }) {
+                        periods.insert((period.from, period.to));
+                    }
+                }
+                continue;
+            }
+            let Some(header) = &sheet.header else {
+                continue;
+            };
+            let col_of = |field: &str| {
+                header
+                    .columns
+                    .iter()
+                    .find(|(_, f)| *f == field)
+                    .map(|(c, _)| *c)
+            };
+            let Some(label_col) = col_of("metric_label") else {
+                continue;
+            };
+            let rows = || {
+                data.rows
+                    .iter()
+                    .skip(header.row + header.row_count - 1)
+                    .filter(|row| {
+                        row.get(label_col)
+                            .is_some_and(|cell| !cell.raw_text().trim().is_empty())
+                    })
+            };
+            if let Some(period_col) = col_of("period") {
+                let Some(actual_col) = col_of("actual") else {
+                    continue;
+                };
+                for row in rows() {
+                    if row
+                        .get(actual_col)
+                        .and_then(|c| crate::store::analysis::cell_value(Some(c)))
+                        .is_none()
+                    {
+                        continue;
+                    }
+                    if let Some(period) = row.get(period_col).and_then(|cell| {
+                        crate::store::analysis::observation_period(&cell.raw_text())
+                    }) {
+                        periods.insert((period.from, period.to));
+                    }
+                }
+            } else {
+                let width = data.rows.iter().map(Vec::len).max().unwrap_or(0);
+                for col in 0..width {
+                    if header.columns.iter().any(|(mapped, _)| *mapped == col) {
+                        continue;
+                    }
+                    let text = data
+                        .rows
+                        .iter()
+                        .skip(header.row.saturating_sub(1))
+                        .take(header.row_count)
+                        .find_map(|row| {
+                            row.get(col)
+                                .filter(|cell| !cell.raw_text().trim().is_empty())
+                        })
+                        .map(|cell| cell.raw_text());
+                    let Some(period) = text.and_then(|text| parse_period_header(&text, None))
+                    else {
+                        continue;
+                    };
+                    if rows().any(|row| {
+                        row.get(col)
+                            .and_then(|cell| crate::store::analysis::cell_value(Some(cell)))
+                            .is_some()
+                    }) {
+                        periods.insert((period.from, period.to));
+                    }
+                }
+            }
+        }
+    }
+    periods
+}
+
+fn available_analysis_periods(
+    conn: &Connection,
+    workspace_id: Uuid,
+    files: &[ScannedFile],
+) -> CliResult<(String, Vec<Value>)> {
+    let current = current_analysis_calendar(conn, workspace_id)?;
+    let mut buckets = BTreeSet::new();
+    for (from, to) in observed_source_periods(files) {
+        let bucket = analysis_bucket(from, &current.grain, &current.calendar)?;
+        // 只能向同一或更粗桶归并。跨桶总值不能拆分、复制到多个桶。
+        if from >= bucket.from && to <= bucket.to {
+            buckets.insert((bucket.from, bucket.to));
+        }
+    }
+    let periods = buckets
+        .into_iter()
+        .map(|(from, to)| {
+            json!({
+                "from": from.format("%Y-%m-%d").to_string(),
+                "to": to.format("%Y-%m-%d").to_string(), "grain": current.grain,
+            })
+        })
+        .collect();
+    Ok((current.policy_id, periods))
+}
+
+/// scan 视图：目录摘要（read-views.scanSummaryView）。冻结 CLI 形状保持不变。
 pub fn scan_summary(conn: &mut Connection, workspace_id: Uuid, dir: &str) -> CliResult<Value> {
+    scan_summary_internal(conn, workspace_id, dir, false)
+}
+
+/// 桌面内部扫描视图：附当前策略下确有实绩的自然期间，不扩展冻结 CLI 合同。
+pub fn scan_summary_desktop(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    dir: &str,
+) -> CliResult<Value> {
+    scan_summary_internal(conn, workspace_id, dir, true)
+}
+
+fn scan_summary_internal(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    dir: &str,
+    desktop_periods: bool,
+) -> CliResult<Value> {
     ensure_sidecar_tables(conn)?;
     let metric_names = metric_label_names(conn, workspace_id)?;
     let (files, pending_inputs) = scan_directory(dir, &metric_names)?;
@@ -1370,7 +1587,7 @@ pub fn scan_summary(conn: &mut Connection, workspace_id: Uuid, dir: &str) -> Cli
         .unwrap_or_else(|_| "month".into());
     let from = min_date.map(|d| d.format("%Y-%m-%d").to_string());
     let to = max_date.map(|d| d.format("%Y-%m-%d").to_string());
-    Ok(json!({
+    let mut summary = json!({
         "workspace_id": workspace_id.to_string(),
         "directory_label": Path::new(dir)
             .file_name()
@@ -1385,5 +1602,11 @@ pub fn scan_summary(conn: &mut Connection, workspace_id: Uuid, dir: &str) -> Cli
             "granularity": grain,
         },
         "pending_inputs": pending_inputs,
-    }))
+    });
+    if desktop_periods {
+        let (policy_id, periods) = available_analysis_periods(conn, workspace_id, &files)?;
+        summary["available_periods"] = json!(periods);
+        summary["available_period_policy_id"] = json!(policy_id);
+    }
+    Ok(summary)
 }

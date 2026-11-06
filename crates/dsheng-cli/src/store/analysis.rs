@@ -218,7 +218,17 @@ fn unit_display(unit_json: &str) -> String {
         .unwrap_or_else(|| unit_json.to_string())
 }
 
-fn cell_value(cell: Option<&CellValue>) -> Option<Decimal> {
+pub(super) fn observation_period(text: &str) -> Option<DateRange> {
+    dsheng_core::analysis::periods::parse_calendar_date(text)
+        .ok()
+        .map(|date| DateRange {
+            from: date,
+            to: date,
+        })
+        .or_else(|| parse_period_header(text, None))
+}
+
+pub(super) fn cell_value(cell: Option<&CellValue>) -> Option<Decimal> {
     let cell = cell?;
     match cell {
         // 精确整数与 XLSX 数值 XML 原始字面量（§1.1；超输入精度为 invalid → None）
@@ -380,12 +390,15 @@ type Extracted = (
 );
 
 /// 提取观察（核算表/推移表/手工输入）＋冲突草稿（同键不同值）。
+#[allow(clippy::too_many_arguments)]
 fn extract_observations(
     conn: &Connection,
     workspace_id: Uuid,
     defs: &[MetricDefRow],
     files: &[ScannedFile],
     window: DateRange,
+    grain: Granularity,
+    period_key: &str,
     scope: &str,
     coverage: &CoverageDecision,
 ) -> CliResult<Extracted> {
@@ -573,16 +586,20 @@ fn extract_observations(
                     };
                     let period = if let Some(pc) = period_col {
                         let text = row.get(pc).map(|c| c.raw_text()).unwrap_or_default();
-                        match dsheng_core::analysis::periods::parse_calendar_date(&text) {
-                            Ok(d) => DateRange::new(d, d).unwrap_or(window),
-                            Err(_) => window,
-                        }
+                        // 显式日期非法/缺失不借用当前窗口；月度观察保持整月归属。
+                        let Some(period) = observation_period(&text) else {
+                            continue;
+                        };
+                        period
+                    } else if let Some((_, period)) =
+                        trend_period_cols.iter().find(|(c, _)| *c == col)
+                    {
+                        *period
+                    } else if grain == Granularity::Day {
+                        // 无日期核算汇总不能伪装成所选当日的实绩/预定。
+                        continue;
                     } else {
-                        trend_period_cols
-                            .iter()
-                            .find(|(c, _)| *c == col)
-                            .map(|(_, r)| *r)
-                            .unwrap_or(window)
+                        window
                     };
                     let evidence_id = format!(
                         "cell:{}:{}:{}{}",
@@ -673,10 +690,10 @@ fn extract_observations(
                     mi.value, mi.input_revision
              FROM manual_inputs mi
              JOIN metric_definitions md ON md.metric_id = mi.metric_id
-             WHERE mi.workspace_id = ?1 AND mi.confirmed = 1",
+             WHERE mi.workspace_id = ?1 AND mi.period_key = ?2 AND mi.confirmed = 1",
         )?;
         let rows: Vec<(String, String, String, String, Option<String>, i64)> = stmt
-            .query_map(params![workspace_id.to_string()], |r| {
+            .query_map(params![workspace_id.to_string(), period_key], |r| {
                 Ok((
                     r.get(0)?,
                     r.get(1)?,
@@ -777,9 +794,9 @@ fn obs_in<'a>(
                         | (MeasureRole::Plan, MeasureRole::Plan)
                         | (MeasureRole::AnnualMonthPlan, MeasureRole::AnnualMonthPlan)
                 )
-                // 期间相交（观察期 ⊆ 窗口或覆盖窗口）
-                && o.period.from <= range.to
-                && o.period.to >= range.from
+                // 只汇总完整落入窗口的观察；月总值不能拆成/复制成某一天。
+                && o.period.from >= range.from
+                && o.period.to <= range.to
                 // 累计是独立范围观察（§2.5）：不与月行一起进入窗口求和
                 && !o.cumulative
         })
@@ -969,8 +986,24 @@ pub fn run_analyze(
     // 扫描快照落旁表（非空格＋布局）：生成载荷按相关行/列裁剪的确定性输入
     crate::store::sources::persist_source_snapshot(conn, workspace_id, &registered, &files)?;
     let defs = load_metric_defs(conn, workspace_id)?;
+    let period_key = dsheng_core::repository::analysis_runs::build_period_key(
+        &policy_version,
+        grain,
+        window,
+        &scope,
+    );
     let (obs, conflicts, mut sources, mapping_rows, pending_count, zero_filled) =
-        extract_observations(conn, workspace_id, &defs, &files, window, &scope, &coverage)?;
+        extract_observations(
+            conn,
+            workspace_id,
+            &defs,
+            &files,
+            window,
+            grain,
+            &period_key,
+            &scope,
+            &coverage,
+        )?;
     // 来源范围绑定本次实际扫描的目录，而不只绑定命中核算/推移适配器的 sheet。
     // generic CSV 等仍可能为生成提供相关行；空 sheet 没有持久化单元格，不入选。
     for file in &files {
@@ -1106,12 +1139,16 @@ pub fn run_analyze(
             let Ok(base_period) = base_result else {
                 continue;
             };
-            let base_value = flow_sum_window(&obs_in(
-                &obs,
-                &def.metric_id,
-                MeasureRole::Actual,
-                base_period.range,
-            ));
+            let base_observations =
+                obs_in(&obs, &def.metric_id, MeasureRole::Actual, base_period.range);
+            let base_value = flow_sum_window(&base_observations);
+            let mut comparison_evidence: Vec<String> = actual_observations
+                .iter()
+                .chain(base_observations.iter())
+                .map(|observation| observation.evidence_id.clone())
+                .collect();
+            comparison_evidence.sort();
+            comparison_evidence.dedup();
             let refs = base_refs_for(conn, workspace_id, base_period.range)?;
             let custom_label = match ctype {
                 "yoy" if grain == Granularity::Week => {
@@ -1125,11 +1162,7 @@ pub fn run_analyze(
                 base_period.range,
                 base_value,
                 actual,
-                relevant
-                    .iter()
-                    .filter(|o| o.role == MeasureRole::Actual)
-                    .map(|o| o.evidence_id.clone())
-                    .collect(),
+                comparison_evidence,
                 refs.clone(),
             );
             if ctype == "mom" {
@@ -1215,10 +1248,10 @@ pub fn run_analyze(
     let manual_snapshots: Vec<ManualInputSnapshot> = {
         let mut stmt = conn.prepare(
             "SELECT input_id, metric_id, input_revision, value FROM manual_inputs
-             WHERE workspace_id = ?1",
+             WHERE workspace_id = ?1 AND period_key = ?2",
         )?;
         let rows: Vec<(String, String, i64, Option<String>)> = stmt
-            .query_map(params![workspace_id.to_string()], |r| {
+            .query_map(params![workspace_id.to_string(), period_key], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })?
             .collect::<Result<_, _>>()
@@ -1264,12 +1297,6 @@ pub fn run_analyze(
         comparisons: comparisons.clone(),
         comparison_base_refs: base_refs_used,
     };
-    let period_key = dsheng_core::repository::analysis_runs::build_period_key(
-        &policy_version,
-        grain,
-        window,
-        &input.scope,
-    );
     let upsert = dsheng_core::repository::analysis_runs::upsert_analysis_revision(
         conn,
         &workspace_id.to_string(),
@@ -1486,13 +1513,18 @@ pub fn history_list(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<Valu
             })
             .unwrap_or_else(|| json!({"from": null, "to": null}));
         let grain = normalized.get("grain").cloned().unwrap_or(json!("month"));
+        let policy_version = period_key
+            .split('|')
+            .find_map(|part| part.strip_prefix("pv="))
+            .and_then(|version| version.parse::<u32>().ok())
+            .unwrap_or(1);
         out.push(json!({
             "run_id": run_id,
             "workspace_id": ws,
             "period": period,
             "period_key": period_key,
             "cadence": grain,
-            "policy_version": 1,
+            "policy_version": policy_version,
             "current_revision_no": current,
             "updated_at": updated,
             "summary": {

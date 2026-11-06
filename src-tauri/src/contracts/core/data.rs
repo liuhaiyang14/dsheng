@@ -13,19 +13,30 @@ pub fn scan(env: &DesktopEnv, workspace_id: String, directory_label: String) -> 
     let __dir = directory_label.clone();
     let __log = move |msg: &str| {
         use std::io::Write as _;
-        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/dsheng-cmd.log") {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("/tmp/dsheng-cmd.log")
+        {
             let _ = writeln!(f, "[scan] {msg} dir={__dir} ws={__ws}");
         }
     };
     __log("enter");
-    let __out = envelope(dispatch(
-        env,
-        args::Command::Scan {
-            workspace: Some(workspace_id),
-            dir: directory_label,
-        },
+    let __out = envelope((|| {
+        let db = env.db_arg()?;
+        let mut conn = dsheng_cli::ctx::open_db(Some(&db))?;
+        let workspace = dsheng_cli::ctx::resolve_workspace(&conn, Some(&workspace_id))?;
+        dsheng_cli::store::sources::scan_summary_desktop(
+            &mut conn,
+            workspace.workspace_id,
+            &directory_label,
+        )
+    })());
+    __log(&format!(
+        "exit ok={:?} {:?}",
+        __out.get("ok").and_then(|v| v.as_bool()),
+        __t0.elapsed()
     ));
-    __log(&format!("exit ok={:?} {:?}", __out.get("ok").and_then(|v| v.as_bool()), __t0.elapsed()));
     __out
 }
 
@@ -50,7 +61,19 @@ pub fn analyze(env: &DesktopEnv, input: Value) -> Value {
         let dir = req_str(&input, "directory_label")?;
         let from = req_str(&input, "from")?;
         let to = req_str(&input, "to")?;
-        let grain = analyze_grain_of(&req_str(&input, "grain")?)?;
+        let grain_name = req_str(&input, "grain")?;
+        let grain = analyze_grain_of(&grain_name)?;
+        let db = env.db_arg()?;
+        let conn = dsheng_cli::ctx::open_db(Some(&db))?;
+        let resolved = dsheng_cli::ctx::resolve_workspace(&conn, workspace.as_ref())?;
+        let policy_version = dsheng_cli::store::sources::validate_desktop_analysis_period(
+            &conn,
+            resolved.workspace_id,
+            &from,
+            &to,
+            &grain_name,
+        )?;
+        drop(conn);
         dispatch(
             env,
             args::Command::Analyze {
@@ -59,7 +82,7 @@ pub fn analyze(env: &DesktopEnv, input: Value) -> Value {
                 from,
                 to,
                 grain,
-                policy: None,
+                policy: Some(policy_version),
                 recalculate: false,
                 input_json: None,
             },
