@@ -366,6 +366,7 @@ pub struct ResolvedPolicy<'a> {
 ///
 /// 默认：from 与 to 命中同一版本；跨界 → `policy_selection_required`，
 /// 用户显式选一版本作用于整个范围（标 override），不自动分段混算。
+/// 显式选择始终优先，包括用当前策略重新分析旧策略生效期间的数据。
 pub fn resolve_policy<'a>(
     versions: &'a [PolicyVersion],
     range: DateRange,
@@ -374,6 +375,16 @@ pub fn resolve_policy<'a>(
     if versions.is_empty() {
         return Err("policy_selection_required");
     }
+    if let Some(explicit_version) = explicit {
+        let chosen = versions
+            .iter()
+            .find(|v| v.version == explicit_version)
+            .ok_or("policy_selection_required")?;
+        return Ok(ResolvedPolicy {
+            policy: chosen,
+            override_applied: true,
+        });
+    }
     let from_hit = versions.iter().find(|v| v.covers(range.from));
     let to_hit = versions.iter().find(|v| v.covers(range.to));
     match (from_hit, to_hit) {
@@ -381,19 +392,7 @@ pub fn resolve_policy<'a>(
             policy: a,
             override_applied: false,
         }),
-        _ => {
-            let Some(explicit_version) = explicit else {
-                return Err("policy_selection_required");
-            };
-            let chosen = versions
-                .iter()
-                .find(|v| v.version == explicit_version)
-                .ok_or("policy_selection_required")?;
-            Ok(ResolvedPolicy {
-                policy: chosen,
-                override_applied: true,
-            })
-        }
+        _ => Err("policy_selection_required"),
     }
 }
 
@@ -741,6 +740,24 @@ mod tests {
         .unwrap();
         assert_eq!(same.policy.version, "V2");
         assert!(!same.override_applied);
+        // 旧日期完整位于V1生效范围，也必须使用显式指定的当前V2。
+        let historical = DateRange::new(d("2026-09-27"), d("2026-10-03")).unwrap();
+        let current_policy = resolve_policy(&versions, historical, Some("V2")).unwrap();
+        assert_eq!(current_policy.policy.version, "V2");
+        assert!(current_policy.override_applied);
+        assert_eq!(
+            resolve_policy(&versions, historical, None)
+                .unwrap()
+                .policy
+                .version,
+            "V1",
+            "未显式选择时保留原自动策略规则"
+        );
+        assert_eq!(
+            resolve_policy(&versions, historical, Some("unknown")).unwrap_err(),
+            "policy_selection_required",
+            "无效显式策略不能静默回退到旧策略"
+        );
     }
 
     #[test]
