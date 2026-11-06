@@ -31,6 +31,7 @@ import {
   type WorkspaceView,
 } from '../api';
 import { DshengCliError } from '../api';
+import { currentPeriodPolicy, periodIdentity, savedPeriods } from './periods';
 
 export type ScreenId =
   | 'source'
@@ -201,22 +202,22 @@ export function AppProvider({
     preferred: RunSelection | null | undefined,
     keepScan?: ScanSummaryView | null,
   ) => {
-    const [policies, providers, history] = await Promise.all([
+    const [policies, providers, history, workspaceList] = await Promise.all([
       target.periodList(workspaceId).catch(() => []),
       target.providerList(workspaceId).catch(() => []),
       target.historyList(workspaceId),
+      target.workspaceList(),
     ]);
-    // 缺省选期间日期最大的已保存结果，绝不按更新时间冒充“当期”。
-    const newest = [...history].sort((a, b) =>
-      b.period.to.localeCompare(a.period.to) || b.period.from.localeCompare(a.period.from) || a.run_id.localeCompare(b.run_id),
-    )[0];
-    const entry = history.find((h) => h.run_id === preferred?.runId) ?? newest;
-    const selection = entry
-      ? { runId: entry.run_id, revision: preferred?.runId === entry.run_id ? preferred.revision : undefined }
-      : null;
+    // 页眉和页面共用同一集合：设置粒度、每个区间最后一份结果。
+    const policy = currentPeriodPolicy(policies, workspaceList.find((w) => w.workspace_id === workspaceId)?.current_period_policy_id)?.policy;
+    const eligible = savedPeriods(history, policy?.cadence, policy?.month_start_day ?? 1);
+    const previous = history.find((h) => h.run_id === preferred?.runId);
+    const entry = eligible.find((h) => previous && h.cadence === previous.cadence
+      && periodIdentity(h.period, h.cadence, policy?.month_start_day ?? 1) === periodIdentity(previous.period, previous.cadence, policy?.month_start_day ?? 1)) ?? eligible[0];
+    const selection = entry ? { runId: entry.run_id } : null;
     const [currentDetail, tasks] = entry
       ? await Promise.all([
-          target.historyShow(workspaceId, entry.run_id, selection?.revision),
+          target.historyShow(workspaceId, entry.run_id),
           target.taskList(workspaceId, entry.run_id),
         ])
       : [null, []];
@@ -283,11 +284,11 @@ export function AppProvider({
     }
   }, [client, activeWorkspaceId, loadWorkspaceData, applyLoaded]);
 
-  const selectRun = useCallback(async (runId: string, revision?: number) => {
+  const selectRun = useCallback(async (runId: string, _revision?: number) => {
     const workspaceId = activeWorkspaceId;
     if (!client || !workspaceId || activeWorkspaceRef.current !== workspaceId || contextLockRef.current) return;
     if (!dataRef.current[workspaceId]?.history.some((h) => h.run_id === runId)) return;
-    const selection = { runId, revision };
+    const selection = { runId };
     const epoch = ++requestEpoch.current;
     rememberSelection(workspaceId, selection);
     setDataMap((prev) => ({ ...prev, [workspaceId]: { ...prev[workspaceId], currentDetail: null, tasks: [] } }));

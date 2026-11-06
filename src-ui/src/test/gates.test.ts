@@ -34,15 +34,21 @@ describe('S8 静态门禁：decimal 字符串不经 Number/parseFloat', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('Number( 仅允许出现在 SystemSettingsScreen 的离散整数换算（周起始/财年月）', () => {
+  it('Number( 仅用于设置及日历日期的离散整数换算', () => {
     const offenders: string[] = [];
     for (const file of listSourceFiles(SRC_ROOT)) {
       const text = readFileSync(file, 'utf8');
       const uses = text.match(/Number\(/g)?.length ?? 0;
       if (uses === 0) continue;
       if (file.endsWith('SystemSettingsScreen.tsx') || file.endsWith('ProviderScreen.tsx')) {
-        // 周起始日/财年起始月为离散整数（合同允许 JSON integer），最多 2 处。
-        expect(uses).toBeLessThanOrEqual(2);
+        // 周起始日、财年起始月、月度起始日均为离散整数，Provider 为输入预算。
+        expect(uses).toBeLessThanOrEqual(file.endsWith('SystemSettingsScreen.tsx') ? 3 : 2);
+        continue;
+      }
+      if (file.endsWith('/state/periods.ts')) {
+        // 月/日与季度标签使用 ISO 日期整数；不读取金额、指标值或 DecimalString。
+        expect(uses).toBeLessThanOrEqual(6);
+        expect(text).not.toMatch(/actual_value|target_value|DecimalString/);
         continue;
       }
       offenders.push(file);

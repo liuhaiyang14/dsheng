@@ -3,6 +3,7 @@ import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
 import { PERIOD_GRAIN_LABELS as GRAIN_LABELS } from '../components/AnalysisPeriodBar';
+import { LocalAnalysisForm } from '../components/LocalAnalysisForm';
 import { ChartPanel } from '../components/ChartPanel';
 import {
   buildChartOption,
@@ -99,6 +100,7 @@ export function AnalysisScreen() {
     return (
       <div>
         <ScreenHead hasData={hasData} />
+      <LocalAnalysisForm />
         <EmptyState
           title="尚无分析期间"
           hint="完成数据源导入与字段映射后，由本地核心计算生成分析结果；本页不做任何计算。"
@@ -112,6 +114,7 @@ export function AnalysisScreen() {
   return (
     <div>
       <ScreenHead hasData={hasData} />
+      <LocalAnalysisForm />
       {app.mode === 'fixture' ? (
         <div className="notice" data-testid="analysis-demo-note">
           <b>演示数据说明</b>
@@ -355,7 +358,7 @@ function ScreenHead({ hasData }: { hasData: boolean }) {
         <h2 className="screen-title">经营分析</h2>
         <div className="sub">
           {hasData
-            ? `${app.activeWorkspace?.name} · ${app.data.currentDetail?.period.from} 至 ${app.data.currentDetail?.period.to} · ${GRAIN_LABELS[app.data.currentDetail?.grain ?? 'day']}聚合，范围与粒度由上方统一选择`
+            ? `${app.activeWorkspace?.name} · ${app.data.currentDetail?.period.from} 至 ${app.data.currentDetail?.period.to} · 在页眉切换历史期间`
             : `${app.activeWorkspace?.name} · 尚无分析期间`}
         </div>
       </div>

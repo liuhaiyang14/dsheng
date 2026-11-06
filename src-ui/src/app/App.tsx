@@ -88,7 +88,7 @@ function Shell() {
             : '数据仅保存在本机；模型发送前逐次确认范围。'}
           <br />
           <span className="foot-version" data-testid="foot-version">
-            v0.1.3 · powered by 海洋
+            v0.1.4 · powered by 海洋
           </span>
         </div>
       </aside>
@@ -113,6 +113,7 @@ function Shell() {
             / <strong data-testid="crumb-screen">{SCREEN_LABELS[app.screen]}</strong>
           </div>
           <div className="top-actions">
+            <AnalysisPeriodBar key={app.activeWorkspaceId} />
             <button
               className="outline"
               onClick={() => setShowCreate(true)}
@@ -126,12 +127,10 @@ function Shell() {
                 虚构演示数据
               </span>
             ) : null}
-            <span className="period">本地 SQLite</span>
           </div>
         </header>
         <section className="content">
           <ErrorBanner />
-          <AnalysisPeriodBar key={app.activeWorkspaceId} />
           {!hasData && app.screen !== 'provider' && app.screen !== 'system-settings' ? (
             <div className="notice workspace-empty" data-testid="workspace-empty-notice">
               <b>当前企业档案还没有数据</b>
@@ -141,7 +140,7 @@ function Shell() {
               </span>
             </div>
           ) : null}
-          <PageErrorBoundary key={`${app.screen}:${app.activeWorkspaceId}:${app.selectedRun?.runId ?? ''}:${app.selectedRun?.revision ?? 'current'}:${app.data.currentDetail?.analysis_revision_no ?? ''}`}>
+          <PageErrorBoundary key={app.screen === 'provider' || app.screen === 'system-settings' ? `${app.screen}:${app.activeWorkspaceId}` : `${app.screen}:${app.activeWorkspaceId}:${app.selectedRun?.runId ?? ''}:${app.selectedRun?.revision ?? 'current'}:${app.data.currentDetail?.analysis_revision_no ?? ''}`}>
             {app.screen === 'source' ? <SourceScreen /> : null}
             {app.screen === 'analysis' ? <AnalysisScreen /> : null}
             {app.screen === 'diagnosis' ? <DiagnosisScreen /> : null}

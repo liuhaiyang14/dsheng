@@ -37,7 +37,12 @@ it('单一导入区从未扫描到成功，跨页保留扫描结果，重新打�
   await openSource(client);
   expect(screen.getByTestId('source-directory')).toHaveTextContent('/tmp/real-business-directory');
   expect(screen.getByTestId('source-scan-status')).toHaveTextContent('未扫描');
-  expect(screen.getByRole('button', { name: '运行本地分析' })).not.toBeDisabled();
+  expect(screen.queryByRole('button', { name: '运行本地分析' })).toBeNull();
+  fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /经营分析/ }));
+  fireEvent.click(screen.getByText('重新分析数据'));
+  expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '运行本地分析' })).not.toBeDisabled());
 });
 it('失败扫描显示真实失败状态，保留上次有效目录而不保存失败路径', async () => {
   const client = new FixtureClient();

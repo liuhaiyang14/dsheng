@@ -1,5 +1,5 @@
 // 测试层次：UI 纯组件/状态测试（FixtureClient 注入，无网络、无 Tauri、无 canvas）。
-// S4 经营分析屏：指标呈现、decimal 字符串原样展示、不可比原因、缺桶断线、粒度切换。
+// S4 经营分析屏：指标呈现、decimal 字符串原样展示、不可比原因、缺桶断线、系统设置粒度与显式分析。
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
@@ -34,7 +34,7 @@ async function openAnalysis() {
   await screen.findByTestId('foot-workspace');
   (screen.getAllByText('经营分析')[0].closest('button') as HTMLButtonElement).click();
   await screen.findByTestId('metric-table');
-  return { calls };
+  return { calls, client };
 }
 
 describe('S4 经营分析屏', () => {
@@ -65,17 +65,27 @@ describe('S4 经营分析屏', () => {
     expect(screen.getByText(/环比／同比说明/)).toBeTruthy();
   });
 
-  it('粒度选择只修改草稿，显式运行本地分析才调用核心', async () => {
+  it('重启后重新扫描得到日度选项，选择只修改草稿，显式分析仅提交所选日', async () => {
     window.localStorage.setItem(`dsheng.source-directory.${DEMO}`, '/tmp/dsheng-demo');
-    const { calls } = await openAnalysis();
-    const select = screen.getByTestId('grain-select') as HTMLSelectElement;
-    select.value = 'week';
-    fireEvent.change(select, { target: { value: 'week' } });
+    const { calls, client } = await openAnalysis();
+    const analyze = vi.spyOn(client, 'analyze');
+    expect(screen.queryByTestId('grain-select')).toBeNull();
+    expect(screen.getByRole('button', { name: '运行本地分析', hidden: true })).not.toBeVisible();
+    fireEvent.click(screen.getByText('重新分析数据'));
+    expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
+    await waitFor(() => expect(screen.getByLabelText('分析期间')).toBeEnabled());
+    expect(screen.queryByLabelText('分析开始日期')).toBeNull();
+    expect(screen.queryByLabelText('分析结束日期')).toBeNull();
+    const periods = within(screen.getByLabelText('分析期间')).getAllByRole('option');
+    expect(periods.map((option) => option.textContent)).toEqual(['2026年10月28日', '2026年10月5日', '2026年10月1日']);
+    fireEvent.change(screen.getByLabelText('分析期间'), { target: { value: 'day:2026-10-05:2026-10-05' } });
     expect(calls).toEqual([]);
     fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
     await waitFor(() => {
       expect(calls).toContain('analyze');
     });
+    expect(analyze).toHaveBeenCalledWith(expect.objectContaining({ grain: 'day', from: '2026-10-05', to: '2026-10-05' }));
     window.localStorage.removeItem(`dsheng.source-directory.${DEMO}`);
   });
 

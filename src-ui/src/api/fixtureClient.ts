@@ -58,6 +58,7 @@ import {
   WS_DEMO_ID,
   WS_EMPTY_ID,
   fixtureAnalysisRun,
+  fixtureAvailablePeriods,
   fixtureDiagnosisReports,
   fixtureFieldMappings,
   fixtureHistory,
@@ -429,12 +430,15 @@ export class FixtureClient implements DshengClient {
   }
 
   async scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView> {
-    this.requireWorkspace(workspaceId);
+    const workspace = this.requireWorkspace(workspaceId);
     if (!this.hasData(workspaceId)) {
       const empty = this.scans[workspaceId] ?? this.scans[WS_EMPTY_ID];
-      return structuredClone({ ...empty, workspace_id: workspaceId, directory_label: directoryLabel ?? '' });
+      return structuredClone({ ...empty, workspace_id: workspaceId, directory_label: directoryLabel ?? '',
+        available_periods: [], available_period_policy_id: workspace.current_period_policy_id });
     }
-    return structuredClone(this.scans[workspaceId]);
+    const cadence = this.policies.find((policy) => policy.period_policy_id === workspace.current_period_policy_id)?.policy.cadence;
+    return structuredClone({ ...this.scans[workspaceId], directory_label: directoryLabel,
+      available_periods: cadence ? fixtureAvailablePeriods[cadence] : [], available_period_policy_id: workspace.current_period_policy_id });
   }
 
   async fieldMappings(workspaceId: string, _runId: string) {

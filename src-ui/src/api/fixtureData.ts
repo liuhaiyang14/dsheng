@@ -10,6 +10,7 @@
 
 import type {
   AnalysisRunView,
+  Cadence,
   DiagnosisReport,
   FieldMappingRow,
   HistoryEntryView,
@@ -117,6 +118,22 @@ export const fixtureProviders: ProviderView[] = [
   },
 ];
 
+/** 合成可用期间：三个有观察值的日期；日期之间的空日不会成为选项。 */
+export const fixtureAvailablePeriods: Record<Cadence, NonNullable<ScanSummaryView['available_periods']>> = {
+  day: [
+    { from: '2026-10-01', to: '2026-10-01', grain: 'day' },
+    { from: '2026-10-05', to: '2026-10-05', grain: 'day' },
+    { from: '2026-10-28', to: '2026-10-28', grain: 'day' },
+  ],
+  week: [
+    { from: '2026-09-28', to: '2026-10-04', grain: 'week' },
+    { from: '2026-10-05', to: '2026-10-11', grain: 'week' },
+    { from: '2026-10-26', to: '2026-11-01', grain: 'week' },
+  ],
+  month: [{ from: '2026-10-01', to: '2026-10-31', grain: 'month' }],
+  quarter: [{ from: '2026-10-01', to: '2026-12-31', grain: 'quarter' }],
+};
+
 export const fixtureScan: Record<string, ScanSummaryView> = {
   [WS_DEMO_ID]: {
     workspace_id: WS_DEMO_ID,
@@ -150,6 +167,8 @@ export const fixtureScan: Record<string, ScanSummaryView> = {
     ],
     total_rows: 2486,
     coverage: { from: '2026-10-01', to: '2026-10-28', granularity: 'day' },
+    available_periods: fixtureAvailablePeriods.day,
+    available_period_policy_id: '00000000-0000-4000-8000-0000000000d4',
     pending_inputs: ['2026-10-17 有效工时待补'],
   },
   [WS_EMPTY_ID]: {
@@ -159,6 +178,8 @@ export const fixtureScan: Record<string, ScanSummaryView> = {
     files: [],
     total_rows: 0,
     coverage: { from: '2026-10-01', to: '2026-10-01', granularity: 'month' },
+    available_periods: [],
+    available_period_policy_id: '00000000-0000-4000-8000-0000000000d5',
     pending_inputs: [],
   },
 };

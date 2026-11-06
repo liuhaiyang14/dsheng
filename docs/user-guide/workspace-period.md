@@ -30,7 +30,8 @@ dsheng workspace use --workspace <id> --json
 
 ## 周期策略与版本化
 
-周期策略决定「一期」的边界，包含五项：`cadence`（day/week/month/quarter）、
+周期策略决定「一期」的边界，包含六项：`cadence`（day/week/month/quarter）、
+`month_start_day`（1–31，默认1，仅月度使用）、
 `week_start_day`（ISO 1–7，默认 1=周一）、`fiscal_year_start_month`（1–12，默认 1）、
 `timezone_id`（IANA 时区，默认 `Asia/Shanghai`）、`effective_from`（生效日，必填）。
 
@@ -60,6 +61,12 @@ dsheng workspace period set --workspace <id> --input-json policy.json --json
   "policy": { "cadence": "week", "week_start_day": 7, "fiscal_year_start_month": 1,
               "timezone_id": "Asia/Shanghai", "effective_from": "2026-12-01" } }
 ```
+
+## 桌面端月度起始日
+
+在系统设置选择月度后，可设置每月起始日1–31。每期包含起止两日，结束日为下期起点的前一天。起始日2表示1月2日至2月1日；起始日31表示平年1月31日至2月27日，下一期2月28日至3月30日。短月取当月最后一天，闰年2月取29日；之后月份继续按原日号锚定，不累计偏移。
+
+桌面扫描与分析明确采用企业当前选择的策略，历史日期重新分析也使用该口径；选择的月份以周期起点所在月命名。页眉仅切换已保存结果，同一月份/日期只显示最后一次分析。已有期间重新分析会先要求确认覆盖；历史数据库版本继续用于内部追溯。
 
 ## 历史回算（指定口径重做）
 

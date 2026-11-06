@@ -155,6 +155,8 @@ export type Cadence = 'day' | 'week' | 'month' | 'quarter';
 
 export interface PeriodPolicy {
   cadence: Cadence;
+  /** 月度周期起始日；旧策略省略时按每月 1 日处理。 */
+  month_start_day?: number;
   week_start_day: number; // 1..7
   fiscal_year_start_month: number; // 1..12
   timezone_id: string;
@@ -744,6 +746,10 @@ export interface ScanSummaryView {
   files: ScanFileInfo[];
   total_rows: number;
   coverage: { from: IsoDate; to: IsoDate; granularity: Cadence };
+  /** 核心根据实际非空实绩与当前策略返回的自然期间；不得由覆盖范围补齐。 */
+  available_periods?: { from: IsoDate; to: IsoDate; grain: Cadence }[];
+  /** 可分析期间绑定的周期策略，设置变更后必须重新扫描。 */
+  available_period_policy_id?: string;
   pending_inputs: string[];
 }
 

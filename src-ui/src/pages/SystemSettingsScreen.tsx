@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
+import { currentPeriodPolicy } from '../state/periods';
 import { Tag } from '../components/bits';
 import type { Cadence } from '../api';
 
@@ -21,7 +22,7 @@ export function SystemSettingsScreen() {
   const app = useApp();
   const hasData = workspaceHasData(app.data);
   const policies = app.data.policies;
-  const currentPolicy = policies.find((p) => p.effective_to === null) ?? policies[policies.length - 1] ?? null;
+  const currentPolicy = currentPeriodPolicy(policies, app.activeWorkspace?.current_period_policy_id);
 
   const [name, setName] = useState('');
   const [cadence, setCadence] = useState<Cadence>('month');
@@ -30,6 +31,7 @@ export function SystemSettingsScreen() {
       return `${d.getFullYear()}-${`${d.getMonth() + 1}`.padStart(2, '0')}-${`${d.getDate()}`.padStart(2, '0')}`;
     });
   const [weekStartDay, setWeekStartDay] = useState('1');
+  const [monthStartDay, setMonthStartDay] = useState('1');
   const [fiscalYearStart, setFiscalYearStart] = useState('1');
   const [timezone, setTimezone] = useState('Asia/Shanghai');
   const [busy, setBusy] = useState(false);
@@ -40,6 +42,7 @@ export function SystemSettingsScreen() {
     if (currentPolicy) {
       setCadence(currentPolicy.policy.cadence);
       setWeekStartDay(String(currentPolicy.policy.week_start_day));
+      setMonthStartDay(String(currentPolicy.policy.month_start_day ?? 1));
       setFiscalYearStart(String(currentPolicy.policy.fiscal_year_start_month));
       setTimezone(currentPolicy.policy.timezone_id);
       setEffectiveFrom(currentPolicy.policy.effective_from);
@@ -93,6 +96,7 @@ export function SystemSettingsScreen() {
         expected_revision: app.activeWorkspace.config_revision,
         policy: {
           cadence,
+          month_start_day: Number(monthStartDay),
           week_start_day: Number(weekStartDay),
           fiscal_year_start_month: Number(fiscalYearStart),
           timezone_id: timezone,
@@ -165,7 +169,7 @@ export function SystemSettingsScreen() {
           <div className="mapping-row">
             <div>
               <label>默认核算周期</label>
-              <small className="setting-help">决定新分析默认按日、周、月或季度归并数据。</small>
+              <small className="setting-help">决定分析数据的归并方式，以及页眉中可切换的历史期间。</small>
             </div>
             <select
               className="select"
@@ -181,6 +185,16 @@ export function SystemSettingsScreen() {
               ))}
             </select>
           </div>
+          {cadence === 'month' ? <div className="mapping-row">
+            <div>
+              <label htmlFor="month-start-day">月度起始日</label>
+              <small className="setting-help">每月按此日开始核算；短月没有该日时取月末，之后月份仍按原日号，不向前漂移。</small>
+            </div>
+            <select id="month-start-day" className="select" value={monthStartDay}
+              onChange={(event) => setMonthStartDay(event.target.value)} data-testid="month-start-day-select">
+              {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>每月 {day} 日</option>)}
+            </select>
+          </div> : null}
           <div className="mapping-row">
             <div>
               <label>新策略生效日期</label>
@@ -248,7 +262,7 @@ export function SystemSettingsScreen() {
                 <th>版本</th>
                 <th>周期</th>
                 <th>生效区间</th>
-                <th>周起始 / 财年 / 时区</th>
+                <th>周期起始 / 财年 / 时区</th>
                 <th>创建于</th>
                 <th>状态</th>
               </tr>
@@ -259,15 +273,16 @@ export function SystemSettingsScreen() {
                   <td>v{p.version}</td>
                   <td>{CADENCE_LABELS[p.policy.cadence]}</td>
                   <td>
-                    {p.policy.effective_from} 至 {p.effective_to ?? '当前'}
+                    {p.policy.effective_from} 至 {p.period_policy_id === currentPolicy?.period_policy_id ? '当前' : p.effective_to ?? '—'}
                   </td>
                   <td>
+                    {p.policy.cadence === 'month' ? `每月 ${p.policy.month_start_day ?? 1} 日 · ` : ''}
                     周{p.policy.week_start_day === 1 ? '一' : '日'} · {p.policy.fiscal_year_start_month} 月 ·{' '}
                     {p.policy.timezone_id}
                   </td>
                   <td>{p.created_at.slice(0, 10)}</td>
                   <td>
-                    {p.effective_to == null ? (
+                    {p.period_policy_id === currentPolicy?.period_policy_id ? (
                       <Tag tone="green">当前版本</Tag>
                     ) : (
                       <Tag tone="gray">已闭合</Tag>

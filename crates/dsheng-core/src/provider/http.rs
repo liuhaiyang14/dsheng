@@ -1327,7 +1327,7 @@ mod tests {
 
     // ---- 流式（S3）：纯逻辑依赖注入测试（脚本 reader＋伪时钟；无网络） ----
 
-    use crate::provider::stream::{reasoning_text, SseDeltaParser};
+    use crate::provider::stream::SseDeltaParser;
     use std::cell::RefCell;
     use std::collections::VecDeque;
     use std::rc::Rc;
