@@ -103,10 +103,17 @@ export class TauriClient implements DshengClient {
     );
   }
   workspaceCreate(input: WorkspaceCreateInput): Promise<WorkspaceView> {
-    return this.invoke('workspace_create', { input });
+    // CLI/core 的 workspace_create 返回 { workspace, initial_period_policy }；
+    // UI 客户端对外只暴露 WorkspaceView，避免创建后读取 view.workspace_id
+    // 得到 undefined 并在后续 history_list 中丢失 workspaceId。
+    return this.invoke<{ workspace: WorkspaceView }>('workspace_create', { input }).then(
+      (d) => d.workspace,
+    );
   }
   workspaceUpdate(input: WorkspaceUpdateInput): Promise<WorkspaceView> {
-    return this.invoke('workspace_update', { input });
+    return this.invoke<{ workspace: WorkspaceView }>('workspace_update', { input }).then(
+      (d) => d.workspace,
+    );
   }
   workspaceUse(input: WorkspaceUseInput): Promise<void> {
     return this.invoke('workspace_use', { input });
@@ -119,7 +126,9 @@ export class TauriClient implements DshengClient {
     );
   }
   periodSet(input: PeriodPolicySetInput): Promise<PeriodPolicyView> {
-    return this.invoke('period_set', { input });
+    return this.invoke<{ policy: PeriodPolicyView }>('period_set', { input }).then(
+      (d) => d.policy,
+    );
   }
 
   // ---- provider（保存不发请求；无连接测试命令） ----
@@ -133,13 +142,18 @@ export class TauriClient implements DshengClient {
     apiKey?: string,
   ): Promise<ProviderView> {
     // Key 单独通道（对应 --api-key-stdin），绝不进 input JSON。
-    return this.invoke('provider_set', { input, apiKey: apiKey ?? null });
+    return this.invoke<{ provider: ProviderView }>('provider_set', {
+      input,
+      apiKey: apiKey ?? null,
+    }).then((d) => d.provider);
   }
   providerUse(input: ProviderUseInput): Promise<void> {
     return this.invoke('provider_use', { input });
   }
   providerClearKey(input: ProviderClearKeyInput): Promise<ProviderView> {
-    return this.invoke('provider_clear_key', { input });
+    return this.invoke<{ provider: ProviderView }>('provider_clear_key', { input }).then(
+      (d) => d.provider,
+    );
   }
   providerDelete(input: ProviderDeleteInput): Promise<void> {
     return this.invoke('provider_delete', { input });

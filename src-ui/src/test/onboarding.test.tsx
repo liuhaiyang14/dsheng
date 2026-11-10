@@ -1,11 +1,17 @@
 // 测试层次：UI 纯组件/状态测试（注入客户端；无网络、无 Tauri、非 Provider 调用）。
 // 首启引导（无档案→向导→创建→切换为当前档案）与静默守卫可见化。
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
+import { TauriClient } from '../api/tauriClient';
+import type { WorkspaceView } from '../api/types';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  delete window.__TAURI__;
+  vi.restoreAllMocks();
+});
 
 /** 全新数据库客户端：初始无档案；创建后列表返回已建档案（模拟核心行为）。 */
 class EmptyWorldClient extends FixtureClient {
@@ -21,6 +27,52 @@ class EmptyWorldClient extends FixtureClient {
 }
 
 describe('首启引导', () => {
+  it('真实 Tauri 返回形状下，首次创建后加载空历史并进入数据源', async () => {
+    const workspaces: WorkspaceView[] = [];
+    const commands: string[] = [];
+    const invoke = vi.fn(async (cmd: string, args?: Record<string, unknown>) => {
+      commands.push(cmd);
+      const data = (() => {
+        switch (cmd) {
+          case 'workspace_list': return { workspaces };
+          case 'workspace_create': {
+            const workspace: WorkspaceView = {
+              workspace_id: '00000000-0000-4000-8000-000000000101',
+              name: '真实新档案', config_revision: 1, active_provider_id: null,
+              current_period_policy_id: '00000000-0000-4000-8000-000000000102',
+              created_at: '2026-11-10T00:00:00Z', updated_at: '2026-11-10T00:00:00Z',
+            };
+            workspaces.push(workspace);
+            return { created: true, workspace, initial_period_policy: {} };
+          }
+          case 'period_list': return { policies: [] };
+          case 'provider_list': return { providers: [] };
+          case 'history_list': {
+            if (args?.workspaceId !== workspaces[0]?.workspace_id) {
+              throw new Error('history_list missing required key workspaceId');
+            }
+            return { runs: [] };
+          }
+          default: throw new Error(`unexpected command: ${cmd}`);
+        }
+      })();
+      return { schema_version: '1', ok: true, data };
+    });
+    window.__TAURI__ = { core: { invoke } };
+
+    render(<App runtime={{ mode: 'tauri', client: new TauriClient() }} />);
+    await screen.findByTestId('onboarding-card');
+    fireEvent.change(screen.getByTestId('onboarding-name'), { target: { value: '真实新档案' } });
+    fireEvent.click(screen.getByTestId('onboarding-create'));
+
+    await waitFor(() => expect(screen.queryByTestId('onboarding-card')).toBeNull());
+    expect((screen.getByTestId('workspace-select') as HTMLSelectElement).value).toBe(workspaces[0].workspace_id);
+    expect(screen.getByTestId('crumb-screen')).toHaveTextContent('数据源');
+    expect(screen.getByTestId('workspace-empty-notice')).toBeTruthy();
+    expect(commands).toContain('history_list');
+    expect(screen.queryByText(/missing required key workspaceId/)).toBeNull();
+  });
+
   it('无任何档案时自动弹出向导，创建后成为当前档案', async () => {
     render(<App runtime={{ mode: 'fixture', client: new EmptyWorldClient() }} />);
     const card = await screen.findByTestId('onboarding-card');
