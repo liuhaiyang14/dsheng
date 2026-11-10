@@ -43,7 +43,7 @@ export function HistoryScreen() {
     <div>
       <div className="screen-head">
         <div>
-          <div className="eyebrow">04 · local history</div>
+          <div className="eyebrow">05 · 历史查询</div>
           <h2 className="screen-title">历史查询</h2>
           <div className="sub">
             {app.activeWorkspace?.name} · 查看各期间最后一次保存的分析结果。
@@ -121,7 +121,7 @@ export function HistoryScreen() {
               {periodLabel(detail.period, detail.grain, policy?.month_start_day ?? 1)} · 最新分析结果
             </span>
             <span className="panel-note">
-              {detail.period.from} 至 {detail.period.to} · 保存于 {detail.captured_at.replace('T', ' ').slice(0, 16)} UTC
+              {detail.period.from} 至 {detail.period.to} · 保存于 {detail.captured_at.replace('T', ' ').slice(0, 16)}
             </span>
           </div>
           <div className="table-wrap">
@@ -156,7 +156,7 @@ export function HistoryScreen() {
                   <th>任务</th>
                   <th>状态</th>
                   <th>进度</th>
-                  <th>任务版本</th>
+                  <th>任务记录</th>
                 </tr>
               </thead>
               <tbody>
@@ -177,7 +177,7 @@ export function HistoryScreen() {
                       </Tag>
                     </td>
                     <td>{groupDecimal(t.progress)}%</td>
-                    <td>r{t.task_revision_no}</td>
+                    <td>第 {t.task_revision_no} 版</td>
                   </tr>
                 ))}
               </tbody>

@@ -22,7 +22,7 @@ describe('S5 无自动触发门禁（P0）', () => {
     await openDiagnosis(client);
     // 进入页面后报告列表已加载（只读）
     await waitFor(() => {
-      expect(screen.getByTestId('diagnosis-report-list').textContent).toContain('5WHY');
+      expect(screen.getByTestId('diagnosis-report-list').textContent).toContain('五问根因分析');
     });
     expect(previewSpy).not.toHaveBeenCalled();
 
@@ -77,9 +77,8 @@ describe('S5 显式按钮流', () => {
     const before = screen.getAllByTestId(/diagnosis-item-/).length;
     screen.getByTestId('generate-diagnosis-button').click();
     const modal = await screen.findByTestId('preview-modal');
-    expect(modal.textContent).toContain('demo-reasoner-32b');
     expect(modal.textContent).toContain('发送范围');
-    expect(modal.textContent).toContain('最多 1 次');
+    expect(modal.textContent).toContain('发送方式');
     screen.getByTestId('preview-confirm').click();
     await waitFor(() => {
       expect(confirmSpy).toHaveBeenCalledTimes(1);

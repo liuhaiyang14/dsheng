@@ -37,6 +37,26 @@ const STATUS_LABELS: Record<string, string> = {
   resolved: '已核实',
 };
 
+const FRAMEWORK_LABELS: Record<string, string> = {
+  '5why': '五问根因分析',
+  '5w': '五W问题界定',
+  '5w2h': '五W二H行动分析',
+};
+
+function humanUnit(value: string | null | undefined): string {
+  if (!value) return '';
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const baseUnit = (parsed as Record<string, unknown>).base_unit;
+      if (typeof baseUnit === 'string' && baseUnit.trim()) return baseUnit;
+    }
+  } catch {
+    // 已经是普通单位文本。
+  }
+  return value;
+}
+
 function FindingBlock({ finding }: { finding: DiagnosisFinding }) {
   const title =
     'level' in finding
@@ -58,7 +78,7 @@ function FindingBlock({ finding }: { finding: DiagnosisFinding }) {
         {CONFIDENCE_LABELS[finding.confidence]} · 状态：
         {STATUS_LABELS[finding.status] ?? finding.status}
         {finding.evidence_ids.length > 0
-          ? ` · 证据：${finding.evidence_ids.join(', ')}`
+          ? ` · 已关联 ${finding.evidence_ids.length} 项来源证据`
           : ' · 无来源证据（需人工核实）'}
       </div>
     </div>
@@ -68,10 +88,16 @@ function FindingBlock({ finding }: { finding: DiagnosisFinding }) {
 function friendlyError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
   if (/PROVIDER_REQUIRED|No explicit\/default provider|未.*默认 Provider/i.test(raw)) {
-    return `本档案尚未配置默认 Provider——请到「Provider 设置」填写 Base URL／模型／API Key（Key 仅存本机），并点「设为默认」后回来重试。（${raw}）`;
+    return '本档案尚未配置模型服务，请到「Provider 设置」补充连接信息并设为默认后重试。';
   }
   if (/PROVIDER_KEY_MISSING|no Key|未配置.*Key/i.test(raw)) {
-    return `Provider 缺少 API Key——请到「Provider 设置」重新保存并填入 Key。（${raw}）`;
+    return '模型服务缺少访问凭证，请到「Provider 设置」补充后重试。';
+  }
+  if (/schema_version|required property|additional properties|unexpected|validation|json schema/i.test(raw)) {
+    return '模型返回的内容格式不完整，未保存结果。请重新生成。';
+  }
+  if (!raw.trim() || raw.length > 220 || /[{}]/.test(raw)) {
+    return '请求未完成，结果没有保存。请检查当前数据后重试。';
   }
   return raw;
 }
@@ -183,7 +209,7 @@ export function DiagnosisScreen() {
   const defaultProblem = useMemo(() => {
     if (!activeMetric) return '';
     // 默认问题表述：由指标与差异确定性拼接（呈现层组句，不做计算）。
-    const unit = activeMetric.unit ?? '';
+    const unit = humanUnit(activeMetric.unit);
     return `${activeMetric.metric_label}本期 ${groupDecimal(activeMetric.actual_value ?? '')}${unit}，目标 ${groupDecimal(activeMetric.target_value ?? '')}${unit}，差异 ${groupDecimal(activeMetric.delta ?? '')}${unit}，需要分析差异原因`;
   }, [activeMetric]);
 
@@ -286,13 +312,13 @@ export function DiagnosisScreen() {
   const download = async (format: 'md' | 'json') => {
     if (!app.client || !app.activeWorkspaceId || !selected) return;
     try {
-      const result = await app.client.diagnosisExport(
+      await app.client.diagnosisExport(
         app.activeWorkspaceId,
         selected.report_id,
         format,
         `诊断报告-${selected.report_id.slice(0, 8)}.${format}`,
       );
-      setNotice(`已请求核心导出 ${format.toUpperCase()}：${result.out}`);
+      setNotice(`已准备导出文件：${format.toUpperCase()}`);
     } catch (err) {
       setNotice(friendlyError(err));
     }
@@ -305,7 +331,7 @@ export function DiagnosisScreen() {
       <div>
         <div className="screen-head">
           <div>
-            <div className="eyebrow">03 · issue diagnosis</div>
+            <div className="eyebrow">03 · 经营问题诊断</div>
             <h2 className="screen-title">经营问题诊断</h2>
             <div className="sub">
               {app.activeWorkspace?.name} · 针对经营分析中的重点差异形成独立报告
@@ -324,7 +350,7 @@ export function DiagnosisScreen() {
     <div>
       <div className="screen-head">
         <div>
-          <div className="eyebrow">03 · issue diagnosis</div>
+          <div className="eyebrow">03 · 经营问题诊断</div>
           <h2 className="screen-title">经营问题诊断</h2>
           <div className="sub">
             针对经营分析中的重点差异形成独立报告；报告不会自动生成或修改任务。
@@ -425,7 +451,7 @@ export function DiagnosisScreen() {
                   data-testid={`diagnosis-item-${r.report_id.slice(0, 8)}`}
                 >
                   <strong>
-                    {r.problem_statement.slice(0, 18)}… · {r.framework.toUpperCase()}
+                    {r.problem_statement.slice(0, 18)}… · {FRAMEWORK_LABELS[r.framework] ?? '诊断报告'}
                   </strong>
                   <small>
                     第 {r.version_no} 版 · 生成于 {r.created_at.slice(0, 10)} ·{' '}
@@ -459,7 +485,7 @@ export function DiagnosisScreen() {
                   <strong>{selected.scope.problem_statement}</strong>
                   <div className="diagnosis-report-meta">
                     {app.activeWorkspace?.name} · {selected.period.from ?? '—'} 至{' '}
-                    {selected.period.to ?? '—'} · {selected.framework.toUpperCase()} ·{' '}
+                    {selected.period.to ?? '—'} · {FRAMEWORK_LABELS[selected.framework] ?? '诊断报告'} ·{' '}
                     <select
                       className="select diagnosis-version-select"
                       aria-label="报告版本"

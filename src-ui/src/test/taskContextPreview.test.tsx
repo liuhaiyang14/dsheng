@@ -15,7 +15,7 @@ it('发送前列出历史任务范围与所选诊断信息', async () => {
   render(<PreviewModal preview={preview} title="生成任务" confirmLabel="确认发送" onConfirm={vi.fn()} onCancel={vi.fn()} />);
   expect(screen.getByTestId('preview-task-history')).toHaveTextContent('2 项正式任务');
   expect(screen.getByTestId('preview-task-history')).toHaveTextContent('回款跟进');
-  expect(screen.getByTestId('preview-task-diagnosis')).toHaveTextContent('5W · 交付延迟待核实');
+  expect(screen.getByTestId('preview-task-diagnosis')).toHaveTextContent('五W问题界定 · 交付延迟待核实');
   expect(screen.getByTestId('preview-task-diagnosis')).toHaveTextContent('事实及用户陈述 2 项');
   expect(screen.getByTestId('preview-task-diagnosis')).toHaveTextContent('假设及待确认内容 1 项');
 });

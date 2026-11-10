@@ -36,8 +36,32 @@ const CATEGORY_OPTIONS = Object.entries(TASK_CATEGORY_LABELS) as [
 
 const PROGRESS_INPUT_PATTERN = /^(?:(?:0|[1-9][0-9]?)(?:\.[0-9]?[1-9])?|100)$/;
 
-const SMART_DIMENSION_LABELS = { S: '具体性 S', M: '可衡量 M', A: '可实现 A', R: '相关性 R', T: '时限 T' };
+const SMART_DIMENSION_LABELS = { S: '目标是否具体', M: '目标是否可衡量', A: '目标是否可实现', R: '目标是否相关', T: '目标是否有时限' };
 const SMART_STATUS_LABELS = { met: '通过', needs_confirmation: '待确认', not_applicable: '不适用' };
+
+function humanUnit(value: string | null | undefined): string {
+  if (!value) return '';
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const baseUnit = (parsed as Record<string, unknown>).base_unit;
+      if (typeof baseUnit === 'string' && baseUnit.trim()) return baseUnit;
+    }
+  } catch {
+    // 已经是普通单位文本。
+  }
+  return value;
+}
+
+const EVENT_LABELS: Record<string, string> = {
+  task_created: '任务已创建',
+  progress_updated: '进度已更新',
+  status_changed: '状态已更新',
+  completed: '任务已完成',
+  reopened: '任务已重新打开',
+  blocked: '任务已标记为阻塞',
+  unblocked: '任务已解除阻塞',
+};
 
 /** 仅检查读视图的展示结构；不在前端重新判断或推算 SMART 结论。 */
 function readSmartCheck(value: unknown): SmartCheckView | null {
@@ -460,10 +484,10 @@ export function TaskDrawer({
   const smartCheck = readSmartCheck(current.smart_check);
   const smartAvailable = smartCheck != null && smartCheck.checks.length > 0;
   const smartLabel = !smartAvailable
-    ? { tone: 'gold' as const, text: 'SMART：暂无可展示评价' }
+    ? { tone: 'gold' as const, text: '暂无可展示评价' }
     : smartCheck.smart_status === 'generated'
-      ? { tone: 'green' as const, text: 'SMART：生成时评价' }
-      : { tone: 'gold' as const, text: 'SMART：内容已改待复核' };
+      ? { tone: 'green' as const, text: '生成时评价' }
+      : { tone: 'gold' as const, text: '内容已改待复核' };
 
   const cycleRole: keyof typeof CYCLE_ROLE_LABELS = current.target_period &&
     periodEnd != null && current.target_period.from > periodEnd
@@ -479,7 +503,7 @@ export function TaskDrawer({
           kind: 'progress_event' as const,
           date: e.occurred_at.slice(0, 10),
           occurred_at: e.occurred_at,
-          detail: `${e.kind}${e.reason ? `：${e.reason}` : ''}`,
+          detail: `${EVENT_LABELS[e.kind] ?? '任务记录已更新'}${e.reason ? `：${e.reason}` : ''}`,
         }))
         .sort((a, b) => (a.date! < b.date! ? 1 : -1)),
     [current],
@@ -491,10 +515,10 @@ export function TaskDrawer({
       <aside className="drawer" aria-label="任务详情" data-testid="task-drawer">
         <div className="drawer-head">
           <div>
-            <div className="eyebrow">TASK · {current.title}</div>
+            <div className="eyebrow">任务 · {current.title}</div>
             <h3>{current.title}</h3>
             <div className="meta">
-              版本 r{current.task_revision_no} · {CYCLE_ROLE_LABELS[cycleRole]} ·{' '}
+              {CYCLE_ROLE_LABELS[cycleRole]} ·{' '}
               {TASK_CATEGORY_LABELS[current.category]}
               {current.metric_label ? ` · 关联指标：${current.metric_label}` : ' · 未关联指标'}
               {current.overdue ? ' · 已延期（按截止日派生）' : ''}
@@ -519,7 +543,7 @@ export function TaskDrawer({
           <div className="progress-meta">
             <span data-testid="drawer-step-count">
               已完成 {completedCount} / {current.steps.length} 个步骤 ·{' '}
-              {current.progress_mode === 'auto' ? '自动（按步骤计数）' : '人工（含调整原因）'}
+              {current.progress_mode === 'auto' ? '自动计算' : '手动填写'}
             </span>
             <span>{current.due_date ? `截止 ${current.due_date}` : '未设截止'}</span>
           </div>
@@ -556,7 +580,7 @@ export function TaskDrawer({
                 <select id="task-metric" className="input" value={extra.metric_id} onChange={(e) => updateExtra('metric_id', e.target.value)}>
                   <option value="">未关联（其他事项）</option>
                   {extra.metric_id && !metrics.some((metric) => metric.metric_id === extra.metric_id) ? <option value={extra.metric_id}>{current.metric_label ?? '当前关联指标'}</option> : null}
-                  {metrics.map((metric) => <option key={metric.metric_id} value={metric.metric_id}>{metric.metric_label} · {metric.unit}</option>)}
+                  {metrics.map((metric) => <option key={metric.metric_id} value={metric.metric_id}>{metric.metric_label} · {humanUnit(metric.unit)}</option>)}
                 </select>
               </div>
               <div className="detail-field">
@@ -576,7 +600,7 @@ export function TaskDrawer({
               </div>
               {([['planned_value', '预定数值'], ['actual_value', '实绩数值'], ['current_value', '当前数值'], ['unit', '数值单位']] as const).map(([key, label]) => (
                 <div className="detail-field" key={key}><label htmlFor={`task-${key}`}>{label}</label>
-                  <input id={`task-${key}`} className="input" value={extra[key]} onChange={(e) => updateExtra(key, e.target.value)} />
+                  <input id={`task-${key}`} className="input" value={key === 'unit' ? humanUnit(extra[key]) : extra[key]} onChange={(e) => updateExtra(key, e.target.value)} />
                 </div>
               ))}
               <div className="detail-field">
@@ -623,8 +647,9 @@ export function TaskDrawer({
                   aria-label={`完成步骤 ${index + 1}`}
                 />
                 <div className="action-copy">
-                  <input
+                  <textarea
                     className="step-title-input"
+                    rows={3}
                     value={step.action}
                     onChange={(e) => patchStep(index, { action: e.target.value })}
                     aria-label={`行动步骤 ${index + 1}`}
@@ -653,11 +678,11 @@ export function TaskDrawer({
           </div>
 
           <div className="detail-section" data-testid="task-smart-check">
-            <h4>SMART 评价 <Tag tone={smartLabel.tone}>{smartLabel.text}</Tag></h4>
+            <h4>目标检查 <Tag tone={smartLabel.tone}>{smartLabel.text}</Tag></h4>
             {smartAvailable ? (
               <>
                 {smartCheck.smart_status === 'stale' ? (
-                  <p className="panel-note">以下为任务版本 r{smartCheck.assessed_task_revision} 的历史评价，尚未复核当前内容。</p>
+                  <p className="panel-note">这是生成任务时的检查结果，任务内容修改后需要重新检查。</p>
                 ) : null}
                 <div className="kv-list">
                   {smartCheck.checks.map((c, index) => (
@@ -671,12 +696,12 @@ export function TaskDrawer({
                 </div>
               </>
             ) : (
-              <p className="panel-note">暂无 SMART 评价，任务信息和行动项仍可查看与修改。</p>
+              <p className="panel-note">暂无目标检查结果，任务信息和行动项仍可查看与修改。</p>
             )}
           </div>
 
           <div className="detail-section">
-            <h4>进度记录（按事件时间倒序）</h4>
+            <h4>进度记录</h4>
             <div data-testid="drawer-timeline">
               {timelineEntries.length === 0 ? (
                 <div className="panel-note">暂无进度记录</div>
@@ -684,7 +709,7 @@ export function TaskDrawer({
                 timelineEntries.map((entry, i) => (
                   <div className="timeline-item" key={i}>
                     {entry.detail}
-                    <small>{entry.occurred_at.replace('T', ' ').slice(0, 16)} UTC · 当前用户</small>
+                    <small>{entry.occurred_at.replace('T', ' ').slice(0, 16)}</small>
                   </div>
                 ))
               )}
@@ -701,13 +726,13 @@ export function TaskDrawer({
                 onChange={(e) => setProgressMode(e.target.value as 'auto' | 'manual')}
                 data-testid="progress-mode-select"
               >
-                <option value="auto">auto · 核心按步骤计数计算（提交 progress=null）</option>
-                <option value="manual">manual · 人工填写（必填原因）</option>
+                <option value="auto">按行动完成情况自动计算</option>
+                <option value="manual">手动填写进度</option>
               </select>
               {progressMode === 'auto' ? (
                 <p className="panel-note" data-testid="auto-progress-note">
                   当前计算值：{groupDecimal(current.progress)}%（{completedCount}/{current.steps.length} 步完成）。
-                  auto 模式下核心计算进度，状态须与计算一致或显式阻塞。
+                  进度会根据已完成的行动自动计算。
                 </p>
               ) : (
                 <>
@@ -763,7 +788,7 @@ export function TaskDrawer({
         <div className="drawer-actions">
           <div>
             <span className="save-note">
-              保存到本地，不调用模型；修改内容后，原 SMART 评价标记为待复核。
+              保存到本地，不调用模型；修改内容后，原目标检查结果标记为待复核。
             </span>
             <div className="task-save-status" data-testid="task-save-status">
               {notice ?? (dirty ? '有未保存更改' : '当前任务无待保存更改')}

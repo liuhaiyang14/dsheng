@@ -192,7 +192,7 @@ export function SourceScreen() {
     <div>
       <div className="screen-head">
         <div>
-          <div className="eyebrow">01 · source intake</div>
+          <div className="eyebrow">01 · 数据源</div>
           <h2 className="screen-title">数据源</h2>
           <div className="sub" data-testid="source-subtitle">
             {hasData

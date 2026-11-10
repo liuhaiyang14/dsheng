@@ -5,6 +5,23 @@ import { PreviewModal } from './PreviewModal';
 import type { GenerationController } from './useGeneration';
 import './generation-dialog.css';
 
+function userFacingGenerationError(raw: string): string {
+  const text = raw.replace(/^Error:\s*/i, '').trim();
+  if (/schema_version|required property|additional properties|unexpected|validation|json schema/i.test(text)) {
+    return '模型返回的内容格式不完整，未保存结果。请重新生成。';
+  }
+  if (/PROVIDER_REQUIRED|API[_ ]?KEY|base.?url|provider/i.test(text)) {
+    return '模型服务尚未配置完整，请到“Provider 设置”检查连接信息后重试。';
+  }
+  if (/timeout|deadline|elapsed|timed out/i.test(text)) {
+    return '模型响应时间过长，本次未保存结果。请重新生成或手动停止。';
+  }
+  if (!text || text.length > 180 || /[{}]/.test(text)) {
+    return '生成失败，结果未保存。请重试。';
+  }
+  return text;
+}
+
 function ReasoningOutput({ text }: { text: string }) {
   const viewport = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
@@ -93,7 +110,7 @@ export function GenerationDialog({
           }
         }}>
         <div className="modal-head">
-          <div><h3>{title}</h3><div className="diagnosis-report-meta">{preview.provider.name} · {preview.provider.model}</div></div>
+          <div><h3>{title}</h3><div className="diagnosis-report-meta">正在使用已配置的模型服务</div></div>
           <span className={`tag ${phase === 'failed' ? 'red' : phase === 'succeeded' ? 'green' : 'gold'}`}>{label}</span>
         </div>
         <div className="modal-body" data-testid="generation-progress-panel">
@@ -113,8 +130,8 @@ export function GenerationDialog({
             <div><dt>已生成正文</dt><dd data-testid="generation-content-count">{groupDecimal(String(state.contentChars))}<small> 字符</small></dd></div>
           </dl>
           <ReasoningOutput key={preview.confirmation_id} text={state.reasoningText} />
-          {state.error ? <div className="notice error" role="alert">{state.error}</div> : null}
-          {active ? <p className="panel-note">停止会请求结束本次生成；远端已产生的用量仍以服务商记录为准。</p> : null}
+          {state.error ? <div className="notice error" role="alert">{userFacingGenerationError(state.error)}</div> : null}
+          {active ? <p className="panel-note">停止后本次生成会尽快结束，已经收到的内容不会自动保存。</p> : null}
         </div>
         <div className="modal-actions">
           {state.canRetryConnection && !active ? <button type="button" className="outline"

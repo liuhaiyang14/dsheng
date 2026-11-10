@@ -28,9 +28,29 @@ import {
   type TimelineEntryView,
 } from '../api';
 
+const DIAGNOSIS_FRAMEWORK_LABELS: Record<string, string> = {
+  '5why': '五问根因分析',
+  '5w': '五W问题界定',
+  '5w2h': '五W二H行动分析',
+};
+
 function cycleRoleOf(task: TaskView, periodEnd: string): 'review' | 'plan' {
   if (!task.target_period) return 'review';
   return task.target_period.from > periodEnd ? 'plan' : 'review';
+}
+
+function humanUnit(value: string | null | undefined): string {
+  if (!value) return '';
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const baseUnit = (parsed as Record<string, unknown>).base_unit;
+      if (typeof baseUnit === 'string' && baseUnit.trim()) return baseUnit;
+    }
+  } catch {
+    // 已经是普通单位文本。
+  }
+  return value;
 }
 
 function friendlyError(err: unknown): string {
@@ -39,10 +59,16 @@ function friendlyError(err: unknown): string {
     return '所选报告的部分证据不在本次可发送范围，无法引用。请取消勾选“引用本期已保存的诊断报告”后继续，或选择其他可用报告。';
   }
   if (/PROVIDER_REQUIRED|No explicit\/default provider|未.*默认 Provider/i.test(raw)) {
-    return `本档案尚未配置默认 Provider——请到「Provider 设置」填写 Base URL／模型／API Key（Key 仅存本机），并点「设为默认」后回来重试。（${raw}）`;
+    return '本档案尚未配置模型服务，请到「Provider 设置」补充连接信息并设为默认后重试。';
   }
   if (/PROVIDER_KEY_MISSING|no Key|未配置.*Key/i.test(raw)) {
-    return `Provider 缺少 API Key——请到「Provider 设置」重新保存并填入 Key。（${raw}）`;
+    return '模型服务缺少访问凭证，请到「Provider 设置」补充后重试。';
+  }
+  if (/schema_version|required property|additional properties|unexpected|validation|json schema/i.test(raw)) {
+    return '模型返回的内容格式不完整，未保存结果。请重新生成。';
+  }
+  if (!raw.trim() || raw.length > 220 || /[{}]/.test(raw)) {
+    return '请求未完成，结果没有保存。请检查当前数据后重试。';
   }
   return raw;
 }
@@ -302,7 +328,7 @@ export function TaskScreen() {
       <div>
         <div className="screen-head">
           <div>
-            <div className="eyebrow">04 · action sheet</div>
+            <div className="eyebrow">04 · 任务单</div>
             <h2 className="screen-title">任务单</h2>
             <div className="sub">
               {app.activeWorkspace?.name} · 依据经营差异明确改善目标、拆解行动步骤
@@ -326,10 +352,10 @@ export function TaskScreen() {
     <div>
       <div className="screen-head">
         <div>
-          <div className="eyebrow">04 · action sheet</div>
+          <div className="eyebrow">04 · 任务单</div>
           <h2 className="screen-title">任务单</h2>
           <div className="sub">
-            依据经营差异明确改善目标、拆解行动步骤，并用 SMART 原则校验目标及子目标。
+            依据经营差异明确改善目标、拆解行动步骤，并检查目标是否具体、可衡量、可实现、相关且有时限。
           </div>
         </div>
         <div className="head-controls">
@@ -391,7 +417,7 @@ export function TaskScreen() {
                       <div className="file-meta">{task.summary}</div>
                       {task.evidence[0] ? (
                         <div className="task-source">
-                          来源：<span className="evidence-ref">{task.evidence[0].locator}</span>
+                          来源：<span className="evidence-ref">{task.evidence[0].source_label}</span>
                         </div>
                       ) : null}
                     </td>
@@ -405,7 +431,7 @@ export function TaskScreen() {
                     </td>
                     <td>
                       {task.target_value != null
-                        ? `${groupDecimal(task.target_value)}${task.unit ? ` ${task.unit}` : ''}`
+                        ? `${groupDecimal(task.target_value)}${task.unit ? ` ${humanUnit(task.unit)}` : ''}`
                         : '未设目标'}
                       <div className="file-meta">
                         {task.due_date ? `截止 ${task.due_date}` : '未设置截止日期'}
@@ -436,8 +462,7 @@ export function TaskScreen() {
           <div className="task-generation-note">
             <strong>任务单制定原则</strong>
             <p>
-              根据经营差异和 Skill 明确改善目标，再按业务依据拆解行动步骤；SMART
-              校验由核心完成，人工修改后标记待复核。责任人、节点和验收依据作为执行字段单独确认。
+              根据经营差异和业务规则明确改善目标，再按业务依据拆解行动步骤；目标检查在生成时完成，人工修改后标记待复核。责任人、节点和验收依据作为执行字段单独确认。
             </p>
             {reports.length > 0 ? (
               <label>
@@ -459,7 +484,7 @@ export function TaskScreen() {
           <div className="root-card">
             <h4>任务推进方式</h4>
             <p>
-              勾选行动步骤由核心自动更新进度；手工调整必须填写原因；阻塞必须填写理由；
+              勾选行动步骤由系统自动更新进度；手工调整必须填写原因；阻塞必须填写理由；
               完成必须达到 100%。所有变化进入任务时间线。
             </p>
           </div>
@@ -468,7 +493,7 @@ export function TaskScreen() {
         <div className="panel">
           <div className="panel-head">
             <span className="panel-title">本期任务制定依据</span>
-            <span className="panel-note">经营差异 · Skill · SMART 检查</span>
+            <span className="panel-note">经营差异与目标检查</span>
           </div>
           <div className="mapping">
             {(detail?.metrics ?? [])
@@ -486,7 +511,7 @@ export function TaskScreen() {
             <div className="mapping-row">
               <label>目标与行动检查</label>
               <span>
-                SMART 五项由核心在生成时评价；人工修改内容后标 stale，不自动重新调用模型。
+                目标检查在生成时完成；人工修改内容后会标记为待复核。
               </span>
             </div>
           </div>
@@ -498,7 +523,7 @@ export function TaskScreen() {
           <div className="panel-head">
             <span className="panel-title">生成建议（候选 · 未应用）</span>
             <span className="panel-note">
-              不按标题近似自动匹配；逐项选择 new/ignore 后应用（本地确认，无模型请求）
+              不按标题近似自动匹配；逐项选择是否加入后应用（本地确认）
             </span>
           </div>
           <div className="panel-body">
@@ -611,7 +636,7 @@ export function TaskScreen() {
               <div>
                 <h3>生成任务单</h3>
                 <div className="diagnosis-report-meta">
-                  依据本期经营差异和 Skill 原则；SMART 校核由核心在生成时完成。
+                  依据本期经营差异和业务规则；目标检查在生成时完成。
                 </div>
               </div>
             </div>
@@ -638,13 +663,13 @@ export function TaskScreen() {
                   >
                     {reports.map((r) => (
                       <option key={r.report_id} value={r.report_id}>
-                        {r.problem_statement.slice(0, 24)}… · {r.framework.toUpperCase()} · 第{' '}
+                        {r.problem_statement.slice(0, 24)}… · {DIAGNOSIS_FRAMEWORK_LABELS[r.framework] ?? '诊断报告'} · 第{' '}
                         {r.version_no} 版（最新）
                       </option>
                     ))}
                   </select>
                   <p className="panel-note" style={{ marginTop: 8 }}>
-                    引用只作辅助背景并记录报告 ID；报告中的假设仍需核实，不会覆盖经营数据。
+                    引用只作辅助背景；报告中的假设仍需核实，不会覆盖经营数据。
                   </p>
                 </>
               ) : (

@@ -10,6 +10,20 @@ const optionalFields = [
 ] as const;
 type OptionalField = typeof optionalFields[number][0];
 
+function humanUnit(value: string | null | undefined): string {
+  if (!value) return '';
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const baseUnit = (parsed as Record<string, unknown>).base_unit;
+      if (typeof baseUnit === 'string' && baseUnit.trim()) return baseUnit;
+    }
+  } catch {
+    // 已经是普通单位文本。
+  }
+  return value;
+}
+
 export function TaskCreateDialog({ client, workspaceId, detail, onClose, onCreated }: {
   client: DshengClient; workspaceId: string; detail: HistoryDetailView;
   onClose: () => void; onCreated: (task: TaskView) => void;
@@ -80,8 +94,8 @@ export function TaskCreateDialog({ client, workspaceId, detail, onClose, onCreat
             <label className="detail-field">任务说明<textarea className="input" value={summary} onChange={(e) => setSummary(e.target.value)} /></label>
             <label className="detail-field">归属期间<select className="input" value={cycleRole} onChange={(e) => setCycleRole(e.target.value as CycleRole)}><option value="plan">下期计划</option><option value="review">本期任务</option></select></label>
             <label className="detail-field">类别<select className="input" value={category} onChange={(e) => setCategory(e.target.value as TaskCategory)}>{Object.entries(TASK_CATEGORY_LABELS).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select></label>
-            <label className="detail-field">关联指标<select className="input" value={metricId} onChange={(e) => { setMetricId(e.target.value); const metric = context.detail.metrics.find((item) => item.metric_id === e.target.value); if (metric) setValues((previous) => ({ ...previous, unit: metric.unit })); }}><option value="">未关联（其他事项）</option>{context.detail.metrics.map((metric) => <option key={metric.metric_id} value={metric.metric_id}>{metric.metric_label} · {metric.unit}</option>)}</select></label>
-            {optionalFields.filter(([key]) => ['owner', 'target_value', 'unit'].includes(key)).map(([key, label]) => <label className="detail-field" key={key}>{label}<input className="input" value={values[key]} onChange={(e) => setValues((previous) => ({ ...previous, [key]: e.target.value }))} /></label>)}
+            <label className="detail-field">关联指标<select className="input" value={metricId} onChange={(e) => { setMetricId(e.target.value); const metric = context.detail.metrics.find((item) => item.metric_id === e.target.value); if (metric) setValues((previous) => ({ ...previous, unit: metric.unit })); }}><option value="">未关联（其他事项）</option>{context.detail.metrics.map((metric) => <option key={metric.metric_id} value={metric.metric_id}>{metric.metric_label} · {humanUnit(metric.unit)}</option>)}</select></label>
+            {optionalFields.filter(([key]) => ['owner', 'target_value', 'unit'].includes(key)).map(([key, label]) => <label className="detail-field" key={key}>{label}<input className="input" value={key === 'unit' ? humanUnit(values[key]) : values[key]} onChange={(e) => setValues((previous) => ({ ...previous, [key]: e.target.value }))} /></label>)}
             <label className="detail-field">数值依据<input className="input" value={sourceNote} onChange={(e) => setSourceNote(e.target.value)} placeholder="填写目标或实绩等数值时必填" /></label>
             <label className="detail-field">计划开始<input type="date" className="input" min={targetPeriod?.from} max={targetPeriod?.to} value={plannedStart} onChange={(e) => setPlannedStart(e.target.value)} /></label>
             <label className="detail-field">截止日期<input type="date" className="input" min={targetPeriod?.from} max={targetPeriod?.to} value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></label>
@@ -92,7 +106,7 @@ export function TaskCreateDialog({ client, workspaceId, detail, onClose, onCreat
           <p className="panel-note">{targetPeriod ? `任务期间：${targetPeriod.from} 至 ${targetPeriod.to}。` : '下期计划按当前分析保存的企业周期顺延。'} 行动日期请填写在任务期间内。</p>
           <div className="step-heading"><h4>行动项</h4><button type="button" className="outline" onClick={() => { setSteps((previous) => [...previous, blankStep()]); setDirty(true); }}>新增行动项</button></div>
           {steps.map((step, index) => <div className="task-create-step" key={index}>
-            <label className="detail-field">行动内容 {index + 1}<input className="input" value={step.action} onChange={(e) => editStep(index, 'action', e.target.value)} /></label>
+            <label className="detail-field">行动内容 {index + 1}<textarea className="input task-action-textarea" rows={3} value={step.action} onChange={(e) => editStep(index, 'action', e.target.value)} /></label>
             <div className="task-step-fields">{([['owner', '负责人', 'text'], ['start_date', '开始日期', 'date'], ['due_date', '截止日期', 'date'], ['done_criteria', '验收标准', 'text']] as const).map(([key, label, type]) => <label key={key}>{label}<input className="input" type={type} min={type === 'date' ? targetPeriod?.from : undefined} max={type === 'date' ? targetPeriod?.to : undefined} value={step[key] ?? ''} aria-label={`新行动 ${index + 1} ${label}`} onChange={(e) => editStep(index, key, e.target.value)} /></label>)}</div>
             <button type="button" className="outline" disabled={steps.length <= 1} onClick={() => { setSteps((previous) => previous.filter((_, i) => i !== index)); setDirty(true); }}>删除行动项 {index + 1}</button>
           </div>)}

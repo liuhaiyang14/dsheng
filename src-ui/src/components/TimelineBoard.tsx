@@ -37,14 +37,8 @@ export function TimelineBoard({ entries }: { entries: TimelineEntryView[] }) {
         >
           {entry.task_title} · {KIND_LABELS[entry.kind]} · {entry.detail}
           <small>
-            {entry.date ??
-              (entry.occurred_at ? entry.occurred_at.slice(0, 10) : '未设置')}
-            {entry.date == null && entry.occurred_at == null
-              ? ''
-              : entry.occurred_at
-                ? ` ${entry.occurred_at.slice(11, 16)} UTC`
-                : ''}{' '}
-            · 日期{entry.date == null ? '未设置（不参与排序）' : '已设置'}
+            {entry.date ?? (entry.occurred_at ? entry.occurred_at.slice(0, 10) : '未设置')}
+            {entry.occurred_at ? ` · ${entry.occurred_at.slice(11, 16)}` : ''}
           </small>
         </div>
       ))}

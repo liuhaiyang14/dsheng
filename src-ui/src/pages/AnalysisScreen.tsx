@@ -37,6 +37,20 @@ const STATUS_TAGS: Record<NonNullable<MetricRowView['status_tag']>, { tone: 'red
   incomplete: { tone: 'gray', label: '数据不完整' },
 };
 
+function humanUnit(value: string | null | undefined): string {
+  if (!value) return '';
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const baseUnit = (parsed as Record<string, unknown>).base_unit;
+      if (typeof baseUnit === 'string' && baseUnit.trim()) return baseUnit;
+    }
+  } catch {
+    // 已经是普通单位文本。
+  }
+  return value;
+}
+
 /** 合同 reason 码 → 用户可读原因（不改合同，仅展示层翻译）。 */
 const REASON_LABELS: Record<string, string> = {
   missing_base: '缺少上期/同期数据，暂无法比较',
@@ -103,7 +117,7 @@ export function AnalysisScreen() {
       <LocalAnalysisForm />
         <EmptyState
           title="尚无分析期间"
-          hint="完成数据源导入与字段映射后，由本地核心计算生成分析结果；本页不做任何计算。"
+          hint="完成数据源导入与字段映射后，由本地计算生成分析结果；本页不做任何计算。"
         />
       </div>
     );
@@ -120,7 +134,7 @@ export function AnalysisScreen() {
           <b>演示数据说明</b>
           <span>
             以下指标与序列均为{FIXTURE_DEMO_ANNOTATION}。正式版的指标数值、聚合与比较
-            全部由本地 Rust 核心计算，UI 只呈现返回结果。
+            全部由本地计算，页面只呈现已保存的结果。
           </span>
         </div>
       ) : null}
@@ -129,13 +143,13 @@ export function AnalysisScreen() {
         {topMetrics.map((m) => (
           <div className="metric" key={m.metric_id}>
             <div className="label">{m.metric_label}</div>
-            <div className="value" title={formatMetricValue(m.actual_value, m.unit)}>
+            <div className="value" title={formatMetricValue(m.actual_value, humanUnit(m.unit))}>
               <span className="value-number">{m.actual_value == null ? '—' : `${groupDecimal(m.actual_value)}${m.unit === '%' ? '%' : ''}`}</span>
-              {m.unit && m.unit !== '%' && m.actual_value != null ? <span className="metric-unit">{m.unit}</span> : null}
+              {m.unit && m.unit !== '%' && m.actual_value != null ? <span className="metric-unit">{humanUnit(m.unit)}</span> : null}
             </div>
             <div className={`delta ${diffTone(favorableOf(m.direction, m.delta))}`}>
               {m.delta != null && m.target_value != null
-                ? `${m.delta.startsWith('-') ? '↓ 低于' : '↑ 高于'}目标 ${groupDecimal(m.delta.replace('-', ''))}${m.unit === '%' ? 'pp' : ` ${m.unit}`}`
+                ? `${m.delta.startsWith('-') ? '↓ 低于' : '↑ 高于'}目标 ${groupDecimal(m.delta.replace('-', ''))}${m.unit === '%' ? 'pp' : ` ${humanUnit(m.unit)}`}`
                 : '未设目标'}
             </div>
             <div className="metric-sub">
@@ -161,7 +175,7 @@ export function AnalysisScreen() {
           <div className="panel-head">
             <span className="panel-title">核算表 · 预实差异</span>
             <span className="panel-note">
-              {detail.period.from} 至 {detail.period.to} · 公式由本地 Rust 核算
+              {detail.period.from} 至 {detail.period.to} · 已按当前口径核算
             </span>
           </div>
           <div className="table-wrap">
@@ -184,7 +198,7 @@ export function AnalysisScreen() {
                     <tr key={m.metric_id}>
                       <td>
                         {m.metric_label}
-                        {m.unit ? `（${m.unit}）` : ''}
+                        {m.unit ? `（${humanUnit(m.unit)}）` : ''}
                       </td>
                       <td>{formatMetricValue(m.target_value, null)}</td>
                       <td>{formatMetricValue(m.actual_value, null)}</td>
@@ -202,7 +216,7 @@ export function AnalysisScreen() {
               </tbody>
             </table>
             <div className="table-foot">
-              无可比数据时显示原因，不把缺失值当 0；数值为核心返回的十进制字符串。
+              无可比数据时显示原因，不把缺失值当 0；数值按当前口径显示。
             </div>
           </div>
         </div>
@@ -210,7 +224,7 @@ export function AnalysisScreen() {
         <div className="panel">
           <div className="panel-head">
             <span className="panel-title">异常信号</span>
-            <span className="panel-note">按差异贡献排序（核心返回）</span>
+            <span className="panel-note">按差异贡献排序</span>
           </div>
           {detail.metrics
             .filter((m) => m.delta != null)
@@ -270,8 +284,8 @@ export function AnalysisScreen() {
           <span className="panel-title">经营图表</span>
           <span className="panel-note">
             {app.mode === 'fixture'
-              ? '演示序列（虚构数据）；正式版仅绘制核心解析的真实期间，缺桶断线不插值'
-              : '仅绘制核心解析的真实期间，缺桶断线不插值'}
+              ? '演示序列（虚构数据）；正式版仅绘制真实期间，缺少期间不补值'
+              : '仅绘制真实期间，缺少期间不补值'}
           </span>
         </div>
         <div className="chart-toolbar">
@@ -311,8 +325,8 @@ export function AnalysisScreen() {
         </div>
         {chartUnavailable ? (
           <div className="empty-state" style={{ margin: 14 }}>
-            当前指标没有{CHART_TYPE_LABELS[chartType]}所需的数据（核心未返回该序列）；
-            不在 UI 层推算或插值。
+            当前指标没有{CHART_TYPE_LABELS[chartType]}所需的数据；
+            缺少期间不会自动补值。
           </div>
         ) : series ? (
           <ChartPanel
@@ -354,7 +368,7 @@ function ScreenHead({ hasData }: { hasData: boolean }) {
   return (
     <div className="screen-head">
       <div>
-        <div className="eyebrow">02 · operating review</div>
+        <div className="eyebrow">02 · 经营分析</div>
         <h2 className="screen-title">经营分析</h2>
         <div className="sub">
           {hasData

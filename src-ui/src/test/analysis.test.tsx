@@ -51,7 +51,7 @@ describe('S4 经营分析屏', () => {
       '虚构演示数据',
     );
     expect(screen.getByTestId('analysis-demo-note').textContent).toContain(
-      '本地 Rust 核心计算',
+      '本地计算',
     );
   });
 

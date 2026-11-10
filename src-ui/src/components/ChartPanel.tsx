@@ -43,9 +43,9 @@ export function ChartPanel({
   }, [option, canRender]);
 
   const exportPng = () => {
-    // 导出由本地核心完成（CLI export chart）；此处仅提供占位说明。
+    // 当前页面只负责展示图表，导出由桌面版统一处理。
     window.alert(
-      '导出 PNG/PDF 由本地核心完成（dsheng export --chart）；当前演示环境不产生文件。',
+      '当前环境暂不支持直接导出图表文件。',
     );
   };
 
@@ -67,7 +67,7 @@ export function ChartPanel({
           data-testid="chart-panel-stub"
           style={{ display: 'grid', placeItems: 'center', color: '#687278', fontSize: 11 }}
         >
-          {ariaLabel}（当前环境无 canvas，未绘制）
+          {ariaLabel}（当前设备暂不显示图表）
         </div>
       )}
       <div className="legend">

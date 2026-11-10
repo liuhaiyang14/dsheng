@@ -39,7 +39,7 @@ describe('人工任务与行动项', () => {
     expect(within(drawer).getByLabelText('任务名称')).toHaveValue('人工核对客户交付');
     expect(within(drawer).getByLabelText('行动 1 负责人')).toHaveValue('运营负责人');
     expect(within(drawer).getByTestId('drawer-step-count')).toHaveTextContent('0 / 2');
-    expect(within(drawer).getByTestId('task-smart-check')).toHaveTextContent('暂无 SMART 评价');
+    expect(within(drawer).getByTestId('task-smart-check')).toHaveTextContent('暂无目标检查结果');
     const input = create.mock.calls[0][0];
     expect(input.content.target_value).toBe('0');
     expect(input.source_note).toBe('已确认的零差错目标');

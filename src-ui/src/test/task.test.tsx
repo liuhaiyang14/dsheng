@@ -432,7 +432,7 @@ describe('S6 详情抽屉', () => {
       expect(screen.getByTestId('task-save-status').textContent).toContain('进度已保存');
     });
     expect(confirmSpy).toHaveBeenCalled();
-    expect(screen.getByTestId('drawer-timeline').textContent).toContain('reopened');
+    expect(screen.getByTestId('drawer-timeline').textContent).toContain('任务已重新打开');
     expect(within(screen.getByText('未完成').parentElement!).getByText('未完成')).toBeTruthy();
     confirmSpy.mockRestore();
   });
@@ -446,13 +446,13 @@ describe('S6 详情抽屉', () => {
     const { rerender } = render(
       <TaskDrawer task={structuredClone(generated)} workspace={workspace} client={client} onClose={() => {}} onSaved={() => {}} />,
     );
-    expect(screen.getByText('SMART：生成时评价')).toBeTruthy();
+    expect(screen.getByText('生成时评价')).toBeTruthy();
     rerender(
       <TaskDrawer task={structuredClone(stale)} workspace={workspace} client={client} onClose={() => {}} onSaved={() => {}} />,
     );
     expect(screen.getByText(/内容已改待复核/)).toBeTruthy();
-    expect(screen.getByTestId('task-smart-check')).toHaveTextContent(`任务版本 r${stale.smart_check.assessed_task_revision} 的历史评价`);
-    expect(screen.getByTestId('task-smart-check')).toHaveTextContent('尚未复核当前内容');
+    expect(screen.getByTestId('task-smart-check')).toHaveTextContent('这是生成任务时的检查结果');
+    expect(screen.getByTestId('task-smart-check')).toHaveTextContent('需要重新检查');
   });
 
   it.each([
@@ -472,7 +472,7 @@ describe('S6 详情抽屉', () => {
     source.smart_check = smart as unknown as TaskView['smart_check'];
     render(<TaskDrawer task={source} workspace={workspace} client={client} onClose={() => {}} onSaved={() => {}} />);
     const section = screen.getByTestId('task-smart-check');
-    expect(section).toHaveTextContent('暂无 SMART 评价');
+    expect(section).toHaveTextContent('暂无目标检查结果');
     expect(section).not.toHaveTextContent('通过');
     expect(section).not.toHaveTextContent('生成时评价');
     expect(screen.getByTestId('drawer-step-count')).toHaveTextContent(`${source.steps.length} 个步骤`);
@@ -498,7 +498,7 @@ describe('S6 详情抽屉', () => {
     expect(section.getByText('待确认 · 总目标：数值待确认')).toBeInTheDocument();
     expect(section.getByText('不适用')).toBeInTheDocument();
     expect(section.getByText('待确认 · 子目标：补充客户清单')).toBeInTheDocument();
-    expect(section.getAllByText('具体性 S')).toHaveLength(2);
+    expect(section.getAllByText('目标是否具体')).toHaveLength(2);
   });
 
   it('步骤增删改排序：删除最后一步被 UI 阻止（AT_LEAST_ONE_STEP 预提示）', () => {

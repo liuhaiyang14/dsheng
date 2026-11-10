@@ -45,7 +45,7 @@ export function CoreMissingState() {
         <section className="content">
           <EmptyState
             title="未连接本地核心"
-            hint="当前未运行在 Tauri 桌面环境中，也没有显式启用演示数据层。本工具的业务计算、数据读取与保存全部由本地 Rust 核心完成，UI 不从网络获取任何数据，也不会静默使用虚构数据。"
+          hint="当前未连接本地数据服务，也没有显式启用演示数据层。本工具的业务计算、数据读取与保存均在本机完成，不从网络获取业务数据，也不会静默使用虚构数据。"
           >
             <p style={{ marginTop: 12 }}>
               <PanelNote>

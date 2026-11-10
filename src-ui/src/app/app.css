@@ -364,8 +364,9 @@ tr:last-child td { border-bottom: 0; }
 .step-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
 .step-heading h4 { margin: 0; }
 .step-title-input {
-  width: 100%; min-width: 0; border: 1px solid var(--line); padding: 6px;
-  color: var(--ink); background: white; font-size: .8125rem;
+  width: 100%; min-width: 0; border: 1px solid var(--line); padding: 8px;
+  color: var(--ink); background: white; font-size: .8125rem; line-height: 1.55;
+  resize: vertical; min-height: 72px;
 }
 .step-remove {
   width: 27px; height: 27px; padding: 0; border: 1px solid var(--line);
@@ -378,6 +379,7 @@ tr:last-child td { border-bottom: 0; }
 }
 .step-order:disabled { opacity: .35; cursor: default; }
 .action-copy { font-size: .8125rem; line-height: 1.5; min-width: 0; }
+.task-action-textarea { resize: vertical; min-height: 72px; line-height: 1.55; }
 .action-copy small { display: block; color: var(--muted); margin-top: 3px; font-size: .75rem; }
 .timeline-item {
   position: relative; margin-left: 6px; padding: 0 0 13px 17px;
