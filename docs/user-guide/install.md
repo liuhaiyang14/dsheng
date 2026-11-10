@@ -1,5 +1,7 @@
 # 安装与首次启动
 
+当前发布版本为 0.1.12：[下载 macOS arm64 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.1.12/dsheng_0.1.12_macos_arm64.dmg)。该安装包未签名，首次打开前请阅读下方的安全提示。
+
 ## 平台与产物
 
 | 平台 | 架构 | 安装包 | 便携包 |
