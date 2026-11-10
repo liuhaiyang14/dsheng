@@ -1,17 +1,15 @@
-# CI 骨架（S5）：跨平台构建矩阵 + 测试；不发布、不调用 Provider。
+# CI 骨架（S5）：Linux/macOS 构建矩阵 + 测试；不发布、不调用 Provider。
 #
 # 边界（主计划 §12.1 / 发布工作包任务书）：
 # - CI 永不调用 Provider/模型（无任何网络模型请求、无 Mock Provider）。
 # - CI 不做发布：不打 tag、不上传产物到 Release、不部署。GitHub Release
 #   与二进制发布须产品验收通过 + 用户显式授权后由用户/主 Agent 手动执行
 #   （发布物料见 docs/release/README.md 与 RELEASE-CHECKLIST.md）。
-# - 桌面 .dmg/.msi 打包（scripts/package/macos.sh、Windows 打包）在 CI 只
-#   做编译级验证（--no-bundle / cargo build）；签名与 bundler 分发产物
-#   不属于 CI 职责。
+# - 桌面 .dmg 打包（scripts/package/macos.sh）在 CI 只做编译级验证
+#   （--no-bundle）；签名与 bundler 分发产物不属于 CI 职责。
 #
 # 矩阵（docs/specs/provider-config-delivery.md §6）：
 # - ubuntu-latest：cargo fmt --check + clippy + test（根 workspace）
-# - windows-latest：cargo clippy + test + src-tauri manifest-path 编译检查
 # - macos-14(arm64)：cargo test + src-ui（npm ci/build/vitest）+ src-tauri
 #   实前端编译（tauri build --no-bundle）
 name: ci
@@ -43,8 +41,6 @@ jobs:
             fmt: true
           - os: macos-14 # arm64
             fmt: false
-          - os: windows-latest
-            fmt: false
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
@@ -64,7 +60,6 @@ jobs:
         run: cargo test --workspace
       # 发布前检查（secrets 扫描；清单核对在无产物时自动降级为告警）
       - name: preflight
-        if: matrix.os != 'windows-latest'
         run: scripts/package/preflight.sh --skip-manifest
 
   ui:
@@ -117,25 +112,4 @@ jobs:
             --config '{"build":{"frontendDist":"../src-ui/dist","beforeBuildCommand":null}}'
         working-directory: src-tauri
       - name: cargo test（src-tauri 集成测试，用例 40/S5 合同）
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
-  desktop-windows:
-    name: src-tauri compile check (windows-latest x64)
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: tauri-windows-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: tauri-windows-
-      # 编译级检查（placeholder-dist 可编译；真实前端产物由 macOS 任务与
-      # 本机 scripts/package 覆盖）。msi 打包/WebView2 有无实测在
-      # Windows 真机按 RELEASE-CHECKLIST.md 手工执行，不在 CI 发布。
-      - name: cargo build --manifest-path src-tauri/Cargo.toml --release
-        run: cargo build --manifest-path src-tauri/Cargo.toml --release
-      - name: cargo test --manifest-path src-tauri/Cargo.toml
         run: cargo test --manifest-path src-tauri/Cargo.toml

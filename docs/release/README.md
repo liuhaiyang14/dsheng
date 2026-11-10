@@ -1,9 +1,9 @@
 # 发布与打包（docs/release）
 
 状态：脚本与流程可用；当前已在本机（macOS arm64）产出 macOS arm64 两件
-桌面产物并生成版本清单。Windows/x64 产物待 CI/目标机执行（见文末覆盖状态）。
+桌面产物并生成版本清单。Windows/x64 产物需目标机执行（CI 不再运行 Windows 构建）（见文末覆盖状态）。
 
-当前版本 0.1.12 的 macOS arm64 安装包：[下载 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.1.12/dsheng_0.1.12_macos_arm64.dmg)；便携版和 SHA-256 见 [版本清单](manifest-v0.1.12.json)。
+当前版本 0.1.13 的 macOS arm64 安装包：[下载 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.1.13/dsheng_0.1.13_macos_arm64.dmg)；便携版和 SHA-256 见 [版本清单](manifest-v0.1.13.json)。
 
 边界（必须遵守）：
 
@@ -118,11 +118,11 @@ Windows 部分按系统文档行为编写、待真机走查）。
 
 | 产物 | 状态 |
 | --- | --- |
-| dsheng_0.1.12_macos_arm64.dmg | 本机已产出（2026-11-10） |
-| dsheng_0.1.12_macos_arm64_portable.zip | 本机已产出（2026-11-10） |
-| dsheng-cli_0.1.12_macos_arm64.zip | 尚未产出 |
+| dsheng_0.1.13_macos_arm64.dmg | 本机已产出（2026-11-10） |
+| dsheng_0.1.13_macos_arm64_portable.zip | 本机已产出（2026-11-10） |
+| dsheng-cli_0.1.13_macos_arm64.zip | 尚未产出 |
 | macOS x64 两件 | 脚本支持 `--target x86_64-apple-darwin`；未执行（需 rust target + Intel 验证机） |
-| Windows x64 msi/portable/cli | 打包在 Windows 宿主执行（脚本/CI 就绪）；未执行 |
+| Windows x64 msi/portable/cli | 打包在 Windows 宿主执行（CI 已移除 Windows 构建）；未执行 |
 | Skill ZIP / 手册 | 归属其他工作包；manifest coverage 记 missing |
 
 已知缺口（报告不改配置，详见工作包完成报告）：

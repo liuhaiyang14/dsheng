@@ -4,10 +4,10 @@ dsheng 是一款面向小型企业和经营团队的本地经营分析工具。�
 
 ## 当前版本
 
-当前版本为 **v0.1.12**，提供 macOS 13+ Apple Silicon（arm64）安装包：
+当前版本为 **v0.1.13**，提供 macOS 13+ Apple Silicon（arm64）安装包：
 
-- [下载 macOS arm64 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.1.12/dsheng_0.1.12_macos_arm64.dmg)
-- [查看 v0.1.12 版本清单与校验值](docs/release/manifest-v0.1.12.json)
+- [下载 macOS arm64 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.1.13/dsheng_0.1.13_macos_arm64.dmg)
+- [查看 v0.1.13 版本清单与校验值](docs/release/manifest-v0.1.13.json)
 
 安装包未签名。首次启动前请阅读[安装与首次启动说明](docs/user-guide/install.md)和[安全提示](docs/release/UNSIGNED.md)。
 

@@ -8,7 +8,7 @@ members = [
 exclude = ["src-tauri"]
 
 [workspace.package]
-version = "0.1.12"
+version = "0.1.13"
 edition = "2021"
 # 按主计划 11.1：不放置 LICENSE，保留所有权利（未授予默认复制/修改/分发权）。
 
