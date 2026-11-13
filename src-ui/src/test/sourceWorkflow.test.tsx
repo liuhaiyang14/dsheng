@@ -25,7 +25,38 @@ it('示例数据默认使用中文模板名称，不把内部 profile 标识展�
   await scan('/tmp/example-source');
   expect(screen.getByText(/模板：贸易\/制造业单据模板（当前示例）/)).toBeVisible();
   expect(screen.queryByText(/generic/)).toBeNull();
+  expect(screen.getByTestId('open-field-review-button')).toBeVisible();
   expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull();
+});
+
+it('待确认文件提供逐项确认入口，保存后调用映射确认并重新扫描', async () => {
+  const client = new FixtureClient();
+  const mappingSpy = vi.spyOn(client, 'sourceMappingSet');
+  const scanSpy = vi.spyOn(client, 'scan');
+  await openSource(client);
+  await scan('/tmp/example-source');
+
+  fireEvent.click(screen.getByTestId('open-field-review-button'));
+  expect(screen.getByTestId('field-review-panel')).toBeVisible();
+  const fileLabel = '示例费用人工_202610.xlsx';
+  const fieldSelect = screen.getByLabelText(`确认字段：${fileLabel}`);
+  expect(fieldSelect).toHaveValue('operating_expense');
+  fireEvent.change(fieldSelect, { target: { value: 'labor_cost' } });
+  fireEvent.change(screen.getByLabelText(`确认列：${fileLabel}`), { target: { value: '金额' } });
+  fireEvent.click(screen.getByTestId('save-field-review-button'));
+
+  await waitFor(() => expect(mappingSpy).toHaveBeenCalledTimes(1));
+  const mappings = mappingSpy.mock.calls[0][3] as Array<Record<string, string>>;
+  expect(mappings).toEqual(expect.arrayContaining([
+    expect.objectContaining({
+      target_role: 'labor_cost',
+      source_label: fileLabel,
+      column: '金额',
+    }),
+  ]));
+  await waitFor(() => expect(scanSpy).toHaveBeenCalledTimes(2));
+  expect(screen.queryByTestId('field-review-panel')).toBeNull();
+  expect(screen.getByTestId('scan-note')).toHaveTextContent('字段确认已保存并重新扫描');
 });
 it('保留自定义 profile JSON 路径并按 profile 模式扫描', async () => {
   const client = new FixtureClient();

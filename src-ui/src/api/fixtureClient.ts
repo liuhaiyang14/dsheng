@@ -124,8 +124,8 @@ export class FixtureClient implements DshengClient {
   /** 仅记 key 是否存在与最近一次传入长度；绝不把 Key 放进任何返回值。 */
   private providerKeys = new Map<string, { present: boolean }>();
   private scans: Record<string, ScanSummaryView>;
-  /** generic mapping confirmation is directory/profile scoped, like the Rust sidecar. */
-  private confirmedGenericMappings = new Set<string>();
+  /** 字段确认按目录/profile 作用域保存，模拟 Rust 侧边表。 */
+  private confirmedSourceMappings = new Map<string, unknown[]>();
   private tasks: TaskView[];
   private reports: DiagnosisReport[];
   private manualCreates = new Map<string, { signature: string; taskId: string }>();
@@ -469,11 +469,25 @@ export class FixtureClient implements DshengClient {
 
   async scan(workspaceId: string, directoryLabel: string, sourceProfile?: string, generic = false): Promise<ScanSummaryView> {
     const workspace = this.requireWorkspace(workspaceId);
-    const mappingConfirmed = this.confirmedGenericMappings.has(`${workspaceId}:${directoryLabel}`);
+    const mappingKey = `${workspaceId}:${directoryLabel}`;
+    const confirmedMappings = this.confirmedSourceMappings.get(mappingKey);
     const withMappingState = (summary: ScanSummaryView): ScanSummaryView => ({
       ...summary,
-      files: generic && mappingConfirmed
-        ? summary.files.map((file) => ({ ...file, mapping_status: 'mapped' as const }))
+      files: confirmedMappings
+        ? summary.files.map((file) => {
+            // generic 的空数组表示用户确认全部候选；profile 则只确认
+            // source_label/source_id 匹配的文件，保留未确认文件的待核对状态。
+            const mapped = generic && confirmedMappings.length === 0
+              ? true
+              : confirmedMappings.some((entry) => {
+                  if (!entry || typeof entry !== 'object') return false;
+                  const record = entry as Record<string, unknown>;
+                  return record.source_label === file.file_label
+                    || record.source === file.file_label
+                    || record.source_id === file.file_id;
+                });
+            return mapped ? { ...file, mapping_status: 'mapped' as const } : file;
+          })
         : summary.files,
     });
     if (!this.hasData(workspaceId)) {
@@ -495,7 +509,22 @@ export class FixtureClient implements DshengClient {
 
   async sourceMappingSet(workspaceId: string, directoryLabel: string, _profileHash: string, _mappings: unknown[] = []) {
     this.requireWorkspace(workspaceId);
-    this.confirmedGenericMappings.add(`${workspaceId}:${directoryLabel}`);
+    const key = `${workspaceId}:${directoryLabel}`;
+    const previous = this.confirmedSourceMappings.get(key) ?? [];
+    const next = [...previous];
+    for (const entry of _mappings) {
+      if (!entry || typeof entry !== 'object') continue;
+      const record = entry as Record<string, unknown>;
+      const identity = record.source_id ?? record.source ?? record.source_label;
+      const index = next.findIndex((item) => {
+        if (!item || typeof item !== 'object') return false;
+        const old = item as Record<string, unknown>;
+        return identity != null && (old.source_id ?? old.source ?? old.source_label) === identity;
+      });
+      if (index >= 0) next[index] = structuredClone(entry);
+      else next.push(structuredClone(entry));
+    }
+    this.confirmedSourceMappings.set(key, next);
     return { confirmed: true };
   }
 

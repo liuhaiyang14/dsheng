@@ -596,6 +596,22 @@ tr:last-child td { border-bottom: 0; }
 .pending-review-files ul { margin: 5px 0 0; padding-left: 1.2em; }
 .pending-review-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .pending-review-actions button { white-space: nowrap; }
+.field-review-panel { margin-top: 12px; padding: 14px; background: #fffdfa; border: 1px solid #eadbb9; }
+.field-review-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+.field-review-head strong { font-size: .95rem; }
+.field-review-head p { margin: 5px 0 0; color: var(--muted); font-size: .8125rem; line-height: 1.6; }
+.field-review-list { display: grid; gap: 9px; margin-top: 12px; }
+.field-review-row { display: grid; grid-template-columns: minmax(190px, 1.5fr) minmax(115px, .7fr) minmax(150px, 1fr) minmax(80px, .5fr); gap: 9px; align-items: end; padding: 10px; background: white; border: 1px solid var(--line); }
+.field-review-file { min-width: 0; display: grid; gap: 3px; }
+.field-review-file strong { overflow-wrap: anywhere; font-size: .8125rem; }
+.field-review-file span { color: var(--muted); font-size: .75rem; overflow-wrap: anywhere; }
+.field-review-row label { display: grid; gap: 4px; color: var(--muted); font-size: .75rem; }
+.field-review-row select, .field-review-row input { width: 100%; min-width: 0; border: 1px solid var(--line); padding: 7px 8px; color: var(--ink); background: white; font-size: .8125rem; }
+.field-review-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+@media (max-width: 850px) {
+  .field-review-row { grid-template-columns: 1fr 1fr; }
+  .field-review-file { grid-column: 1 / -1; }
+}
 
 /* 模型发送与进度保留在同一弹窗，不以假百分比表示未知完成度。 */
 .generation-dialog { max-width: 640px; }

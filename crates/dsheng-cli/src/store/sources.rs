@@ -748,6 +748,41 @@ pub struct ScannedFile {
     pub sheets: Vec<(SheetData, ScannedSheet)>,
 }
 
+/// 判断一个扫描文件是否可以在用户确认后展示为“映射完成”。profile
+/// 绑定的详细单据可能没有通用表头块，但 profile_role_id 已给出稳定的
+/// 文件角色；这类文件仍必须等待 source_mapping_set 的确认记录。
+fn file_mapping_ready(
+    file: &ScannedFile,
+    source_id: Option<&str>,
+    profile: &SourceProfileBinding,
+    mapping_confirmed: bool,
+    mappings: Option<&[FieldMappingEntry]>,
+) -> bool {
+    if !mapping_confirmed {
+        return false;
+    }
+    // profile 逐文件确认始终按来源匹配；generic 的空数组是历史“一次确认
+    // 全部候选”语义，但非空数组表示 UI 的部分确认，也要逐文件匹配。
+    let requires_source_match = profile.mode == "profile"
+        || (profile.mode == "generic" && mappings.is_some_and(|entries| !entries.is_empty()));
+    if requires_source_match {
+        let Some(entries) = mappings else { return false };
+        let file_confirmed = entries.iter().any(|entry| {
+            entry.source_id.as_deref() == source_id
+                || entry.source.as_deref() == Some(file.file_label.as_str())
+                || entry.source_label == file.file_label
+        });
+        if !file_confirmed {
+            return false;
+        }
+    }
+    file.sheets.iter().any(|(_, sheet)| {
+        sheet.blocked_reason.is_none()
+            && ((sheet.role == "generic_table" && sheet.header.is_some())
+                || (profile.mode == "profile" && sheet.profile_role_id.is_some()))
+    })
+}
+
 /// 读目录下全部支持文件（xlsx/xls/csv；其他扩展名跳过并记 pending）。
 /// `metric_names` 为工作区指标名全集（转置推移表锚点用；空 = 不启用转置识别）。
 pub fn scan_directory(
@@ -1142,7 +1177,21 @@ pub fn source_mapping_set(
         return Err(CliError::invalid("directory_label/profile_hash 不能为空"));
     }
     ensure_sidecar_tables(conn)?;
-    let mapping_json = serde_json::to_string(&mappings).map_err(|e| CliError::invalid(e.to_string()))?;
+    // Partial confirmation from the UI must not erase files confirmed in an
+    // earlier pass. Entries targeting the same source are replaced; unrelated
+    // entries are retained so the next scan can still report them as mapped.
+    let previous = source_mapping_confirmed(conn, workspace_id, directory_label, profile_hash)?
+        .unwrap_or_default();
+    let mut merged = previous
+        .into_iter()
+        .filter(|old| {
+            !mappings
+                .iter()
+                .any(|new| mapping_targets_same_source(old, new))
+        })
+        .collect::<Vec<_>>();
+    merged.extend(mappings);
+    let mapping_json = serde_json::to_string(&merged).map_err(|e| CliError::invalid(e.to_string()))?;
     conn.execute(
         "INSERT INTO cli_source_mapping_sets
          (workspace_id, directory_label, profile_hash, mapping_json, updated_at)
@@ -1157,8 +1206,18 @@ pub fn source_mapping_set(
         "directory_label": directory_label,
         "profile_hash": profile_hash,
         "confirmed": true,
-        "mapping_count": mappings.len(),
+        "mapping_count": merged.len(),
     }))
+}
+
+fn mapping_targets_same_source(left: &FieldMappingEntry, right: &FieldMappingEntry) -> bool {
+    if let (Some(left_id), Some(right_id)) = (&left.source_id, &right.source_id) {
+        return left_id == right_id;
+    }
+    if let (Some(left_source), Some(right_source)) = (&left.source, &right.source) {
+        return left_source == right_source;
+    }
+    !left.source_label.is_empty() && left.source_label == right.source_label
 }
 
 /// 根据期间 key 读取最近一次 mapping 草稿；mapping set 后 analyze 才会消费。
@@ -2347,13 +2406,33 @@ fn scan_summary_internal(
         }
     }
     let mut registered = register_sources_with_profile(conn, workspace_id, &files, profile)?;
-    let mapping_confirmed = profile.mode != "generic"
-        || source_mapping_confirmed(conn, workspace_id, dir, &profile.hash)?.is_some();
+    // Profile-driven detailed workbooks still need an explicit user acknowledgement
+    // before the UI can present their file/field mapping as complete.  The profile
+    // supplies deterministic role candidates, but it does not silently confirm
+    // the user's business-field choice.  `generic_implicit` remains the historical
+    // CLI compatibility path and does not introduce a new confirmation gate.
+    let confirmed_mappings = match profile.mode.as_str() {
+        "generic" | "profile" => source_mapping_confirmed(conn, workspace_id, dir, &profile.hash)?,
+        _ => None,
+    };
+    let mapping_confirmed = match profile.mode.as_str() {
+        // Generic's historical empty mapping set means the user explicitly
+        // accepted all generic-table candidates.
+        "generic" => confirmed_mappings.is_some(),
+        // Profile mappings are per-file; an empty set must not acknowledge
+        // every detailed workbook.
+        "profile" => confirmed_mappings.as_ref().is_some_and(|entries| !entries.is_empty()),
+        _ => true,
+    };
     if mapping_confirmed {
         for (view, file) in registered.iter_mut().zip(files.iter()) {
-            if file.sheets.iter().any(|(_, sheet)| {
-                sheet.role == "generic_table" && sheet.header.is_some() && sheet.blocked_reason.is_none()
-            }) {
+            if file_mapping_ready(
+                file,
+                view.get("file_id").and_then(Value::as_str),
+                profile,
+                mapping_confirmed,
+                confirmed_mappings.as_deref(),
+            ) {
                 view["mapping_status"] = json!("mapped");
             }
         }
@@ -2463,5 +2542,118 @@ mod tests {
         assert_eq!(built_in.mode, "profile");
         assert_eq!(built_in.profile_ref.as_deref(), Some("manufacturing_demo"));
         assert!(resolve_source_profile(Some("manufacturing_erp_v1"), false).is_ok());
+    }
+
+    #[test]
+    fn profile_mapping_status_waits_for_explicit_per_file_confirmation() {
+        let profile = resolve_source_profile(Some("xsd_trade_v1"), false).unwrap();
+        let file = ScannedFile {
+            file_label: "工资条_202610.xlsx".into(),
+            content_hash: "hash".into(),
+            kind: "xlsx".into(),
+            sheets: vec![
+                (
+                    SheetData {
+                        name: "工资条".into(),
+                        rows: vec![],
+                        merged_ranges: vec![],
+                    },
+                    ScannedSheet {
+                        sheet: Some("工资条".into()),
+                        role: "generic_table",
+                        header: None,
+                        match_info: None,
+                        rows: 0,
+                        blocked_reason: None,
+                        profile_role_id: Some("salary".into()),
+                    },
+                ),
+            ],
+        };
+        assert!(!file_mapping_ready(&file, Some("source-1"), &profile, false, None));
+        let confirmed = vec![FieldMappingEntry {
+            tool_field: "labor_cost".into(),
+            source_label: "工资条字段确认".into(),
+            recognized: "已确认".into(),
+            usage: "工资条".into(),
+            source_id: Some("source-1".into()),
+            source: None,
+            sheet: Some("工资条".into()),
+            column: Some("当月实发".into()),
+            header_signature: None,
+            target_role: Some("labor_cost".into()),
+        }];
+        assert!(file_mapping_ready(
+            &file,
+            Some("source-1"),
+            &profile,
+            true,
+            Some(&confirmed),
+        ));
+        assert!(!file_mapping_ready(
+            &file,
+            Some("source-2"),
+            &profile,
+            true,
+            Some(&confirmed),
+        ));
+        // Explicit generic confirmation keeps the historical empty-array
+        // acknowledgement semantics for generic-table candidates.
+        let generic = SourceProfileBinding::generic();
+        let generic_file = ScannedFile {
+            file_label: "source.xlsx".into(),
+            content_hash: "hash-2".into(),
+            kind: "xlsx".into(),
+            sheets: vec![(
+                SheetData {
+                    name: "source".into(),
+                    rows: vec![],
+                    merged_ranges: vec![],
+                },
+                ScannedSheet {
+                    sheet: Some("source".into()),
+                    role: "generic_table",
+                    header: Some(HeaderBlock {
+                        row: 1,
+                        row_count: 1,
+                        columns: vec![(0, "period".into()), (1, "metric_label".into())],
+                        core_score: 0,
+                    }),
+                    match_info: None,
+                    rows: 1,
+                    blocked_reason: None,
+                    profile_role_id: None,
+                },
+            )],
+        };
+        assert!(file_mapping_ready(&generic_file, None, &generic, true, Some(&[])));
+    }
+
+    #[test]
+    fn mapping_source_identity_supports_partial_confirmation() {
+        let entry = |source_id: Option<&str>, source_label: &str| FieldMappingEntry {
+            tool_field: "sales_net".into(),
+            source_label: source_label.into(),
+            recognized: "已确认".into(),
+            usage: "销售收入".into(),
+            source_id: source_id.map(str::to_string),
+            source: None,
+            sheet: None,
+            column: None,
+            header_signature: None,
+            target_role: None,
+        };
+        assert!(mapping_targets_same_source(
+            &entry(Some("source-1"), "旧文件"),
+            &entry(Some("source-1"), "新文件名"),
+        ));
+        assert!(!mapping_targets_same_source(
+            &entry(Some("source-1"), "同一文件"),
+            &entry(Some("source-2"), "同一文件"),
+        ));
+        assert!(mapping_targets_same_source(
+            &entry(None, "source.xlsx"),
+            &entry(None, "source.xlsx"),
+        ));
     }
 }

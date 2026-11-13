@@ -16,6 +16,41 @@ const BUILTIN_SOURCE_PROFILES = new Set(Object.keys(SOURCE_PROFILE_LABELS));
 
 const COMMON_METRIC_LABELS = '不含税销售额、订单成本、订单毛利、订单毛利率、入库金额、收款金额、付款金额、开票金额、经营费用、人工费、附加值（扣人工前）、经营收益（扣人工后）、有效工时、单位时间附加值、回款率和付款率';
 
+/** 待确认面板展示的业务角色；value 只用于交给核心，不直接展示给用户。 */
+const FIELD_REVIEW_OPTIONS = [
+  { value: 'sales_net', label: '不含税销售额', usage: '销售收入' },
+  { value: 'purchase_signed_amount', label: '订单成本', usage: '采购订单成本' },
+  { value: 'purchase_inbound_amount', label: '入库金额', usage: '采购入库' },
+  { value: 'cash_received', label: '收款金额', usage: '回款' },
+  { value: 'cash_paid', label: '付款金额', usage: '付款' },
+  { value: 'invoice_amount', label: '开票金额', usage: '销项发票' },
+  { value: 'operating_expense', label: '经营费用', usage: '费用分类确认' },
+  { value: 'labor_cost', label: '人工费', usage: '工资条' },
+  { value: 'period', label: '分析期间', usage: '日期/期间字段' },
+  { value: 'metric_label', label: '指标名称', usage: '通用表指标列' },
+  { value: 'actual_value', label: '实际值', usage: '通用表数值列' },
+] as const;
+
+type FieldReviewDraft = {
+  field: string;
+  column: string;
+  status: 'confirmed' | 'pending';
+};
+
+function inferReviewField(fileLabel: string) {
+  const matchers: [RegExp, string][] = [
+    [/销售出库|销售订单|销售发票/, 'sales_net'],
+    [/采购订单/, 'purchase_signed_amount'],
+    [/采购入库|入库/, 'purchase_inbound_amount'],
+    [/收款/, 'cash_received'],
+    [/付款/, 'cash_paid'],
+    [/销项发票|开票/, 'invoice_amount'],
+    [/费用|报销/, 'operating_expense'],
+    [/工资|薪资/, 'labor_cost'],
+  ];
+  return matchers.find(([pattern]) => pattern.test(fileLabel))?.[1] ?? '';
+}
+
 function sourceProfileLabel(profileId?: string | null) {
   if (!profileId) return SOURCE_PROFILE_LABELS.generic;
   return SOURCE_PROFILE_LABELS[profileId] ?? '当前行业模板';
@@ -39,6 +74,9 @@ export function SourceScreen() {
   const [scanNote, setScanNote] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [diag, setDiag] = useState<string[]>([]);
+  const [fieldReviewOpen, setFieldReviewOpen] = useState(false);
+  const [fieldReviewBusy, setFieldReviewBusy] = useState(false);
+  const [fieldReviewDraft, setFieldReviewDraft] = useState<Record<string, FieldReviewDraft>>({});
   const lastDir = app.sourceDirectory;
   const hasData = workspaceHasData(app.data);
   const workspaceName = app.activeWorkspace?.name ?? '当前企业';
@@ -70,6 +108,7 @@ export function SourceScreen() {
   }, [app.data.scan?.source_profile?.profile_id]);
 
   const scan = app.data.scan;
+  const pendingFiles = (scan?.files ?? []).filter((file) => file.mapping_status === 'pending_review');
   const profileChoice = BUILTIN_SOURCE_PROFILES.has(sourceProfile) ? sourceProfile : 'custom';
   const customProfilePath = profileChoice === 'custom' ? sourceProfile : '';
 
@@ -213,6 +252,85 @@ export function SourceScreen() {
     } catch (err) {
       setScanError(err instanceof Error ? err.message : String(err));
     } finally {
+      setScanBusy(false);
+    }
+  };
+
+  const openFieldReview = () => {
+    const next: Record<string, FieldReviewDraft> = { ...fieldReviewDraft };
+    for (const file of pendingFiles) {
+      next[file.file_id] ??= {
+        field: inferReviewField(file.file_label),
+        column: '',
+        status: inferReviewField(file.file_label) ? 'confirmed' : 'pending',
+      };
+    }
+    setFieldReviewDraft(next);
+    setFieldReviewOpen(true);
+  };
+
+  /** 保存逐文件的字段确认，并按当前目录/profile 重新扫描。 */
+  const saveFieldReview = async () => {
+    if (!app.client || !app.activeWorkspaceId || !lastDir || !scan?.source_profile) {
+      setScanError('缺少数据目录或输入模板，无法保存字段确认。');
+      return;
+    }
+    const unresolved = pendingFiles.filter((file) => {
+      const draft = fieldReviewDraft[file.file_id];
+      return !draft || draft.status !== 'confirmed' || !draft.field;
+    });
+    setFieldReviewBusy(true);
+    setScanBusy(true);
+    setScanError(null);
+    try {
+      const mappings = pendingFiles
+        .map((file) => {
+          const draft = fieldReviewDraft[file.file_id];
+          const option = FIELD_REVIEW_OPTIONS.find((item) => item.value === draft?.field);
+          if (!draft || draft.status !== 'confirmed' || !draft.field) return null;
+          return {
+            tool_field: draft.field,
+            source_label: file.file_label,
+            recognized: draft.column.trim() || '已确认',
+            usage: option?.usage ?? '用户确认字段',
+            // 核心按已注册来源的 file_label 匹配 source_id；file_id 是读视图标识，
+            // 不用于 generic 表头映射定位。
+            source_id: file.file_label,
+            source: file.file_label,
+            target_role: draft.field,
+            ...(draft.column.trim() ? { column: draft.column.trim() } : {}),
+          };
+        })
+        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+      if (scan.source_profile.mode === 'generic' && mappings.some((entry) => !entry.column)) {
+        setScanError('未指定行业模板时，已确认字段还需要填写来源列字母（例如 C）；不确定的文件请先标记为待补。');
+        return;
+      }
+      await app.client.sourceMappingSet(
+        app.activeWorkspaceId,
+        lastDir,
+        scan.source_profile.hash,
+        mappings,
+      );
+      const summary = await app.client.scan(
+        app.activeWorkspaceId,
+        lastDir,
+        scan.source_profile.mode === 'generic'
+          ? undefined
+          : (scan.source_profile.profile_ref ?? scan.source_profile.profile_id),
+        scan.source_profile.mode === 'generic',
+      );
+      await app.reloadWorkspaceData({ keepScan: summary });
+      setFieldReviewOpen(false);
+      setScanNote(
+        unresolved.length > 0
+          ? `已保存 ${mappings.length} 个字段确认；${unresolved.length} 个文件仍标记为待补，请补齐后再次确认。`
+          : '字段确认已保存并重新扫描；完成后可以到「经营分析」运行本地分析。',
+      );
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFieldReviewBusy(false);
       setScanBusy(false);
     }
   };
@@ -394,6 +512,15 @@ export function SourceScreen() {
             </details>
           </div>
           <div className="pending-review-actions">
+            <button
+              type="button"
+              className="primary"
+              disabled={scanBusy || fieldReviewBusy || !lastDir}
+              onClick={openFieldReview}
+              data-testid="open-field-review-button"
+            >
+              逐项确认字段
+            </button>
             {scan.source_profile?.mode === 'generic' ? <button
               type="button"
               className="primary"
@@ -413,6 +540,79 @@ export function SourceScreen() {
               {scanBusy ? '处理中…' : '一键注册常用指标并重扫'}
             </button>
           </div>
+          {fieldReviewOpen ? (
+            <div className="field-review-panel" data-testid="field-review-panel">
+              <div className="field-review-head">
+                <div>
+                  <strong>逐项确认字段</strong>
+                  <p>为每个待确认文件选择业务角色；不确定的文件可以保留“待补”，不会按 0 参与计算。</p>
+                </div>
+                <span className="panel-note">已确认 {pendingFiles.filter((file) => fieldReviewDraft[file.file_id]?.status === 'confirmed').length} / {pendingFiles.length}</span>
+              </div>
+              <div className="field-review-list">
+                {pendingFiles.map((file) => {
+                  const draft = fieldReviewDraft[file.file_id] ?? { field: '', column: '', status: 'pending' as const };
+                  return (
+                    <div className="field-review-row" key={file.file_id}>
+                      <div className="field-review-file">
+                        <strong>{file.file_label}</strong>
+                        <span>{file.row_count} 行 · {humanizeSourceNote(file.note, file.sheet_count)}</span>
+                      </div>
+                      <label>
+                        <span>确认状态</span>
+                        <select
+                          aria-label={`确认状态：${file.file_label}`}
+                          value={draft.status}
+                          disabled={fieldReviewBusy}
+                          onChange={(event) => setFieldReviewDraft((prev) => ({
+                            ...prev,
+                            [file.file_id]: { ...draft, status: event.target.value as FieldReviewDraft['status'] },
+                          }))}
+                        >
+                          <option value="confirmed">已确认</option>
+                          <option value="pending">待补/待确认</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>业务字段</span>
+                        <select
+                          aria-label={`确认字段：${file.file_label}`}
+                          value={draft.field}
+                          disabled={fieldReviewBusy || draft.status === 'pending'}
+                          onChange={(event) => setFieldReviewDraft((prev) => ({
+                            ...prev,
+                            [file.file_id]: { ...draft, field: event.target.value },
+                          }))}
+                        >
+                          <option value="">请选择字段</option>
+                          {FIELD_REVIEW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        <span>列（可选）</span>
+                        <input
+                          aria-label={`确认列：${file.file_label}`}
+                          value={draft.column}
+                          disabled={fieldReviewBusy || draft.status === 'pending'}
+                          placeholder="如 C"
+                          onChange={(event) => setFieldReviewDraft((prev) => ({
+                            ...prev,
+                            [file.file_id]: { ...draft, column: event.target.value },
+                          }))}
+                        />
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="field-review-actions">
+                <button type="button" className="outline" disabled={fieldReviewBusy} onClick={() => setFieldReviewOpen(false)}>稍后处理</button>
+                <button type="button" className="primary" disabled={fieldReviewBusy} onClick={() => void saveFieldReview()} data-testid="save-field-review-button">
+                  {fieldReviewBusy ? '保存并重扫中…' : '保存确认并重新扫描'}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
         );
       })() : null}
