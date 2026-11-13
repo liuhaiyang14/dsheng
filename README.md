@@ -4,10 +4,10 @@ dsheng 是一款面向小型企业和经营团队的本地经营分析工具。�
 
 ## 当前版本
 
-当前版本为 **v0.1.13**，提供 macOS 13+ Apple Silicon（arm64）安装包：
+当前版本为 **v0.2.0**，提供 macOS 13+ Apple Silicon（arm64）安装包：
 
-- [下载 macOS arm64 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.1.13/dsheng_0.1.13_macos_arm64.dmg)
-- [查看 v0.1.13 版本清单与校验值](docs/release/manifest-v0.1.13.json)
+- [下载 macOS arm64 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.2.0/dsheng_0.2.0_macos_arm64.dmg)
+- [查看 v0.2.0 版本清单与校验值](docs/release/manifest-v0.2.0.json)
 
 安装包未签名。首次启动前请阅读[安装与首次启动说明](docs/user-guide/install.md)和[安全提示](docs/release/UNSIGNED.md)。
 
@@ -37,10 +37,12 @@ dsheng 是一款面向小型企业和经营团队的本地经营分析工具。�
 npm --prefix src-ui install
 npm --prefix src-ui run build
 cargo test --workspace
-scripts/package/macos.sh
+DIST_DIR="$PWD/target/release-dist/v$(python3 scripts/package/version_manifest.py --print-version)"
+mkdir -p "$DIST_DIR"
+scripts/package/macos.sh --dist-dir "$DIST_DIR"
 ```
 
-打包产物位于 `target/release-dist/`。发布流程和校验方式见[发布与打包说明](docs/release/README.md)。
+打包产物位于 `target/release-dist/v<ver>/`。发布流程和校验方式见[发布与打包说明](docs/release/README.md)。
 
 ## 项目文档
 

@@ -6,7 +6,7 @@
 
 前置（每轮发布）：
 
-- [ ] `scripts/package/preflight.sh --dist-dir target/release-dist` 输出
+- [ ] `scripts/package/preflight.sh --dist-dir target/release-dist/v<ver>` 输出
       PASS（secrets/业务文件扫描 + 清单核对，用例 30）。
 - [ ] `docs/release/manifest-v<ver>.json` 与当前代码版本一致，且
       `version_manifest.py --verify` 通过（用例 39 前半）。
@@ -85,7 +85,7 @@ Windows：
 ## 用例 39：Release 清单 SHA-256
 
 - [ ] `python3 scripts/package/version_manifest.py --dist-dir
-      target/release-dist` 生成最新清单并提交 git。
+      target/release-dist/v<ver>` 生成最新清单并提交 git。
 - [ ] `--verify` 通过；preflight.sh 第 3 节 OK。
 - [ ] （发布执行时）对外公布渠道中附上 manifest 文件本体或等价哈希表。
 

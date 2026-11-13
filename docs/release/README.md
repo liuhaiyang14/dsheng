@@ -1,18 +1,18 @@
 # 发布与打包（docs/release）
 
-状态：脚本与流程可用；当前已在本机（macOS arm64）产出 macOS arm64 两件
-桌面产物并生成版本清单。Windows/x64 产物需目标机执行（CI 不再运行 Windows 构建）（见文末覆盖状态）。
+状态：脚本与流程可用；当前已在本机（macOS arm64）产出 DMG、便携版和独立
+CLI 三件产物并生成版本清单。Windows/x64 产物需目标机执行（CI 不再运行 Windows 构建）（见文末覆盖状态）。
 
-当前版本 0.1.13 的 macOS arm64 安装包：[下载 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.1.13/dsheng_0.1.13_macos_arm64.dmg)；便携版和 SHA-256 见 [版本清单](manifest-v0.1.13.json)。
+当前版本 0.2.0 的 macOS arm64 安装包：[下载 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.2.0/dsheng_0.2.0_macos_arm64.dmg)；便携版、CLI 包和 SHA-256 见 [版本清单](manifest-v0.2.0.json)。
 
 边界（必须遵守）：
 
 - 不签名、不公证（notarize）、不绕过 Gatekeeper/SmartScreen。
 - **GitHub Release / 二进制公开分发须产品验收通过并获用户显式授权**，
   本目录只准备产物与清单，不执行发布。
-- 大二进制产物**不入 git**：统一输出到 `target/release-dist/`（已被
-  .gitignore 覆盖）；git 中只保留 `docs/release/manifest-v<ver>.json`
-  记录文件名/大小/SHA-256。
+- 大二进制产物**不入 git**：按版本独立输出到
+  `target/release-dist/v<ver>/`（已被 `.gitignore` 覆盖）；不同版本不得
+  混放。git 中只保留 `docs/release/manifest-v<ver>.json` 记录文件名/大小/SHA-256。
 - 任何包内不得包含用户数据库、Provider 配置/API Key、业务文件
   （脚本自动断言，见各脚本）。
 
@@ -38,22 +38,27 @@
 ## 构建流程（macOS arm64 本机）
 
 ```bash
-# 1) 桌面：.dmg + 便携 zip（含包内断言；约 3-6 分钟）
-scripts/package/macos.sh
+# 1) 为当前版本创建独立目录
+VER="$(python3 scripts/package/version_manifest.py --print-version)"
+DIST_DIR="$PWD/target/release-dist/v$VER"
+mkdir -p "$DIST_DIR"
+
+# 2) 桌面：.dmg + 便携 zip（含包内断言；约 3-6 分钟）
+scripts/package/macos.sh --dist-dir "$DIST_DIR"
 #   Intel 交叉（需先 rustup target add x86_64-apple-darwin；未在本机验证）：
-#   scripts/package/macos.sh --target x86_64-apple-darwin
+#   scripts/package/macos.sh --target x86_64-apple-darwin --dist-dir "$DIST_DIR"
 
-# 2) 独立 CLI 归档（含安装辅助与 SHA256SUMS）
-scripts/package/cli_dist.sh
+# 3) 独立 CLI 归档（含安装辅助与 SHA256SUMS）
+scripts/package/cli_dist.sh --dist-dir "$DIST_DIR"
 
-# 3) 生成版本清单（写入 docs/release/manifest-v<ver>.json，入 git）
-python3 scripts/package/version_manifest.py --dist-dir target/release-dist
+# 4) 生成版本清单（写入 docs/release/manifest-v<ver>.json，入 git）
+python3 scripts/package/version_manifest.py --dist-dir "$DIST_DIR"
 
-# 4) 发布前检查（secrets/业务文件扫描 + 清单哈希核对）
-scripts/package/preflight.sh --dist-dir target/release-dist
+# 5) 发布前检查（secrets/业务文件扫描 + 清单哈希核对）
+scripts/package/preflight.sh --dist-dir "$DIST_DIR"
 ```
 
-产物输出：`target/release-dist/`。增量重跑可加 `--skip-ui-build
+产物输出：`target/release-dist/v<ver>/`。增量重跑可加 `--skip-ui-build
 --skip-tauri-build --skip-cli-build`（macos.sh）/ `--skip-build`
 （cli_dist.sh）复用缓存。
 
@@ -88,7 +93,7 @@ scripts/package/preflight.sh --dist-dir target/release-dist
 核对既有清单（发布前必跑；preflight 已自动调用）：
 
 ```bash
-python3 scripts/package/version_manifest.py --verify docs/release/manifest-v<ver>.json --dist-dir target/release-dist
+python3 scripts/package/version_manifest.py --verify docs/release/manifest-v<ver>.json --dist-dir target/release-dist/v<ver>
 ```
 
 产物文件被移动后，把所在目录经 `--dist-dir` 传入即可（可多次）。
@@ -118,9 +123,9 @@ Windows 部分按系统文档行为编写、待真机走查）。
 
 | 产物 | 状态 |
 | --- | --- |
-| dsheng_0.1.13_macos_arm64.dmg | 本机已产出（2026-11-10） |
-| dsheng_0.1.13_macos_arm64_portable.zip | 本机已产出（2026-11-10） |
-| dsheng-cli_0.1.13_macos_arm64.zip | 尚未产出 |
+| dsheng_0.2.0_macos_arm64.dmg | 本机已产出（2026-11-13） |
+| dsheng_0.2.0_macos_arm64_portable.zip | 本机已产出（2026-11-13） |
+| dsheng-cli_0.2.0_macos_arm64.zip | 本机已产出（2026-11-13） |
 | macOS x64 两件 | 脚本支持 `--target x86_64-apple-darwin`；未执行（需 rust target + Intel 验证机） |
 | Windows x64 msi/portable/cli | 打包在 Windows 宿主执行（CI 已移除 Windows 构建）；未执行 |
 | Skill ZIP / 手册 | 归属其他工作包；manifest coverage 记 missing |
