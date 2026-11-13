@@ -204,7 +204,8 @@ tr:last-child td { border-bottom: 0; }
   display: flex; gap: 10px; align-items: flex-start; margin-bottom: 14px;
   font-size: .8125rem; line-height: 1.6; color: #705722;
 }
-.notice b { font-size: .875rem; }
+.notice > b { flex: 0 0 auto; white-space: nowrap; font-size: .875rem; }
+.notice > span, .notice > .pending-review-content { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
 .notice.workspace-empty { background: var(--blue-wash); border-color: #cbdde0; color: var(--blue); }
 .notice.risk { background: var(--red-wash); border-color: #e5c7c1; color: var(--red-dark); }
 
@@ -578,6 +579,7 @@ tr:last-child td { border-bottom: 0; }
 .source-intake-panel .import-panel { border: 0; margin: 0; }
 .source-intake-panel .import-row { padding: 16px; }
 .source-intake-panel .dropzone.interactive { margin: 0; }
+.source-profile-metrics { margin: -4px 16px 12px; line-height: 1.6; overflow-wrap: anywhere; }
 .source-directory-summary { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--line); background: #fafbf9; font-size: .875rem; overflow-wrap: anywhere; }
 .source-directory-summary .path { flex: 1 1 100%; margin: 0; background: white; }
 .source-technical-details { margin: 12px 16px; color: var(--muted); font-size: .8125rem; }
@@ -585,6 +587,15 @@ tr:last-child td { border-bottom: 0; }
 .source-technical-details[open] > summary { margin-bottom: 10px; }
 .source-intake-panel .manual-path { margin: 0; padding: 0 16px 16px; }
 .source-intake-panel .file-list { max-height: 420px; overflow-y: auto; }
+.pending-review-guide { margin-top: 12px; align-items: flex-start; }
+.pending-review-content { display: grid; gap: 5px; }
+.pending-review-content p { margin: 0; }
+.pending-review-metrics { color: #886525; }
+.pending-review-files { margin-top: 2px; }
+.pending-review-files > summary { cursor: pointer; width: fit-content; }
+.pending-review-files ul { margin: 5px 0 0; padding-left: 1.2em; }
+.pending-review-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.pending-review-actions button { white-space: nowrap; }
 
 /* 模型发送与进度保留在同一弹窗，不以假百分比表示未知完成度。 */
 .generation-dialog { max-width: 640px; }

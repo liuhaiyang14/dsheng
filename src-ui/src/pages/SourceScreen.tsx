@@ -5,10 +5,34 @@ import { ImportDropzone } from '../components/ImportDropzone';
 import { Tag } from '../components/bits';
 import { FIXTURE_DEMO_ANNOTATION, type FieldMappingRow } from '../api';
 
+const SOURCE_PROFILE_LABELS: Record<string, string> = {
+  generic: '未指定行业模板',
+  manufacturing_demo: '制造业示例模板',
+  manufacturing_erp_v1: '制造业经营数据模板',
+  xsd_trade_v1: '贸易/制造业单据模板（当前示例）',
+  service_demo: '服务业示例模板',
+};
+
+const COMMON_METRIC_LABELS = '不含税销售额、订单成本、订单毛利、订单毛利率、入库金额、收款金额、付款金额、开票金额、经营费用、人工费、附加值（扣人工前）、经营收益（扣人工后）、有效工时、单位时间附加值、回款率和付款率';
+
+function sourceProfileLabel(profileId?: string | null) {
+  if (!profileId) return SOURCE_PROFILE_LABELS.generic;
+  return SOURCE_PROFILE_LABELS[profileId] ?? '当前行业模板';
+}
+
+function humanizeSourceNote(note: string | null, sheetCount: number) {
+  if (!note) return `${sheetCount} 个工作表已读取，等待字段确认`;
+  return note
+    .replace(/generic_table/gi, '未归类业务表')
+    .replace(/generic/gi, '未指定模板')
+    .replace(/table/gi, '业务表');
+}
+
 /** 数据源屏：目录扫描结果与字段映射（只读呈现核心返回）。 */
 export function SourceScreen() {
   const app = useApp();
-  const [sourceProfile, setSourceProfile] = useState('generic');
+  // 当前提供的示例数据使用 xsd_trade_v1；未指定行业模板仍可由用户显式选择。
+  const [sourceProfile, setSourceProfile] = useState('xsd_trade_v1');
   const [mappings, setMappings] = useState<FieldMappingRow[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
@@ -37,6 +61,12 @@ export function SourceScreen() {
     };
     // 仅在切换档案/重载数据后刷新映射。
   }, [app.client, app.activeWorkspaceId, app.data.currentDetail]);
+
+  // 重新进入页面时沿用当前扫描绑定的模板，避免下拉框显示默认值而覆盖实际口径。
+  useEffect(() => {
+    const profileId = app.data.scan?.source_profile?.profile_id;
+    if (profileId) setSourceProfile(profileId);
+  }, [app.data.scan?.source_profile?.profile_id]);
 
   const scan = app.data.scan;
 
@@ -183,7 +213,7 @@ export function SourceScreen() {
   /** generic source 必须先明确确认字段映射，确认记录绑定本次目录与 profile hash。 */
   const confirmGenericMapping = async () => {
     if (!app.client || !app.activeWorkspaceId || !lastDir || !scan?.source_profile) {
-      setScanError('缺少目录或 source profile，无法确认映射。');
+      setScanError('缺少数据目录或输入模板，无法确认字段。');
       return;
     }
     setScanBusy(true);
@@ -280,27 +310,27 @@ export function SourceScreen() {
           </div>
           <div className="source-profile-row">
             <label className="period-field">原始数据模板
-              <input
+              <select
                 className="select"
                 aria-label="原始数据模板"
                 value={sourceProfile}
-                list="source-profile-options"
                 disabled={scanBusy}
                 onChange={(event) => setSourceProfile(event.target.value)}
-              />
-              <datalist id="source-profile-options">
-                <option value="generic" label="通用字段映射（手工确认）" />
-                <option value="manufacturing_demo" label="示例制造业内置 profile" />
-                <option value="service_demo" label="合成服务业内置 profile" />
-              </datalist>
+              >
+                <option value="generic">未指定行业模板（需确认字段）</option>
+                <option value="xsd_trade_v1">贸易/制造业单据模板（当前示例）</option>
+                <option value="manufacturing_demo">制造业示例模板</option>
+                <option value="service_demo">服务业示例模板</option>
+              </select>
             </label>
-            <span className="panel-note">扫描会记录 profile 版本与 hash；核算表、推移表只能作为生成结果查看。</span>
+            <span className="panel-note">扫描会记录模板版本；核算表、推移表只能作为生成结果查看。</span>
           </div>
+          <p className="panel-note source-profile-metrics">常用指标：不含税销售额、订单成本、订单毛利率、经营费用、人工费、附加值（扣人工前）、经营收益（扣人工后）、有效工时和回款率。</p>
           <ImportDropzone busy={scanBusy} onPath={(path, note) => void runScan(path, note)} onDiag={pushDiag} />
           <div className="source-directory-summary">
             <div data-testid="source-directory">{lastDir ? `有效数据目录：${lastDir}` : '尚未成功扫描数据目录'}</div>
             {lastDir ? <button type="button" className="outline" disabled={scanBusy} onClick={() => void runScan(lastDir)}>重新扫描</button> : null}
-            {scan ? <p>数据覆盖：{scan.coverage.from} 至 {scan.coverage.to} · {scan.files.length} 个文件 · {scan.total_rows} 行 · profile：{scan.source_profile?.profile_id ?? 'generic'}{scanError ? '（上次成功扫描）' : ''}</p> : <p>选择目录或拖入文件夹后，识别结果会显示在这里。</p>}
+            {scan ? <p>数据覆盖：{scan.coverage.from} 至 {scan.coverage.to} · {scan.files.length} 个文件 · {scan.total_rows} 行 · 模板：{sourceProfileLabel(scan.source_profile?.profile_id)}{scanError ? '（上次成功扫描）' : ''}</p> : <p>选择目录或拖入文件夹后，识别结果会显示在这里。</p>}
           </div>
           {scanNote ? <div className="notice" data-testid="scan-note"><b>导入说明</b><span>{scanNote}</span></div> : null}
           {scanError ? <div className="notice" role="alert" data-testid="scan-error"><b>扫描失败</b><span>{scanError}</span></div> : null}
@@ -309,29 +339,39 @@ export function SourceScreen() {
             <div className="file-list">
               {scan.files.length === 0 ? <p className="panel-note">此目录未识别到可导入的文件。</p> : scan.files.map((f) => (
                 <div className="file" key={f.file_id}>
-                  <div><div className="file-name">{f.file_label}</div><div className="file-meta">{f.note} · {f.row_count} 行</div></div>
+                  <div><div className="file-name">{f.file_label}</div><div className="file-meta">{humanizeSourceNote(f.note, f.sheet_count)} · {f.row_count} 行</div></div>
                   {f.mapping_status === 'mapped' ? <Tag tone="green">映射完成</Tag> : <Tag tone="gold">待核对</Tag>}
                 </div>
               ))}
             </div>
           </> : null}
           <details className="source-technical-details">
-            <summary>技术诊断</summary>
+            <summary>连接自检（需要排查问题时使用）</summary>
             <button type="button" className="outline" onClick={() => void runSelfTest()} data-testid="self-test-button">运行桥接自检</button>
             <div data-testid="diag-lines">{diag.map((line, i) => <div key={i}>{line}</div>)}</div>
           </details>
         </div>
       ) : null}
 
-      {scan && (scan.files ?? []).some((f) => f.mapping_status === 'pending_review') ? (
-        <div className="notice" style={{ marginTop: 12 }} data-testid="pending-review-guide">
-          <b>待核对的工作表</b>
-          <span>
-            下列文件部分工作表未按已知指标结构识别（{(scan.files ?? []).filter((f) => f.mapping_status === 'pending_review').map((f) => f.file_label).join('、')}）。
-            常见原因：本档案尚未注册指标别名（推移表按“指标列”识别需要）。可一键注册常用指标后自动重扫；
-            未识别的表仍会按通用表格保留，不丢数据。
-          </span>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+      {scan && (scan.files ?? []).some((f) => f.mapping_status === 'pending_review') ? (() => {
+        const pendingFiles = (scan.files ?? []).filter((f) => f.mapping_status === 'pending_review');
+        const previewFiles = pendingFiles.slice(0, 3).map((f) => f.file_label).join('、');
+        const remainingCount = pendingFiles.length - Math.min(pendingFiles.length, 3);
+        return (
+        <div className="notice pending-review-guide" data-testid="pending-review-guide">
+          <b>需要确认字段</b>
+          <div className="pending-review-content">
+            <p>
+              {pendingFiles.length} 个文件中有部分工作表尚未归入常用指标，原始数据已保留。
+              {previewFiles ? ` 当前包括：${previewFiles}${remainingCount > 0 ? ` 等 ${remainingCount} 个文件` : ''}。` : ''}
+            </p>
+            <p className="pending-review-metrics">常用指标包括：{COMMON_METRIC_LABELS}。确认后会重新扫描并生成可分析期间。</p>
+            <details className="pending-review-files">
+              <summary>查看待确认文件（{pendingFiles.length}）</summary>
+              <ul>{pendingFiles.map((f) => <li key={f.file_id}>{f.file_label} · {f.row_count} 行</li>)}</ul>
+            </details>
+          </div>
+          <div className="pending-review-actions">
             {scan.source_profile?.mode === 'generic' ? <button
               type="button"
               className="primary"
@@ -339,7 +379,7 @@ export function SourceScreen() {
               onClick={() => void confirmGenericMapping()}
               data-testid="confirm-source-mapping-button"
             >
-              {scanBusy ? '处理中…' : '确认通用字段映射'}
+              {scanBusy ? '处理中…' : '确认当前字段识别'}
             </button> : null}
             <button
               type="button"
@@ -352,7 +392,8 @@ export function SourceScreen() {
             </button>
           </div>
         </div>
-      ) : null}
+        );
+      })() : null}
 
       {!hasData ? (
         <EmptyState

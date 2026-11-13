@@ -95,6 +95,7 @@ it('无结果时先扫描，再到经营分析显式运行，使用真实目录�
   await openApp(client);
   expect(screen.queryByRole('button', { name: '运行本地分析' })).toBeNull();
   expect(screen.getByTestId('saved-period-select')).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('原始数据模板'), { target: { value: 'generic' } });
   fireEvent.change(screen.getByTestId('manual-path-input'), { target: { value: '/tmp/business-source' } });
   fireEvent.click(screen.getByTestId('manual-path-scan'));
   await waitFor(() => expect(screen.getByTestId('source-scan-status')).toHaveTextContent('已扫描'));

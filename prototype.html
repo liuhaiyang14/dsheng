@@ -300,7 +300,7 @@
         <div class="screen active" id="source">
           <div class="screen-head"><div><div class="eyebrow">01 · source intake</div><h2>数据源</h2><div class="sub">示例制造企业 · 读取本地目录，核对期间、字段与数据口径。</div></div><div class="head-controls"><button class="outline" id="downloadTemplate">下载导入模板</button><button class="outline" id="chooseDirectory">更换目录</button><button class="primary" id="scanFiles">重新扫描</button></div></div>
           <div class="notice"><b>演示数据说明</b><span>以下企业名、目录、文件、金额和人员岗位均为虚构，用于展示完整流程，不来自你提供的业务文件。原始导入先在本地完成识别、映射与核算；只有生成诊断或任务建议时才进入模型确认流程。</span></div>
-          <div class="panel source-profile-panel"><div class="panel-head"><span class="panel-title">输入适配器 / source profile</span><span class="tag blue">输入可变 · 输出固定</span></div><div class="mapping"><div class="mapping-row"><label for="sourceProfileSelect">当前 profile</label><select class="select" id="sourceProfileSelect"><option value="manufacturing_demo">示例制造业 · 经营复盘导出</option><option value="service_demo">合成服务业 · 项目经营导出（演示）</option></select></div><div class="mapping-row"><label>适配说明</label><span id="sourceProfileDescription">适配销售出库、费用报销、工资条和辅助勾稽表；字段映射可调整，文件类别不构成全局固定逻辑。</span></div><div class="mapping-row"><label>模板范围</label><span id="sourceProfileTemplates">按当前 profile 下载对应模板与字段说明。</span></div><div class="mapping-row"><label>输出 contract</label><span><span class="tag green">two_tables_v1 · 固定</span> 原始来源先归一化，再生成核算表与推移表。</span></div></div></div>
+          <div class="panel source-profile-panel"><div class="panel-head"><span class="panel-title">输入适配模板</span><span class="tag blue">输入可变 · 输出固定</span></div><div class="mapping"><div class="mapping-row"><label for="sourceProfileSelect">当前模板</label><select class="select" id="sourceProfileSelect"><option value="xsd_trade_v1">贸易/制造业单据模板（当前示例）</option><option value="manufacturing_demo">示例制造业 · 经营复盘导出</option><option value="service_demo">合成服务业 · 项目经营导出（演示）</option><option value="manual_custom">自定义字段映射（需确认）</option></select></div><div class="mapping-row"><label>适配说明</label><span id="sourceProfileDescription">识别销售出库、采购入库、发票、收付款、费用和工资等示例单据；常用经营指标由本地计算。</span></div><div class="mapping-row"><label>模板范围</label><span id="sourceProfileTemplates">按当前模板下载对应字段说明；两表不作为导入文件。</span></div><div class="mapping-row"><label>输出格式</label><span><span class="tag green">two_tables_v1 · 固定</span> 原始来源先归一化，再生成核算表与推移表。</span></div></div></div>
           <div class="status-banner"><span class="status-dot gold-dot"></span><div><strong>关键指标检查</strong><br>销售额、对应出库成本、经营费用、人工费、总工时和计划目标分别检查。缺失值显示“待补”，不按 0 参与计算；不影响的指标仍可先生成。</div></div>
           <div class="missing-grid">
             <div class="missing-item"><strong>经营收益</strong><p>依赖销售额、出库成本、非人工经营费用和人工费。缺任一项时标记待补。</p></div>
@@ -309,7 +309,7 @@
           </div>
           <div class="source-grid">
             <div class="panel"><div class="panel-head"><span class="panel-title">本地目录</span><span class="panel-note"><span class="status-dot"></span>已扫描 · 只读</span></div><div class="dropzone"><div><div class="folder">⌂</div><p>经营复盘 / 2026 年 10 月</p><small>核算周期：日度 · 数据覆盖：2026-10-01 至 2026-10-28</small></div></div><div class="path">示例路径：~/Documents/经营复盘/示例制造企业/2026-10</div></div>
-            <div class="panel"><div class="panel-head"><span class="panel-title">已识别文件</span><span class="panel-note" id="sourceFileNote">当前 profile · 3 个文件 · 2,486 行</span></div><div class="file-list" id="sourceFileList"></div></div>
+            <div class="panel"><div class="panel-head"><span class="panel-title">已识别文件</span><span class="panel-note" id="sourceFileNote">当前输入模板 · 4 类来源</span></div><div class="file-list" id="sourceFileList"></div></div>
           </div>
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">字段映射</span><span class="panel-note">自动识别 · 可手动修正 · 当前映射已确认</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>工具字段</th><th>来源表 / 字段</th><th>识别结果</th><th>用途</th></tr></thead><tbody>
             <tr><td>销售额</td><td>销售出库 / 出库产品售价总额（含税）</td><td><span class="tag green">金额 · 已匹配</span></td><td>收入实绩</td></tr>
@@ -341,7 +341,7 @@
           <div class="table-panel" id="trendTablePanel" data-table-panel="trend" role="tabpanel" aria-labelledby="trendTableTab" hidden>
             <div class="panel table-preview"><div class="panel-head"><span class="panel-title" id="trendTableTitle">推移表 · 2026 年</span><span class="tag blue">月度序列</span></div><div class="panel-body"><table class="data-table"><thead><tr><th>月份</th><th>销售额</th><th>附加值</th><th>经营收益</th></tr></thead><tbody id="trendTableBody"></tbody><tfoot><tr><td class="table-foot" colspan="4" id="trendTableFoot">金额累计求和；比率与每小时指标使用累计分子、分母重算。</td></tr></tfoot></table><div style="padding:12px 16px"><button class="primary" id="downloadTrend">下载推移表</button></div></div></div>
           </div>
-          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">两表导出说明</span><span class="panel-note">下载前不调用模型</span></div><div class="mapping"><div class="mapping-row"><label>当前来源</label><span id="tableExportSource">按当前 source profile 归一化后本地计算</span></div><div class="mapping-row"><label>输出合同</label><span><span class="tag green">two_tables_v1 · 固定</span> 正式版输出为固定 XLSX；原型下载以 TSV/TXT 模拟。</span></div><div class="mapping-row"><label>关键缺项</label><span class="tag gold">工时待补 · 月度目标待补</span></div><div class="mapping-row"><label>版本约束</label><span>重新导入或补录后，旧文件仍可下载，新结果将生成新的 revision。</span></div><button class="outline" id="downloadTablesBundle">下载两表包（含来源说明）</button></div></div>
+          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">两表导出说明</span><span class="panel-note">下载前不调用模型</span></div><div class="mapping"><div class="mapping-row"><label>当前来源</label><span id="tableExportSource">按当前输入模板归一化后本地计算</span></div><div class="mapping-row"><label>输出格式</label><span><span class="tag green">two_tables_v1 · 固定</span> 正式版输出为固定 XLSX；原型下载以 TSV/TXT 模拟。</span></div><div class="mapping-row"><label>关键缺项</label><span class="tag gold">工时待补 · 月度目标待补</span></div><div class="mapping-row"><label>版本约束</label><span>重新导入或补录后，旧文件仍可下载，新结果将生成新的 revision。</span></div><button class="outline" id="downloadTablesBundle">下载两表包（含来源说明）</button></div></div>
         </div>
 
         <div class="screen" id="diagnosis">
@@ -391,7 +391,7 @@
           <div class="workspace-profile-details"><h3 class="setting-group-title">这份企业档案包含什么</h3>
           <div class="panel" style="max-width:940px"><div class="mapping">
             <div class="mapping-row"><div><label>数据目录</label><small class="setting-help">来源文件放在哪里；应用读取目录并展示识别结果，原文件仍留在原位置。</small></div><span>~/Documents/经营复盘/示例制造企业/2026-10</span></div>
-            <div class="mapping-row"><div><label>字段映射</label><small class="setting-help">把原始 source/profile 列对应到实绩、目标、日期、工时等工具字段；映射决定哪些值参与计算。</small></div><span>实绩 ← 销售出库.含税售价 · 日期 ← 销售出库.业务日期</span></div>
+            <div class="mapping-row"><div><label>字段映射</label><small class="setting-help">把原始数据和模板列对应到实绩、目标、日期、工时等工具字段；映射决定哪些值参与计算。</small></div><span>实绩 ← 销售出库.含税售价 · 日期 ← 销售出库.业务日期</span></div>
             <div class="mapping-row"><div><label>指标与公式</label><small class="setting-help">规定指标如何汇总和计算；例如毛利率 = 毛利 ÷ 销售额，单位时间附加值 = 结算收益 ÷ 有效工时。</small></div><span>当前 12 个指标定义 · 缺字段不默认按 0</span></div>
             <div class="mapping-row"><div><label>手工补录</label><small class="setting-help">保存文件没有提供的目标、人工费或工时，并记录单位、期间和说明；分析结果会标明手工来源。</small></div><span>本期有 1 项：2026-10-17 有效工时待补</span></div>
             <div class="mapping-row"><div><label>Provider 连接</label><small class="setting-help">为当前企业选择模型地址、模型名和本地 API Key；实际发送前每次展示内容并等待确认。</small></div><span>OpenAI 兼容 · demo-reasoner-32b · 已配置演示值</span></div>
@@ -419,12 +419,25 @@
   <script>
     const labels = { source: '数据源', analysis: '经营分析', tables: '两表展示/下载', diagnosis: '经营问题诊断', task: '任务单', history: '历史查询', provider: 'Provider 设置', 'system-settings': '系统设置' };
     const sourceProfiles = {
+      xsd_trade_v1: {
+        label: '贸易/制造业单据模板（当前示例）',
+        description: '识别销售出库、采购入库、销售订单、采购订单、发票、收付款、费用和工资等示例单据；常用经营指标由本地计算。',
+        templates: '当前模板覆盖：销售额、销售成本、采购入库、收款、付款、经营费用、人工费及可补录的目标和工时。',
+        download: '当前示例模板包：销售出库、采购入库、销售订单、采购订单、发票、收付款、费用和工资字段说明。',
+        fileNote: '贸易/制造业单据模板 · 11 个文件 · 示例数据',
+        files: [
+          ['销售出库_20260930.xlsx', '销售额与对应出库成本 · 汇总行已识别', 'green', '已识别'],
+          ['采购入库_20260930.xlsx', '采购入库金额 · 期间字段已识别', 'green', '已识别'],
+          ['费用报销单_20260930.xlsx、工资条_20260930.xlsx', '经营费用与人工费 · 分类/工时可补录', 'gold', '待补录'],
+          ['发票、收付款及订单等辅助表', '用于回款、采购和经营勾稽 · 不重复计入成本', 'blue', '辅助来源']
+        ]
+      },
       manufacturing_demo: {
         label: '示例制造业 · 经营复盘导出',
         description: '适配销售出库、费用报销、工资条和辅助勾稽表；字段映射可调整，文件类别不构成全局固定逻辑。',
-        templates: '当前 profile 模板：销售出库、费用报销单、工资条及可选辅助勾稽字段（具体列可调整）。',
-        download: '演示下载：示例制造业 profile 模板包，包含销售出库、费用报销单、工资条及辅助勾稽字段说明。',
-        fileNote: 'manufacturing_demo · 3 个文件 · 2,486 行',
+        templates: '当前模板：销售出库、费用报销单、工资条及可选辅助勾稽字段（具体列可调整）。',
+        download: '演示下载：示例制造业输入模板包，包含销售出库、费用报销单、工资条及辅助勾稽字段说明。',
+        fileNote: '制造业示例模板 · 3 个文件 · 2,486 行',
         files: [
           ['销售出库_202610.xlsx', '原始业务单据 · 出库时间、含税售价、出库成本 · 主单与明细已识别', 'green', '已识别'],
           ['费用报销单_202610.xlsx', '原始业务单据 · 申请时间、报销类型、报销金额 · 分类待确认 1 项', 'gold', '待核对'],
@@ -434,20 +447,30 @@
       },
       service_demo: {
         label: '合成服务业 · 项目经营导出（演示）',
-        description: '演示按项目工时、服务收入、外包成本和费用明细归一化；输入列与制造业 profile 不同。',
-        templates: '当前 profile 模板：项目收入、工时台账、外包成本、费用明细及可选回款字段。',
-        download: '演示下载：合成服务业 profile 模板包，包含项目收入、工时台账、外包成本和费用明细字段说明。',
-        fileNote: 'service_demo · 4 个文件 · 1,128 行（合成演示）',
+        description: '演示按项目工时、服务收入、外包成本和费用明细归一化；输入列与制造业模板不同。',
+        templates: '当前模板：项目收入、工时台账、外包成本、费用明细及可选回款字段。',
+        download: '演示下载：合成服务业输入模板包，包含项目收入、工时台账、外包成本和费用明细字段说明。',
+        fileNote: '服务业示例模板 · 4 个文件 · 1,128 行（合成演示）',
         files: [
           ['项目收入_202610.xlsx', '合成项目单据 · 项目、服务确认日、含税收入 · 已识别', 'green', '已识别'],
           ['项目工时_202610.xlsx', '项目工时台账 · 人员、工时、归属期间 · 可计算效率', 'green', '已识别'],
           ['外包成本_202610.xlsx', '外包服务成本 · 供应商、项目、结算金额 · 成本待核对 1 项', 'gold', '待核对'],
           ['服务费用_202610.xlsx 等辅助表', '费用、回款、合同节点 · 用于经营参考与勾稽', 'blue', '辅助来源']
         ]
+      },
+      manual_custom: {
+        label: '自定义字段映射（需确认）',
+        description: '按你提供的表头手动确认销售额、成本、费用、人工、目标和工时等字段；未确认的值不会参与计算。',
+        templates: '可下载空白字段模板，确认后再生成核算表和推移表。',
+        download: '自定义字段模板包，包含常用经营指标的字段说明。',
+        fileNote: '自定义字段映射 · 待确认',
+        files: [
+          ['待确认的业务文件', '保留原始行，等待字段映射', 'gold', '待确认']
+        ]
       }
     };
     const twoTableViewModel = {
-      contract: 'two_tables_v1', revision: 3, period: '2026-10', sourceCoverage: '2026-10-01 至 2026-10-28', sourceProfile: 'manufacturing_demo',
+      contract: 'two_tables_v1', revision: 3, period: '2026-10', sourceCoverage: '2026-10-01 至 2026-10-28', sourceProfile: 'xsd_trade_v1',
       accounting: {
         title: '核算表 · 2026 年 10 月',
         rows: [
@@ -487,7 +510,7 @@
     const renderTwoTableViewModel = () => {
       const profile = sourceProfiles[twoTableViewModel.sourceProfile];
       document.getElementById('tableStatusRevision').textContent = `revision ${twoTableViewModel.revision}`;
-      document.getElementById('tableStatusSource').textContent = `来源 profile：${profile.label} · 覆盖 ${twoTableViewModel.sourceCoverage}`;
+      document.getElementById('tableStatusSource').textContent = `来源模板：${profile.label} · 覆盖 ${twoTableViewModel.sourceCoverage}`;
       document.getElementById('tableExportSource').textContent = `${profile.label} · 归一化后本地计算`;
       document.getElementById('accountingTableTitle').textContent = twoTableViewModel.accounting.title;
       document.getElementById('accountingTableBody').innerHTML = twoTableViewModel.accounting.rows.map(row => `<tr><td>${row.item}</td><td>${row.basis}</td><td>${row.actual}</td><td><span class="tag ${row.statusClass}">${row.status}</span></td></tr>`).join('');
@@ -569,8 +592,8 @@
     const cycleCadence = document.getElementById('cycleCadence');
     let policyVersion = 2;
     const workspaceState = {
-      sample: { name: '示例制造企业', cadence: 'day', version: 2, foot: '示例制造企业', source: '示例制造企业 · 2026-10 日度经营复盘', sourceProfile: 'manufacturing_demo', hasData: true, tablesReady: true, tableRevision: 3, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '2026-10-01', provider: { baseUrl: 'https://api.demo-provider.local/v1', model: 'demo-reasoner-32b', apiKey: 'demo-local-key-2026' } },
-      'sample-2': { name: '新建空白档案', cadence: 'month', version: 1, foot: '新建空白档案', source: '新建空白档案 · 尚未导入数据', sourceProfile: 'manufacturing_demo', hasData: false, tablesReady: false, tableRevision: null, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '', provider: { baseUrl: '', model: '', apiKey: '' } }
+      sample: { name: '示例制造企业', cadence: 'day', version: 2, foot: '示例制造企业', source: '示例制造企业 · 2026-10 日度经营复盘', sourceProfile: 'xsd_trade_v1', hasData: true, tablesReady: true, tableRevision: 3, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '2026-10-01', provider: { baseUrl: 'https://api.demo-provider.local/v1', model: 'demo-reasoner-32b', apiKey: 'demo-local-key-2026' } },
+      'sample-2': { name: '新建空白档案', cadence: 'month', version: 1, foot: '新建空白档案', source: '新建空白档案 · 尚未导入数据', sourceProfile: 'xsd_trade_v1', hasData: false, tablesReady: false, tableRevision: null, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '', provider: { baseUrl: '', model: '', apiKey: '' } }
     };
     const workspaceSelect = document.getElementById('workspaceSelect');
     const applyWorkspace = () => {
@@ -590,7 +613,7 @@
       document.getElementById('workspaceProfileEmpty').hidden = workspace.hasData;
       document.querySelector('#source .sub').textContent = workspace.hasData ? `${workspace.source} · 读取本地目录，核对期间、字段与数据口径。` : `${workspace.name} · 尚未选择数据目录，请先导入文件并确认字段映射。`;
       document.querySelector('#analysis .sub').textContent = workspace.hasData ? `${workspace.name} · 2026-10-01 至 2026-10-28 · 日度聚合，可切换周 / 月 / 季度` : `${workspace.name} · 尚无分析期间`;
-      document.getElementById('sourceProfileSelect').value = workspace.sourceProfile || 'manufacturing_demo';
+      document.getElementById('sourceProfileSelect').value = workspace.sourceProfile || 'xsd_trade_v1';
       renderSourceProfile();
       const tablesReady = Boolean(workspace.tablesReady);
       const gate = document.getElementById('taskTableGate');
@@ -690,11 +713,11 @@
       const profile = sourceProfiles[twoTableViewModel.sourceProfile];
       const accountingRows = twoTableViewModel.accounting.rows.map(row => [row.item, row.basis, row.export, row.status]);
       const trendRows = twoTableViewModel.trend.rows.map(row => [row.period, row.exportSales, row.exportValue, row.exportProfit]);
-      const content = [`两表包 · ${twoTableViewModel.contract} · revision ${twoTableViewModel.revision}`, `来源 profile：${profile.label}`, `来源覆盖：${twoTableViewModel.sourceCoverage}`, `缺项：${twoTableViewModel.missing.join('；')}`, '正式版固定 XLSX 输出合同；本文件为交互原型演示导出。', '', '--- 核算表 ---', buildTsv(['科目', '计算口径', '实绩', '状态'], accountingRows), '--- 推移表 ---', buildTsv(twoTableViewModel.trend.columns, trendRows)].join('\n');
+      const content = [`两表包 · ${twoTableViewModel.contract} · revision ${twoTableViewModel.revision}`, `来源模板：${profile.label}`, `来源覆盖：${twoTableViewModel.sourceCoverage}`, `缺项：${twoTableViewModel.missing.join('；')}`, '正式版固定 XLSX 输出合同；本文件为交互原型演示导出。', '', '--- 核算表 ---', buildTsv(['科目', '计算口径', '实绩', '状态'], accountingRows), '--- 推移表 ---', buildTsv(twoTableViewModel.trend.columns, trendRows)].join('\n');
       downloadText(`两表包_${twoTableViewModel.period}_revision${twoTableViewModel.revision}.txt`, content);
     });
     document.getElementById('chooseDirectory').addEventListener('click', () => alert('正式版本会打开系统目录选择器；当前原型使用虚构目录。'));
-    document.getElementById('scanFiles').addEventListener('click', () => alert(`已重新扫描当前 profile：${sourceProfiles[document.getElementById('sourceProfileSelect').value].fileNote}。两表输出 contract 保持 ${twoTableViewModel.contract}。`));
+    document.getElementById('scanFiles').addEventListener('click', () => alert(`已重新扫描当前输入模板：${sourceProfiles[document.getElementById('sourceProfileSelect').value].fileNote}。两表输出格式保持 ${twoTableViewModel.contract}。`));
     if (cycleCadence) cycleCadence.addEventListener('change', () => {
       const labels = { day: '日度', week: '周度', month: '月度', quarter: '季度' };
       document.getElementById('policyNotice').textContent = `待保存：${labels[cycleCadence.value]}；将同时保存周起始日、财年起始月和时区，生效日期后建立新版本。`;

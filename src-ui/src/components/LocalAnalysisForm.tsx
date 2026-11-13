@@ -133,7 +133,7 @@ export function LocalAnalysisForm() {
         : <>
           {scanNeeded ? <p className="period-help">请重新扫描数据，读取当前核算周期的可分析期间。</p>
             : !periods.length ? <p className="period-help">未识别到可分析的数据，请检查数据源后重新扫描。</p> : null}
-          {mappingPending ? <p className="period-help">通用 source 的字段映射尚未确认，请先到「数据源」点击“确认通用字段映射”。</p> : null}
+          {mappingPending ? <p className="period-help">未指定模板的字段识别尚未确认，请先到「数据源」点击“确认当前字段识别”。</p> : null}
           <p className="period-help">数据目录：{app.sourceDirectory}</p>
         </>}
       {scanError ? <p className="notice error" role="alert">{scanError}</p> : null}

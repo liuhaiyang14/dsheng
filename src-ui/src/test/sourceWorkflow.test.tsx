@@ -17,6 +17,16 @@ async function scan(path: string) {
   fireEvent.click(screen.getByTestId('manual-path-scan'));
   await waitFor(() => expect(screen.getByTestId('manual-path-scan')).not.toBeDisabled());
 }
+it('示例数据默认使用中文模板名称，不把内部 profile 标识展示给用户', async () => {
+  const client = new FixtureClient();
+  await openSource(client);
+  expect(screen.getByLabelText('原始数据模板')).toHaveValue('xsd_trade_v1');
+  expect(screen.getByText('贸易/制造业单据模板（当前示例）')).toBeVisible();
+  await scan('/tmp/example-source');
+  expect(screen.getByText(/模板：贸易\/制造业单据模板（当前示例）/)).toBeVisible();
+  expect(screen.queryByText(/generic/)).toBeNull();
+  expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull();
+});
 it('单一导入区从未扫描到成功，跨页保留扫描结果，重新打开后保留有效目录', async () => {
   const client = new FixtureClient();
   const view = await openSource(client);
@@ -25,9 +35,15 @@ it('单一导入区从未扫描到成功，跨页保留扫描结果，重新打�
   expect(screen.queryByText('本地目录')).toBeNull();
   expect(screen.getAllByTestId('import-dropzone')).toHaveLength(1);
   expect(screen.getByTestId('self-test-button')).not.toBeVisible();
+  // 该用例专门验证未指定模板时仍需显式确认字段。
+  fireEvent.change(screen.getByLabelText('原始数据模板'), { target: { value: 'generic' } });
   await scan('/tmp/real-business-directory');
   expect(screen.getByTestId('source-scan-status')).toHaveTextContent('已扫描');
   expect(screen.getByText('已识别文件')).toBeVisible();
+  expect(screen.getByTestId('pending-review-guide')).toHaveTextContent('常用指标包括');
+  expect(screen.getByRole('button', { name: '确认当前字段识别' })).toBeVisible();
+  expect(screen.queryByText('确认通用字段映射')).toBeNull();
+  expect(screen.queryByText(/generic/)).toBeNull();
   expect(screen.getByTestId('source-directory')).toHaveTextContent('/tmp/real-business-directory');
   fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /Provider 设置/ }));
   fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /数据源/ }));

@@ -75,8 +75,8 @@ describe('S4 经营分析屏', () => {
     expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
     await waitFor(() => expect(screen.getByLabelText('分析期间')).toBeEnabled());
-    // The fixture scan uses generic_table; confirm its directory mapping before
-    // asserting that an analysis revision can be created.
+    // A rescan started from the analysis page has no selected profile yet;
+    // the safe fallback is the explicit field-confirmation flow.
     fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /数据源/ }));
     fireEvent.click(screen.getByTestId('confirm-source-mapping-button'));
     await waitFor(() => expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull());
