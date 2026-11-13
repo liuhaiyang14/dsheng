@@ -12,6 +12,7 @@ const SOURCE_PROFILE_LABELS: Record<string, string> = {
   xsd_trade_v1: '贸易/制造业单据模板（当前示例）',
   service_demo: '服务业示例模板',
 };
+const BUILTIN_SOURCE_PROFILES = new Set(Object.keys(SOURCE_PROFILE_LABELS));
 
 const COMMON_METRIC_LABELS = '不含税销售额、订单成本、订单毛利、订单毛利率、入库金额、收款金额、付款金额、开票金额、经营费用、人工费、附加值（扣人工前）、经营收益（扣人工后）、有效工时、单位时间附加值、回款率和付款率';
 
@@ -69,6 +70,8 @@ export function SourceScreen() {
   }, [app.data.scan?.source_profile?.profile_id]);
 
   const scan = app.data.scan;
+  const profileChoice = BUILTIN_SOURCE_PROFILES.has(sourceProfile) ? sourceProfile : 'custom';
+  const customProfilePath = profileChoice === 'custom' ? sourceProfile : '';
 
   const pushDiag = (line: string) =>
     setDiag((prev) => [...prev.slice(-10), `${new Date().toLocaleTimeString()} ${line}`]);
@@ -156,6 +159,10 @@ export function SourceScreen() {
   const runScan = async (path: string, note?: string) => {
     if (!app.client || !app.activeWorkspaceId) {
       setScanError('请先创建企业档案（右上角「＋ 新建档案」）。');
+      return;
+    }
+    if (profileChoice === 'custom' && !customProfilePath.trim()) {
+      setScanError('请先选择内置模板，或填写自定义 profile JSON 文件路径。');
       return;
     }
     setScanBusy(true);
@@ -248,6 +255,10 @@ export function SourceScreen() {
       setScanError('未连接核心，无法生成模板。');
       return;
     }
+    if (profileChoice === 'custom' && !customProfilePath.trim()) {
+      setScanError('请先选择内置模板，或填写自定义 profile JSON 文件路径。');
+      return;
+    }
     let out: string | null = null;
     const w = window as unknown as {
       __TAURI__?: { dialog?: { save?: (o: { title?: string; defaultPath?: string }) => Promise<string | null> } };
@@ -313,16 +324,27 @@ export function SourceScreen() {
               <select
                 className="select"
                 aria-label="原始数据模板"
-                value={sourceProfile}
+                value={profileChoice}
                 disabled={scanBusy}
-                onChange={(event) => setSourceProfile(event.target.value)}
+                onChange={(event) => setSourceProfile(event.target.value === 'custom' ? '' : event.target.value)}
               >
                 <option value="generic">未指定行业模板（需确认字段）</option>
                 <option value="xsd_trade_v1">贸易/制造业单据模板（当前示例）</option>
                 <option value="manufacturing_demo">制造业示例模板</option>
                 <option value="service_demo">服务业示例模板</option>
+                <option value="custom">自定义模板（JSON 文件路径）</option>
               </select>
             </label>
+            {profileChoice === 'custom' ? <label className="period-field custom-profile-field">自定义模板路径
+              <input
+                className="select"
+                aria-label="自定义模板路径"
+                value={customProfilePath}
+                disabled={scanBusy}
+                placeholder="例如：/path/to/profile.json"
+                onChange={(event) => setSourceProfile(event.target.value)}
+              />
+            </label> : null}
             <span className="panel-note">扫描会记录模板版本；核算表、推移表只能作为生成结果查看。</span>
           </div>
           <p className="panel-note source-profile-metrics">常用指标：不含税销售额、订单成本、订单毛利率、经营费用、人工费、附加值（扣人工前）、经营收益（扣人工后）、有效工时和回款率。</p>

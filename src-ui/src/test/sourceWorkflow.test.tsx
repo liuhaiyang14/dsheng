@@ -27,6 +27,16 @@ it('示例数据默认使用中文模板名称，不把内部 profile 标识展�
   expect(screen.queryByText(/generic/)).toBeNull();
   expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull();
 });
+it('保留自定义 profile JSON 路径并按 profile 模式扫描', async () => {
+  const client = new FixtureClient();
+  const scanSpy = vi.spyOn(client, 'scan');
+  await openSource(client);
+  fireEvent.change(screen.getByLabelText('原始数据模板'), { target: { value: 'custom' } });
+  fireEvent.change(screen.getByLabelText('自定义模板路径'), { target: { value: '/tmp/xsd-profile.json' } });
+  await scan('/tmp/custom-source');
+  expect(scanSpy).toHaveBeenCalledWith(WS_DEMO_ID, '/tmp/custom-source', '/tmp/xsd-profile.json', false);
+  expect(screen.getByText(/模板：当前行业模板/)).toBeVisible();
+});
 it('单一导入区从未扫描到成功，跨页保留扫描结果，重新打开后保留有效目录', async () => {
   const client = new FixtureClient();
   const view = await openSource(client);
