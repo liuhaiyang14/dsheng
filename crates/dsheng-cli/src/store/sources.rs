@@ -17,7 +17,7 @@ use dsheng_core::contracts::metrics::{
     MetricDefinitionProjection, SemanticType, TargetConstraintScope,
 };
 use dsheng_core::import::fileio::SheetData;
-use dsheng_core::import::headers::{column_letter, HeaderBlock};
+use dsheng_core::import::headers::{column_letter, normalize_header, HeaderBlock};
 use dsheng_core::import::template::{detect_sheet_role_with_names, SheetMatch, SheetRole};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -85,9 +85,114 @@ pub fn ensure_sidecar_tables(conn: &Connection) -> CliResult<()> {
              role          TEXT NOT NULL,
              layout_json   TEXT NOT NULL,
              PRIMARY KEY (workspace_id, source_id, sheet)
+         );
+         CREATE TABLE IF NOT EXISTS cli_source_profiles (
+             workspace_id TEXT NOT NULL,
+             source_id TEXT NOT NULL,
+             profile_id TEXT NOT NULL,
+             profile_version INTEGER NOT NULL,
+             profile_hash TEXT NOT NULL,
+             profile_mode TEXT NOT NULL,
+             updated_at TEXT NOT NULL,
+             PRIMARY KEY (workspace_id, source_id)
+         );
+         CREATE TABLE IF NOT EXISTS cli_source_mapping_sets (
+             workspace_id TEXT NOT NULL,
+             directory_label TEXT NOT NULL,
+             profile_hash TEXT NOT NULL,
+             mapping_json TEXT NOT NULL,
+             updated_at TEXT NOT NULL,
+             PRIMARY KEY (workspace_id, directory_label, profile_hash)
+         );
+         CREATE TABLE IF NOT EXISTS cli_two_tables_materializations (
+             workspace_id TEXT NOT NULL,
+             run_id TEXT NOT NULL,
+             revision_no INTEGER NOT NULL CHECK (revision_no >= 1),
+             contract_id TEXT NOT NULL CHECK (contract_id = 'two_tables_v1'),
+             accounting_ready INTEGER NOT NULL CHECK (accounting_ready IN (0,1)),
+             trend_ready INTEGER NOT NULL CHECK (trend_ready IN (0,1)),
+             created_at TEXT NOT NULL,
+             PRIMARY KEY (workspace_id, run_id, revision_no)
          );",
     )
     .map_err(CliError::from)?;
+    Ok(())
+}
+
+/// analysis revision 成功后登记固定两表输出已可物化。任务生成只允许引用
+/// 同一 workspace/run/revision 的完整登记，避免绕过两表门禁直接发 Provider 请求。
+pub fn mark_two_tables_materialized(
+    conn: &Connection,
+    workspace_id: Uuid,
+    run_id: &str,
+    revision_no: u32,
+) -> CliResult<()> {
+    ensure_sidecar_tables(conn)?;
+    let normalized: String = conn
+        .query_row(
+            "SELECT normalized_metrics_json FROM run_revisions
+             WHERE run_id = ?1 AND revision_no = ?2",
+            params![run_id, revision_no as i64],
+            |row| row.get(0),
+        )
+        .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "analysis revision 不存在"))?;
+    let normalized: Value = serde_json::from_str(&normalized)
+        .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "normalized result 无效"))?;
+    let has_accounting_rows = normalized
+        .get("metrics")
+        .and_then(Value::as_array)
+        .is_some_and(|rows| !rows.is_empty());
+    let has_trend_rows = normalized
+        .get("series")
+        .and_then(Value::as_array)
+        .is_some_and(|rows| !rows.is_empty());
+    // 分析结果可以先带着缺失期间或待补指标物化；两表页面会将缺项标为
+    // pending，只有两张结果表都确实存在时才允许任务生成/外部导出。
+    // 不把“至少两个期间桶”当成分析失败条件，单期间数据仍可生成一张
+    // 当前期推移表，后续补录后再重算。
+    conn.execute(
+        "INSERT INTO cli_two_tables_materializations
+         (workspace_id, run_id, revision_no, contract_id, accounting_ready, trend_ready, created_at)
+         VALUES (?1, ?2, ?3, 'two_tables_v1', ?4, ?5, ?6)
+         ON CONFLICT(workspace_id, run_id, revision_no) DO UPDATE SET
+           accounting_ready=excluded.accounting_ready, trend_ready=excluded.trend_ready,
+           created_at=excluded.created_at",
+        params![
+            workspace_id.to_string(),
+            run_id,
+            revision_no as i64,
+            if has_accounting_rows { 1 } else { 0 },
+            if has_trend_rows { 1 } else { 0 },
+            now_iso()
+        ],
+    )
+    .map_err(CliError::from)?;
+    Ok(())
+}
+
+pub fn require_two_tables_materialized(
+    conn: &Connection,
+    workspace_id: Uuid,
+    run_id: &str,
+    revision_no: u32,
+) -> CliResult<()> {
+    ensure_sidecar_tables(conn)?;
+    let ready: bool = conn
+        .query_row(
+            "SELECT accounting_ready = 1 AND trend_ready = 1
+             FROM cli_two_tables_materializations
+             WHERE workspace_id = ?1 AND run_id = ?2 AND revision_no = ?3
+                   AND contract_id = 'two_tables_v1'",
+            params![workspace_id.to_string(), run_id, revision_no as i64],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
+    if !ready {
+        return Err(CliError::new(
+            CliErrorCode::DataValidationFailed,
+            "当前分析 revision 尚未生成完整的 two_tables_v1 核算表和推移表",
+        ));
+    }
     Ok(())
 }
 
@@ -255,6 +360,372 @@ fn sha256_bytes(data: &[u8]) -> String {
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// 本次扫描/分析绑定的 source profile 身份。profile 内容 hash 进入来源
+/// manifest 与 analysis fingerprint，profile/mapping 变化会自然产生新 revision。
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceProfileBinding {
+    pub profile_id: String,
+    pub version: u32,
+    pub hash: String,
+    pub mode: String,
+    /// 用户选择的原始引用（JSON 路径或注册表 ID）。profile_id 是文件内部
+    /// 身份，不能替代这个引用，否则下一次 analyze 无法重新加载本地 JSON。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile_ref: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<Value>,
+}
+
+impl SourceProfileBinding {
+    pub fn generic() -> Self {
+        let hash = sha256_bytes(br#"{"profile_id":"generic","version":1}"#);
+        Self {
+            profile_id: "generic".into(),
+            version: 1,
+            hash,
+            mode: "generic".into(),
+            profile_ref: None,
+            config: None,
+        }
+    }
+
+    /// CLI 未传 profile 的历史兼容模式。桌面/UI 明确选择 generic 时仍必须
+    /// 经过 source_mapping_set；纯 CLI 旧调用继续使用规范表头以保持脚本兼容。
+    pub fn generic_implicit() -> Self {
+        let mut profile = Self::generic();
+        profile.mode = "generic_implicit".into();
+        profile
+    }
+}
+
+/// 解析 CLI 的 `--source-profile` / `--generic`。profile 参数可以是 profile id，
+/// 也可以是本地 JSON 文件；文件内容 hash 作为不可变绑定。未指定时只使用
+/// generic profile（绝不套用当前示例企业），以保持旧 CLI/桌面调用兼容。
+pub fn resolve_source_profile(
+    source_profile: Option<&str>,
+    generic: bool,
+) -> CliResult<SourceProfileBinding> {
+    if source_profile.is_some() && generic {
+        return Err(CliError::invalid("--source-profile 与 --generic 互斥"));
+    }
+    let Some(raw) = source_profile.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(if generic {
+            SourceProfileBinding::generic()
+        } else {
+            SourceProfileBinding::generic_implicit()
+        });
+    };
+    if let Some((profile, bytes)) = builtin_profile(raw) {
+        validate_profile_config(&profile)?;
+        let id = profile
+            .get("profile_id")
+            .and_then(Value::as_str)
+            .unwrap_or(raw)
+            .to_string();
+        let version = profile.get("version").and_then(Value::as_u64).unwrap_or(1) as u32;
+        return Ok(SourceProfileBinding {
+            profile_id: id,
+            version,
+            hash: sha256_bytes(bytes.as_bytes()),
+            mode: "profile".into(),
+            profile_ref: Some(raw.to_string()),
+            config: Some(profile),
+        });
+    }
+    let path = Path::new(raw);
+    if path.is_file() {
+        let bytes = std::fs::read(path).map_err(|e| {
+            CliError::new(CliErrorCode::DataDirectoryUnavailable, e.to_string())
+                .with_field("--source-profile")
+        })?;
+        let profile: Value = serde_json::from_slice(&bytes).map_err(|e| {
+            CliError::invalid(format!("source profile JSON 无效: {e}"))
+                .with_field("--source-profile")
+        })?;
+        validate_profile_config(&profile)?;
+        let id = profile
+            .get("profile_id")
+            .and_then(Value::as_str)
+            .filter(|s| !s.trim().is_empty())
+            .ok_or_else(|| {
+                CliError::invalid("source profile 缺少 profile_id").with_field("--source-profile")
+            })?;
+        let version = profile.get("version").and_then(Value::as_u64).unwrap_or(1) as u32;
+        return Ok(SourceProfileBinding {
+            profile_id: id.to_string(),
+            version,
+            hash: sha256_bytes(&bytes),
+            mode: "profile".into(),
+            profile_ref: Some(raw.to_string()),
+            config: Some(profile),
+        });
+    }
+    if raw == "generic" {
+        return Ok(SourceProfileBinding::generic());
+    }
+    Err(CliError::invalid(format!(
+        "未知 source profile：{raw}；请提供已注册 profile JSON 路径，或使用 --generic"
+    )))
+}
+
+/// 首版提供两个可替换的内置 profile，避免 UI/原型里的 profile ID 只能展示、不能执行。
+/// 企业新增类型仍可传本地 JSON；profile 内容 hash 会进入 revision。
+fn builtin_profile(id: &str) -> Option<(Value, &'static str)> {
+    let bytes = match id {
+        "manufacturing_demo" | "manufacturing_erp_v1" => {
+            include_str!("../../../../contracts/v1/source-profiles/manufacturing_demo.json")
+        }
+        "service_demo" => include_str!("../../../../contracts/v1/source-profiles/service_demo.json"),
+        "xsd_trade_v1" => include_str!("../../../../contracts/v1/source-profiles/xsd_trade_v1.json"),
+        _ => return None,
+    };
+    let value = serde_json::from_str(bytes).ok()?;
+    Some((value, bytes))
+}
+
+fn validate_profile_config(profile: &Value) -> CliResult<()> {
+    fn reject_unknown_keys(
+        object: &serde_json::Map<String, Value>,
+        path: &str,
+        allowed: &[&str],
+    ) -> CliResult<()> {
+        if let Some(key) = object.keys().find(|key| !allowed.contains(&key.as_str())) {
+            return Err(CliError::invalid(format!(
+                "source profile {path} 含未定义字段：{key}"
+            )));
+        }
+        Ok(())
+    }
+    let object = |name: &str| {
+        profile
+            .get(name)
+            .and_then(Value::as_object)
+            .ok_or_else(|| CliError::invalid(format!("source profile 缺少或无效 {name}")))
+    };
+    let nonempty = |name: &str| {
+        profile
+            .get(name)
+            .and_then(Value::as_str)
+            .filter(|v| !v.trim().is_empty())
+            .ok_or_else(|| CliError::invalid(format!("source profile 缺少或无效 {name}")))
+    };
+    if profile.get("schema_version").and_then(Value::as_str) != Some("1")
+        || profile.get("output_contract_id").and_then(Value::as_str) != Some("two_tables_v1")
+    {
+        return Err(CliError::invalid("source profile schema_version/output_contract_id 无效"));
+    }
+    reject_unknown_keys(
+        profile
+            .as_object()
+            .ok_or_else(|| CliError::invalid("source profile 根对象无效"))?,
+        "root",
+        &[
+            "schema_version", "profile_id", "version", "enterprise_type", "display_name",
+            "source_template_version", "template", "output_contract_id", "file_roles",
+            "field_aliases", "row_rules", "normalization", "dedupe", "record_mappings", "notes",
+        ],
+    )?;
+    let profile_id = nonempty("profile_id")?;
+    if !profile_id.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        || !profile_id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    {
+        return Err(CliError::invalid("source profile profile_id 格式无效"));
+    }
+    for name in ["version", "source_template_version"] {
+        if profile.get(name).and_then(Value::as_u64).is_none_or(|v| v == 0) {
+            return Err(CliError::invalid(format!("source profile {name} 必须是正整数")));
+        }
+    }
+    for name in ["enterprise_type", "display_name"] {
+        nonempty(name)?;
+    }
+    let template = object("template")?;
+    reject_unknown_keys(template, "template", &["files", "sheet_name", "columns"])?;
+    let strings = |obj: &serde_json::Map<String, Value>, name: &str, min: usize| -> CliResult<Vec<String>> {
+        let values = obj
+            .get(name)
+            .and_then(Value::as_array)
+            .ok_or_else(|| CliError::invalid(format!("source profile template.{name} 无效")))?;
+        if values.len() < min {
+            return Err(CliError::invalid(format!("source profile template.{name} 数量不足")));
+        }
+        let mut out = Vec::with_capacity(values.len());
+        for value in values {
+            let item = value
+                .as_str()
+                .filter(|v| !v.trim().is_empty())
+                .ok_or_else(|| CliError::invalid(format!("source profile template.{name} 必须是非空字符串")))?;
+            if out.iter().any(|seen| seen == item) {
+                return Err(CliError::invalid(format!("source profile template.{name} 不能重复")));
+            }
+            out.push(item.to_string());
+        }
+        Ok(out)
+    };
+    strings(template, "files", 1)?;
+    if template.get("sheet_name").and_then(Value::as_str).is_none_or(|v| v.trim().is_empty()) {
+        return Err(CliError::invalid("source profile template.sheet_name 无效"));
+    }
+    strings(template, "columns", 2)?;
+    let aliases = profile
+        .get("field_aliases")
+        .and_then(Value::as_object)
+        .ok_or_else(|| CliError::invalid("source profile 缺少 field_aliases"))?;
+    if aliases.is_empty() {
+        return Err(CliError::invalid("source profile field_aliases 不能为空"));
+    }
+    let mut alias_owner = BTreeMap::<String, String>::new();
+    for (field, values) in aliases {
+        let values = values
+            .as_array()
+            .filter(|values| !values.is_empty())
+            .ok_or_else(|| CliError::invalid(format!("source profile field_aliases.{field} 无效")))?;
+        let mut local = BTreeSet::new();
+        for alias in values.iter().filter_map(Value::as_str) {
+            if alias.trim().is_empty() || !local.insert(normalize_header(alias)) {
+                return Err(CliError::invalid(format!("source profile field_aliases.{field} 含空值或重复别名")));
+            }
+            let key = normalize_header(alias);
+            if let Some(previous) = alias_owner.insert(key.clone(), field.clone()) {
+                if previous != *field {
+                    return Err(CliError::invalid(format!("source profile 跨字段重复别名：{key}")));
+                }
+            }
+        }
+    }
+    let roles = profile
+        .get("file_roles")
+        .and_then(Value::as_array)
+        .filter(|roles| !roles.is_empty())
+        .ok_or_else(|| CliError::invalid("source profile 缺少或无效 file_roles"))?;
+    let mut role_ids = BTreeSet::new();
+    for role in roles {
+        let role = role.as_object().ok_or_else(|| CliError::invalid("source profile file_role 无效"))?;
+        reject_unknown_keys(
+            role,
+            "file_roles[]",
+            &["role_id", "required", "file_matchers", "sheet_matchers", "field_map"],
+        )?;
+        let id = role.get("role_id").and_then(Value::as_str).unwrap_or_default();
+        if id.is_empty() || !role_ids.insert(id.to_string())
+            || !id.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+            || !id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+        {
+            return Err(CliError::invalid(format!("source profile role_id 重复或为空：{id}")));
+        }
+        if role.get("required").and_then(Value::as_bool).is_none()
+            || role.get("file_matchers").and_then(Value::as_array).is_none()
+            || role.get("sheet_matchers").and_then(Value::as_array).is_none()
+            || role.get("field_map").and_then(Value::as_object).is_none()
+        {
+            return Err(CliError::invalid(format!("source profile role {id} 缺少 required/file_matchers/sheet_matchers/field_map")));
+        }
+    }
+    let row_rules = object("row_rules")?;
+    reject_unknown_keys(
+        row_rules,
+        "row_rules",
+        &["header_rows_max", "detail_key_fields", "date_field", "amount_fields"],
+    )?;
+    if row_rules.get("header_rows_max").and_then(Value::as_u64).is_none_or(|v| !(1..=20).contains(&v))
+        || row_rules.get("date_field").and_then(Value::as_str).is_none_or(|v| v.trim().is_empty())
+        || row_rules.get("detail_key_fields").and_then(Value::as_array).is_none_or(|v| v.is_empty())
+        || row_rules.get("amount_fields").and_then(Value::as_array).is_none_or(|v| v.is_empty())
+    {
+        return Err(CliError::invalid("source profile row_rules 无效"));
+    }
+    let normalization = object("normalization")?;
+    reject_unknown_keys(
+        normalization,
+        "normalization",
+        &["currency", "tax_basis", "timezone", "status_map"],
+    )?;
+    let currency = normalization.get("currency").and_then(Value::as_str).unwrap_or_default();
+    if currency.len() != 3 || !currency.chars().all(|c| c.is_ascii_uppercase())
+        || normalization.get("timezone").and_then(Value::as_str).is_none_or(|v| v.trim().is_empty())
+        || normalization.get("status_map").and_then(Value::as_object).is_none()
+        || !matches!(normalization.get("tax_basis").and_then(Value::as_str), Some("inclusive" | "exclusive" | "not_applicable" | "confirm_at_runtime"))
+    {
+        return Err(CliError::invalid("source profile normalization 无效"));
+    }
+    let dedupe = object("dedupe")?;
+    reject_unknown_keys(
+        dedupe,
+        "dedupe",
+        &["same_content", "different_content", "detail_and_total"],
+    )?;
+    if !matches!(dedupe.get("same_content").and_then(Value::as_str), Some("dedupe" | "conflict"))
+        || !matches!(dedupe.get("different_content").and_then(Value::as_str), Some("conflict" | "latest_revision" | "manual_review"))
+        || !matches!(dedupe.get("detail_and_total").and_then(Value::as_str), Some("select_authoritative" | "manual_review" | "reject"))
+    {
+        return Err(CliError::invalid("source profile dedupe 无效"));
+    }
+    if let Some(record_mappings) = profile.get("record_mappings") {
+        for mapping in record_mappings
+            .as_array()
+            .ok_or_else(|| CliError::invalid("source profile record_mappings 无效"))?
+        {
+            reject_unknown_keys(
+                mapping
+                    .as_object()
+                    .ok_or_else(|| CliError::invalid("source profile record_mapping 无效"))?,
+                "record_mappings[]",
+                &[
+                    "mapping_id", "file_matchers", "sheet_matchers", "metric_key", "value_fields",
+                    "date_fields", "status_field", "accepted_statuses", "requires_confirmation",
+                    "period_kind", "scope_field",
+                ],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn profile_aliases(profile: &SourceProfileBinding) -> Option<BTreeMap<String, Vec<String>>> {
+    let mut aliases: BTreeMap<String, Vec<String>> = profile
+        .config
+        .as_ref()
+        .and_then(|config| config.get("field_aliases"))
+        .and_then(Value::as_object)
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(field, aliases)| {
+                    Some((field.clone(), aliases.as_array()?.iter().filter_map(Value::as_str).map(str::to_string).collect()))
+                })
+                .collect()
+        })?;
+    if let Some(config) = profile.config.as_ref() {
+        if let Some(roles) = config.get("file_roles").and_then(Value::as_array) {
+            for role in roles {
+                if let Some(field_map) = role.get("field_map").and_then(Value::as_object) {
+                    for (canonical, source_name) in field_map {
+                        if let Some(source_name) = source_name.as_str() {
+                            let values = aliases.entry(canonical.clone()).or_default();
+                            if !values.iter().any(|value| normalize_header(value) == normalize_header(source_name)) {
+                                values.push(source_name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(max_rows) = config
+            .get("row_rules")
+            .and_then(|rules| rules.get("header_rows_max"))
+            .and_then(Value::as_u64)
+        {
+            aliases.insert("__header_rows_max".into(), vec![max_rows.to_string()]);
+        }
+    }
+    Some(aliases)
+}
+
+pub fn profile_aliases_for_binding(
+    profile: &SourceProfileBinding,
+) -> Option<BTreeMap<String, Vec<String>>> {
+    profile_aliases(profile)
+}
+
 // ---- 扫描 ----
 
 /// 单个扫描到的 sheet 摘要。
@@ -264,6 +735,10 @@ pub struct ScannedSheet {
     pub header: Option<HeaderBlock>,
     pub match_info: Option<SheetMatch>,
     pub rows: usize,
+    /// 生成结果工作表不可作为 source 输入时的机器原因。
+    pub blocked_reason: Option<&'static str>,
+    /// profile file_roles 命中的动态角色；固定 role 字段继续用于旧视图兼容。
+    pub profile_role_id: Option<String>,
 }
 
 pub struct ScannedFile {
@@ -278,6 +753,23 @@ pub struct ScannedFile {
 pub fn scan_directory(
     dir: &str,
     metric_names: &[String],
+) -> CliResult<(Vec<ScannedFile>, Vec<String>)> {
+    scan_directory_with_profile(dir, metric_names, None)
+}
+
+pub fn scan_directory_with_profile(
+    dir: &str,
+    metric_names: &[String],
+    aliases: Option<&BTreeMap<String, Vec<String>>>,
+) -> CliResult<(Vec<ScannedFile>, Vec<String>)> {
+    scan_directory_with_profile_config(dir, metric_names, aliases, None)
+}
+
+pub fn scan_directory_with_profile_config(
+    dir: &str,
+    metric_names: &[String],
+    aliases: Option<&BTreeMap<String, Vec<String>>>,
+    profile: Option<&SourceProfileBinding>,
 ) -> CliResult<(Vec<ScannedFile>, Vec<String>)> {
     let root = Path::new(dir);
     if !root.is_dir() {
@@ -317,14 +809,39 @@ pub fn scan_directory(
         let bytes = std::fs::read(&path)
             .map_err(|e| CliError::new(CliErrorCode::DataDirectoryUnavailable, e.to_string()))?;
         files.push(ScannedFile {
-            file_label: label,
+            file_label: label.clone(),
             content_hash: sha256_bytes(&bytes),
             kind: ext,
             sheets: sheets
                 .into_iter()
-                .map(|s| analyze_sheet(s, metric_names))
+                .map(|s| {
+                    let (sheet, mut scanned) = analyze_sheet_with_aliases(s, metric_names, aliases);
+                    if let Some(profile) = profile {
+                        scanned.profile_role_id = profile_role_for_sheet(profile, &label, scanned.sheet.as_deref());
+                    }
+                    (sheet, scanned)
+                })
                 .collect(),
         });
+    }
+    if let Some(profile) = profile.filter(|p| p.mode == "profile") {
+        if let Some(roles) = profile
+            .config
+            .as_ref()
+            .and_then(|config| config.get("file_roles"))
+            .and_then(Value::as_array)
+        {
+            for role in roles.iter().filter(|role| role.get("required").and_then(Value::as_bool) == Some(true)) {
+                let Some(role_id) = role.get("role_id").and_then(Value::as_str) else { continue };
+                let found = files.iter().any(|file| file.sheets.iter().any(|(_, sheet)| {
+                    sheet.profile_role_id.as_deref() == Some(role_id)
+                        && sheet.blocked_reason.is_none()
+                }));
+                if !found {
+                    pending.push(format!("required_profile_role_missing:{role_id}"));
+                }
+            }
+        }
     }
     Ok((files, pending))
 }
@@ -332,30 +849,118 @@ pub fn scan_directory(
 /// 识别一个 sheet 的角色与表头块（core §4.1/§4.3；含转置推移表锚点）。
 /// 传入全部行（core 表头搜索内部自限首 50 行；转置锚点的期间数据行
 /// 不受 50 行截断，避免长推移表丢行）。
-fn analyze_sheet(sheet: SheetData, metric_names: &[String]) -> (SheetData, ScannedSheet) {
+fn analyze_sheet_with_aliases(
+    sheet: SheetData,
+    metric_names: &[String],
+    aliases: Option<&BTreeMap<String, Vec<String>>>,
+) -> (SheetData, ScannedSheet) {
     let header_rows: Vec<Vec<String>> = sheet
         .rows
         .iter()
         .map(|row| row.iter().map(|c| c.raw_text()).collect())
         .collect();
     let match_info = detect_sheet_role_with_names(&sheet.name, &header_rows, metric_names);
+    let profile_header = if match_info.is_none() {
+        aliases.and_then(|a| profile_header_block(&header_rows, a))
+    } else {
+        None
+    };
+    let generated = dsheng_core::import::is_generated_output_sheet_name(&sheet.name);
     let role = match match_info.as_ref().map(|m| m.role) {
         Some(r) => r,
         None => SheetRole::GenericTable,
     };
-    let header_rows_end = match_info
+    let header_rows_end = profile_header
         .as_ref()
-        .and_then(|m| m.header.as_ref())
+        .or_else(|| match_info.as_ref().and_then(|m| m.header.as_ref()))
         .map(|h| h.row + h.row_count - 1)
         .unwrap_or(0);
     let scanned = ScannedSheet {
         sheet: Some(sheet.name.clone()),
-        role: role.as_str(),
-        header: match_info.as_ref().and_then(|m| m.header.clone()),
+        role: if generated {
+            "generated_output_input_not_allowed"
+        } else {
+            role.as_str()
+        },
+        header: profile_header.clone().or_else(|| match_info.as_ref().and_then(|m| m.header.clone())),
         match_info,
         rows: sheet.rows.len().saturating_sub(header_rows_end),
+        blocked_reason: generated.then_some("generated_output_input_not_allowed"),
+        profile_role_id: None,
     };
     (sheet, scanned)
+}
+
+fn profile_header_block(
+    rows: &[Vec<String>],
+    aliases: &BTreeMap<String, Vec<String>>,
+) -> Option<HeaderBlock> {
+    let known = [
+        "period", "metric_label", "unit", "planned", "actual", "annual_month_plan",
+        "owner", "due_date", "category", "source", "amount", "business_date",
+    ];
+    let mut alias_to_field: BTreeMap<String, String> = BTreeMap::new();
+    for field in known {
+        alias_to_field.insert(normalize_header(field), field.to_string());
+        if let Some(items) = aliases.get(field) {
+            for alias in items {
+                alias_to_field.insert(normalize_header(alias), field.to_string());
+            }
+        }
+    }
+    for (field, items) in aliases {
+        if field.starts_with("__") {
+            continue;
+        }
+        for alias in items {
+            alias_to_field.insert(normalize_header(alias), field.clone());
+        }
+    }
+    let header_rows_max = aliases
+        .get("__header_rows_max")
+        .and_then(|values| values.first())
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(20);
+    for (row_idx, row) in rows.iter().take(header_rows_max).enumerate() {
+        let columns: Vec<(usize, String)> = row
+            .iter()
+            .enumerate()
+            .filter_map(|(column, raw)| {
+                let field = alias_to_field.get(&normalize_header(raw))?;
+                Some((column, field.clone()))
+            })
+            .collect();
+        if columns.len() >= 2 {
+            return Some(HeaderBlock {
+                row: row_idx + 1,
+                row_count: 1,
+                columns,
+                core_score: 0,
+            });
+        }
+    }
+    None
+}
+
+fn profile_role_for_sheet(
+    profile: &SourceProfileBinding,
+    file_label: &str,
+    sheet_name: Option<&str>,
+) -> Option<String> {
+    let roles = profile.config.as_ref()?.get("file_roles")?.as_array()?;
+    roles.iter().find_map(|role| {
+        let file_matchers = role.get("file_matchers")?.as_array()?;
+        let sheet_matchers = role.get("sheet_matchers")?.as_array()?;
+        let file_ok = file_matchers.is_empty() || file_matchers.iter().filter_map(Value::as_str).any(|m| file_label.to_lowercase().contains(&m.to_lowercase()));
+        let sheet = sheet_name.unwrap_or_default();
+        let sheet_ok = sheet_matchers.is_empty() || sheet_matchers.iter().filter_map(Value::as_str).any(|m| sheet.to_lowercase().contains(&m.to_lowercase()));
+        if file_ok && sheet_ok {
+            role.get("role_id").and_then(Value::as_str).map(str::to_string)
+        } else {
+            None
+        }
+    })
 }
 
 /// 注册 source_files（同 content_hash 复用 source_id；仅本机 DB，不进导出）。
@@ -364,6 +969,17 @@ pub fn register_sources(
     workspace_id: Uuid,
     files: &[ScannedFile],
 ) -> CliResult<Vec<Value>> {
+    register_sources_with_profile(conn, workspace_id, files, &SourceProfileBinding::generic())
+}
+
+/// 注册 source_files 并持久化本次选择的 profile manifest。
+pub fn register_sources_with_profile(
+    conn: &Connection,
+    workspace_id: Uuid,
+    files: &[ScannedFile],
+    profile: &SourceProfileBinding,
+) -> CliResult<Vec<Value>> {
+    ensure_sidecar_tables(conn)?;
     let mut views = Vec::new();
     for file in files {
         let existing: Option<String> = conn
@@ -398,23 +1014,48 @@ pub fn register_sources(
             ],
         )
         .map_err(CliError::from)?;
+        conn.execute(
+            "INSERT INTO cli_source_profiles
+             (workspace_id, source_id, profile_id, profile_version, profile_hash, profile_mode, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(workspace_id, source_id) DO UPDATE SET
+               profile_id=excluded.profile_id, profile_version=excluded.profile_version,
+               profile_hash=excluded.profile_hash, profile_mode=excluded.profile_mode,
+               updated_at=excluded.updated_at",
+            params![workspace_id.to_string(), source_id, profile.profile_id, profile.version, profile.hash, profile.mode, now_iso()],
+        )
+        .map_err(CliError::from)?;
         let total_rows: usize = file.sheets.iter().map(|(_, s)| s.rows).sum();
-        let mapped = file
-            .sheets
-            .iter()
-            .any(|(_, s)| matches!(s.role, "accounting" | "trend" | "task_review" | "task_plan"));
+        let mapped = file.sheets.iter().any(|(_, s)| {
+            matches!(s.role, "accounting" | "trend" | "task_review" | "task_plan")
+                || (profile.mode != "generic"
+                    && s.role == "generic_table"
+                    && s.header.is_some()
+                    && s.blocked_reason.is_none())
+        });
         // 严格 scanFileInfo（additionalProperties:false：file_id/file_label/row_count/
         // sheet_count/mapping_status/note；来源哈希等审计信息不进该视图）
         let note = file
             .sheets
             .iter()
             .map(|(_, s)| {
-                format!(
-                    "{}:{}({}行)",
-                    s.sheet.clone().unwrap_or_default(),
-                    s.role,
-                    s.rows
-                )
+                if let Some(reason) = s.blocked_reason {
+                    format!(
+                        "{}:{}{}({}行)",
+                        s.sheet.clone().unwrap_or_default(),
+                        s.profile_role_id.as_deref().map(|id| format!("/profile:{id}")).unwrap_or_default(),
+                        reason,
+                        s.rows
+                    )
+                } else {
+                    format!(
+                        "{}:{}{}({}行)",
+                        s.sheet.clone().unwrap_or_default(),
+                        s.role,
+                        s.profile_role_id.as_deref().map(|id| format!("/profile:{id}")).unwrap_or_default(),
+                        s.rows
+                    )
+                }
             })
             .collect::<Vec<_>>()
             .join("；");
@@ -439,6 +1080,19 @@ pub struct FieldMappingEntry {
     pub source_label: String,
     pub recognized: String,
     pub usage: String,
+    /// 手工 generic 映射的稳定定位信息；旧 mapping JSON 缺省时仍兼容。
+    #[serde(default)]
+    pub source_id: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub sheet: Option<String>,
+    #[serde(default)]
+    pub column: Option<String>,
+    #[serde(default)]
+    pub header_signature: Option<String>,
+    #[serde(default)]
+    pub target_role: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -446,6 +1100,106 @@ pub struct FieldMappingEntry {
 pub struct MappingSetInput {
     pub expected_revision: u32,
     pub mappings: Vec<FieldMappingEntry>,
+}
+
+/// generic source 在首次分析前的明确映射确认。它与 run 级 mapping draft 分开，
+/// 因为首次分析尚未创建 run；确认绑定目录和 profile hash，目录或 profile 变化会重新要求确认。
+pub fn source_mapping_confirmed(
+    conn: &Connection,
+    workspace_id: Uuid,
+    directory_label: &str,
+    profile_hash: &str,
+) -> CliResult<Option<Vec<FieldMappingEntry>>> {
+    ensure_sidecar_tables(conn)?;
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT mapping_json FROM cli_source_mapping_sets
+             WHERE workspace_id = ?1 AND directory_label = ?2 AND profile_hash = ?3",
+            params![workspace_id.to_string(), directory_label, profile_hash],
+            |r| r.get(0),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(CliError::from)?;
+    raw.map(|value| {
+        serde_json::from_str(&value)
+            .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "来源映射确认 JSON 损坏"))
+    })
+    .transpose()
+}
+
+pub fn source_mapping_set(
+    conn: &Connection,
+    workspace_id: Uuid,
+    directory_label: &str,
+    profile_hash: &str,
+    mappings: Vec<FieldMappingEntry>,
+) -> CliResult<Value> {
+    if directory_label.trim().is_empty() || profile_hash.trim().is_empty() {
+        return Err(CliError::invalid("directory_label/profile_hash 不能为空"));
+    }
+    ensure_sidecar_tables(conn)?;
+    let mapping_json = serde_json::to_string(&mappings).map_err(|e| CliError::invalid(e.to_string()))?;
+    conn.execute(
+        "INSERT INTO cli_source_mapping_sets
+         (workspace_id, directory_label, profile_hash, mapping_json, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(workspace_id, directory_label, profile_hash) DO UPDATE SET
+           mapping_json=excluded.mapping_json, updated_at=excluded.updated_at",
+        params![workspace_id.to_string(), directory_label, profile_hash, mapping_json, now_iso()],
+    )
+    .map_err(CliError::from)?;
+    Ok(json!({
+        "workspace_id": workspace_id,
+        "directory_label": directory_label,
+        "profile_hash": profile_hash,
+        "confirmed": true,
+        "mapping_count": mappings.len(),
+    }))
+}
+
+/// 根据期间 key 读取最近一次 mapping 草稿；mapping set 后 analyze 才会消费。
+pub fn mapping_draft_for_period(
+    conn: &Connection,
+    workspace_id: Uuid,
+    period_key: &str,
+) -> CliResult<Option<(u32, Vec<FieldMappingEntry>)>> {
+    let run_id: Option<String> = conn
+        .query_row(
+            "SELECT run_id FROM analysis_runs WHERE workspace_id = ?1 AND period_key = ?2",
+            params![workspace_id.to_string(), period_key],
+            |r| r.get(0),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(CliError::from)?;
+    let Some(run_id) = run_id else {
+        return Ok(None);
+    };
+    let row: Option<(i64, String)> = conn
+        .query_row(
+            "SELECT revision, draft_json FROM cli_mapping_drafts WHERE run_id = ?1",
+            params![run_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(CliError::from)?;
+    let Some((revision, raw)) = row else {
+        return Ok(None);
+    };
+    let mappings = serde_json::from_str::<Vec<FieldMappingEntry>>(&raw)
+        .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "草稿 JSON 损坏"))?;
+    Ok(Some((revision as u32, mappings)))
 }
 
 /// 由表头块生成默认映射视图（recognized=列字母；usage=规范字段）。
@@ -1397,7 +2151,10 @@ fn observed_source_periods(files: &[ScannedFile]) -> BTreeSet<(NaiveDate, NaiveD
     let mut periods = BTreeSet::new();
     for file in files {
         for (data, sheet) in &file.sheets {
-            if !matches!(sheet.role, "accounting" | "trend") {
+            // 企业 source profile 通常把原始表识别为 generic_table；只要有
+            // 可解析表头，就同样参与可选期间计算。生成层 sheet 已在扫描时
+            // 标记为 generated_output_input_not_allowed，因此不会被回灌。
+            if !matches!(sheet.role, "accounting" | "trend" | "generic_table") {
                 continue;
             }
             if let Some(layout) = sheet
@@ -1520,7 +2277,22 @@ fn available_analysis_periods(
 
 /// scan 视图：目录摘要（read-views.scanSummaryView）。冻结 CLI 形状保持不变。
 pub fn scan_summary(conn: &mut Connection, workspace_id: Uuid, dir: &str) -> CliResult<Value> {
-    scan_summary_internal(conn, workspace_id, dir, false)
+    scan_summary_internal(
+        conn,
+        workspace_id,
+        dir,
+        false,
+        &SourceProfileBinding::generic(),
+    )
+}
+
+pub fn scan_summary_with_profile(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    dir: &str,
+    profile: &SourceProfileBinding,
+) -> CliResult<Value> {
+    scan_summary_internal(conn, workspace_id, dir, false, profile)
 }
 
 /// 桌面内部扫描视图：附当前策略下确有实绩的自然期间，不扩展冻结 CLI 合同。
@@ -1529,7 +2301,22 @@ pub fn scan_summary_desktop(
     workspace_id: Uuid,
     dir: &str,
 ) -> CliResult<Value> {
-    scan_summary_internal(conn, workspace_id, dir, true)
+    scan_summary_internal(
+        conn,
+        workspace_id,
+        dir,
+        true,
+        &SourceProfileBinding::generic(),
+    )
+}
+
+pub fn scan_summary_desktop_with_profile(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    dir: &str,
+    profile: &SourceProfileBinding,
+) -> CliResult<Value> {
+    scan_summary_internal(conn, workspace_id, dir, true, profile)
 }
 
 fn scan_summary_internal(
@@ -1537,17 +2324,49 @@ fn scan_summary_internal(
     workspace_id: Uuid,
     dir: &str,
     desktop_periods: bool,
+    profile: &SourceProfileBinding,
 ) -> CliResult<Value> {
     ensure_sidecar_tables(conn)?;
     let metric_names = metric_label_names(conn, workspace_id)?;
-    let (files, pending_inputs) = scan_directory(dir, &metric_names)?;
-    let registered = register_sources(conn, workspace_id, &files)?;
+    let aliases = profile_aliases(profile);
+    let (files, mut pending_inputs) = scan_directory_with_profile_config(
+        dir,
+        &metric_names,
+        aliases.as_ref(),
+        Some(profile),
+    )?;
+    for file in &files {
+        for (_, sheet) in &file.sheets {
+            if let Some(reason) = sheet.blocked_reason {
+                pending_inputs.push(format!(
+                    "{reason}:{}:{}",
+                    file.file_label,
+                    sheet.sheet.clone().unwrap_or_default()
+                ));
+            }
+        }
+    }
+    let mut registered = register_sources_with_profile(conn, workspace_id, &files, profile)?;
+    let mapping_confirmed = profile.mode != "generic"
+        || source_mapping_confirmed(conn, workspace_id, dir, &profile.hash)?.is_some();
+    if mapping_confirmed {
+        for (view, file) in registered.iter_mut().zip(files.iter()) {
+            if file.sheets.iter().any(|(_, sheet)| {
+                sheet.role == "generic_table" && sheet.header.is_some() && sheet.blocked_reason.is_none()
+            }) {
+                view["mapping_status"] = json!("mapped");
+            }
+        }
+    }
     let mut total_rows = 0usize;
     let mut min_date: Option<chrono::NaiveDate> = None;
     let mut max_date: Option<chrono::NaiveDate> = None;
     for (view, file) in registered.iter().zip(files.iter()) {
         total_rows += view["row_count"].as_u64().unwrap_or(0) as usize;
         for (sheet_data, sheet) in file.sheets.iter() {
+            if sheet.blocked_reason.is_some() {
+                continue;
+            }
             let Some(header) = &sheet.header else {
                 continue;
             };
@@ -1589,10 +2408,7 @@ fn scan_summary_internal(
     let to = max_date.map(|d| d.format("%Y-%m-%d").to_string());
     let mut summary = json!({
         "workspace_id": workspace_id.to_string(),
-        "directory_label": Path::new(dir)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| dir.to_string()),
+        "directory_label": dir,
         "scanned_at": now_iso(),
         "files": registered,
         "total_rows": total_rows,
@@ -1602,6 +2418,13 @@ fn scan_summary_internal(
             "granularity": grain,
         },
         "pending_inputs": pending_inputs,
+        "source_profile": {
+            "profile_id": profile.profile_id,
+            "version": profile.version,
+            "hash": profile.hash,
+            "mode": profile.mode,
+            "profile_ref": profile.profile_ref,
+        },
     });
     if desktop_periods {
         let (policy_id, periods) = available_analysis_periods(conn, workspace_id, &files)?;
@@ -1609,4 +2432,36 @@ fn scan_summary_internal(
         summary["available_period_policy_id"] = json!(policy_id);
     }
     Ok(summary)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dsheng_core::import::fileio::{CellValue, SheetData};
+
+    #[test]
+    fn generated_output_sheet_is_blocked_at_scan() {
+        let sheet = SheetData {
+            name: "核算表".into(),
+            rows: vec![vec![CellValue::Text("科目".into())]],
+            merged_ranges: vec![],
+        };
+        let (_, scanned) = analyze_sheet_with_aliases(sheet, &[], None);
+        assert_eq!(scanned.role, "generated_output_input_not_allowed");
+        assert_eq!(
+            scanned.blocked_reason,
+            Some("generated_output_input_not_allowed")
+        );
+    }
+
+    #[test]
+    fn source_profile_selection_is_explicit_and_hashed() {
+        assert_eq!(resolve_source_profile(None, false).unwrap().mode, "generic_implicit");
+        assert_eq!(resolve_source_profile(None, true).unwrap().mode, "generic");
+        assert!(resolve_source_profile(Some("manufacturing_erp_v1"), true).is_err());
+        let built_in = resolve_source_profile(Some("manufacturing_demo"), false).unwrap();
+        assert_eq!(built_in.mode, "profile");
+        assert_eq!(built_in.profile_ref.as_deref(), Some("manufacturing_demo"));
+        assert!(resolve_source_profile(Some("manufacturing_erp_v1"), false).is_ok());
+    }
 }

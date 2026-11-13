@@ -15,8 +15,8 @@
    `--confirmation-id <id> --confirm-send` 同时具备；Key 仅 `--api-key-stdin`，
    与 `--input-json -` 互斥。
 3. 导出：业务包 ZIP（三工作簿+结构化 JSON）、单工作簿（核算/推移/任务）、
-   会议版 10 页 md/json、图表 png/csv/xlsx；模板包 import-template-v1.zip
-   （三空白 XLSX+字段说明，布局按 data-period-import §5 逐格）。
+   会议版 10 页 md/json、图表 png/csv/xlsx；模板下载拆分为 source profile 输入包和
+   固定 `two_tables_v1` 两表输出包，生成的两表不再作为 source 输入。
    公式注入防护（=+-@ 开头写文本）；API Key 永不进导出。
 4. XLSX 写入：XLSX 用 rust_xlsxwriter（或合同允许的等价库），>15 位有效数写
    decimal 文本并标 number_storage=decimal_text；任务 sheet 名固定

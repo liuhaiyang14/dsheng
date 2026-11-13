@@ -422,6 +422,9 @@ mod tests {
                 sheet: Some("核算表".into()),
                 range: "B4:L20".into(),
                 content_hash: "abc".into(),
+                source_profile_id: "generic".into(),
+                source_profile_version: 1,
+                source_profile_hash: "generic".into(),
             }],
             mapping_version: "m1".into(),
             mappings: serde_json::json!({}),
@@ -430,6 +433,8 @@ mod tests {
                 version: 1,
                 scope: "全公司".into(),
                 semantic_hash: "h".into(),
+                semantic_type: None,
+                unit_signature: None,
             }],
             manual_inputs: vec![crate::analysis::fingerprint::ManualInputSnapshot {
                 input_id: "mi-1".into(),

@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "profile_id": "manufacturing_demo",
+  "version": 1,
+  "enterprise_type": "manufacturing",
+  "display_name": "示例制造业原始经营数据",
+  "source_template_version": 1,
+  "template": {"files": ["manufacturing-source.xlsx"], "sheet_name": "source", "columns": ["期间", "科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标"]},
+  "output_contract_id": "two_tables_v1",
+  "file_roles": [{"role_id": "manufacturing_source", "required": true, "file_matchers": [], "sheet_matchers": [], "field_map": {"period": "期间", "metric_label": "科目", "unit": "单位", "planned": "月度预定", "actual": "月度实绩", "annual_month_plan": "年度计划·当月目标"}}],
+  "field_aliases": {"period": ["期间", "日期", "业务日期"], "metric_label": ["科目", "指标", "指标名称"], "unit": ["单位"], "planned": ["月度预定", "计划值"], "actual": ["月度实绩", "实际值"], "annual_month_plan": ["年度计划·当月目标", "当月目标"]},
+  "row_rules": {"header_rows_max": 20, "detail_key_fields": ["period", "metric_label"], "date_field": "period", "amount_fields": ["planned", "actual", "annual_month_plan"]},
+  "normalization": {"currency": "CNY", "tax_basis": "inclusive", "timezone": "Asia/Shanghai", "status_map": {"有效": "valid", "作废": "invalid"}},
+  "dedupe": {"same_content": "dedupe", "different_content": "manual_review", "detail_and_total": "manual_review"},
+  "notes": "内置示例 profile；字段和文件可由企业 profile 版本替换，输出合同不变。"
+}

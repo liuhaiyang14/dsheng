@@ -3,16 +3,16 @@
 ## 扫描：工具能读什么
 
 ```bash
-dsheng scan --workspace <id> --dir <path> --json
+dsheng scan --workspace <id> --dir <path> --source-profile <profile-id> --json
 ```
 
 - 支持 `.xlsx` / `.xls` / `.csv`（UTF-8 或带 BOM；乱码 CSV 需按提示转 GB18030，工具
   不猜编码）。其他扩展名（如 `.pptx`）只登记为 `pending_inputs` 提示，不解析、不外发。
-- 扫描识别每个文件的工作表角色：**核算表 / 推移表 / 差异分析 / 任务单检视 /
-  任务单计划 / 任务依据 / 图表**，依赖确定的结构锚点（工作表名 + 表头别名），不做
-  模糊猜测。识别不了的工作表按通用表处理，进入手动映射。
+- 扫描按选定的 `source_profile` 识别原始业务文件和工作表角色；企业类型、文件清单、字段别名、主明细和去重规则由 profile 提供。首版内置 `manufacturing_demo`、`service_demo`，也可传符合合同的 profile JSON；未知 ID 会明确报错。未配置 profile 时可使用 `--generic` 或省略该选项，运行时均绑定 generic profile，绝不自动套用示例企业。
+- `核算表`、`推移表`、`差异分析`、`图表` 是生成结果或附加导出层，不是导入输入。扫描到这些工作表会提示 `generated_output_input_not_allowed`，需要重新选择原始 source 文件。
 - 输出 `scanSummaryView`：文件列表（`file_label`、`row_count`、`sheet_count`、
   `mapping_status: mapped|pending_review`）、覆盖区间与待处理项。扫描是只读本地操作。
+- generic source 只生成候选映射并保持 `pending_review`；在数据源页面点击“确认通用字段映射”后，确认记录会绑定目录和 profile hash，随后才允许运行 analyze。目录、profile 或表头变化会重新要求确认。
 
 ## 字段映射
 
@@ -70,17 +70,19 @@ dsheng source-conflict resolve --workspace <id> --run <id> --input-json resolve.
 ## 空白模板包
 
 ```bash
-dsheng template download --package import --out import-template-v1.zip
+dsheng template download --package source --profile <manufacturing_demo|service_demo|profile-json> --out source-template.zip
+dsheng template download --package output --contract two_tables_v1 --out two-tables-output-v1.zip
 ```
 
-ZIP 含三份空白 XLSX（`核算表模板.xlsx`、`推移表模板.xlsx`、`任务单模板.xlsx`）与
-`字段说明.md`；无任何示例金额、客户或人员数据。模板第 1–4 行是元数据键位（模板
-版本、企业/币种/税口径、来源期间、时区/周始/财年/覆盖度），第 6 行列名，第 7 行起
-填数。元数据留空时导入预览会要求补齐。
+source ZIP 的文件、列和填表说明由 profile 决定；无任何示例金额、客户或人员数据。
+output ZIP 只包含固定 `two_tables_v1` 的核算表/推移表输出布局（及约定的来源元数据），
+它不是导入模板。两类模板都使用第 1–4 行元数据键位，第 6 行列名，第 7 行起填数；元数据
+留空时导入预览会要求补齐。
 
-导入建议流程：**下载模板 → 按列名填写 → `scan` 检查 mapping_status → 处理
-pending/冲突 → `analyze`**。如果你的表已是既有布局，也可直接扫描：工具按结构锚点
-识别，未识别部分进入手动映射，不需要强行套模板。
+导入建议流程：**选择 source profile → 下载对应来源模板（可选）→ 填写原始 source →
+`scan` 检查 mapping_status → 处理 pending/冲突 → `analyze` 生成核算表和推移表**。
+已有原始布局也可直接扫描；未识别部分进入手动映射，不需要强行套模板。生成的两表只能
+在展示/下载页查看或导出，不能再次作为 source 导入。
 
 ## 数值与文本约定（导入侧）
 

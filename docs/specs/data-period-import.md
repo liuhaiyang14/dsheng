@@ -217,20 +217,46 @@ policy生效[from,to)左闭右开，最后to=null；拒绝重叠。默认分析�
 
 指标行名只按catalog.label_aliases映射。未注册行须用户确认custom metric的单位、语义、方向及聚合。合计/小计/总计行和累计列先标aggregate，可作范围观察或对账，不能和明细重复求和。
 
-### 4.3 适配器与已知结构锚点
+### 4.3 适配器与已知 source 结构锚点
 
 本节锚点来自本机只提取表头/合并结构的核查，无业务行/数值。坐标用于说明真实布局形态，不是唯一匹配条件：
 
-- accounting：sheet`核算表`且metric_label+至少一项actual/planned/annual_month_plan；已知第4行可出现B科目、C计算公式/取数来源、D MP、E年度当月目标、F月度预定、G预定销售额占比、H月度实绩、I实绩占比、J差异、K预定比、L年度计划比。跨整行合并项为section。`差异分析`可为B目标、C实绩、E状态的稀疏结构，空分隔列不丢失；状态文字不是数字。
-- trend：sheet`推移表`，metric_label或A列科目锚点+至少一可解析期间列；第4行可为期间列、L实绩/预定、M预定比、N年度计划比；累计行/列单独标范围观察。**转置布局（2026-11-04 用户批准增量）**：期间为行（首列 period 表头如`月份`，数据行 A 列为 YYYY-MM／YYYY年M月／明确起止）且其余列首行为指标名（按目录 label/别名匹配，可带`(元)`等单位后缀）时，同样命中 trend——每行构成该期间多指标观察；`累计`行仍单独标范围观察不与月行重复相加；任一列无法解析为指标名时整表回退 generic_table。时期接受YYYY-MM、YYYY年M月、YYYY-MM-DD或明确起止；`1月`须已有明确年元数据。图表sheet可能只有标题/内嵌chart，只取chart引用的已解析单元格作证据，不从图像猜值。
+- source profile 自行定义原始业务角色（例如销售、采购、发票、收付款、费用、人工、资金或其他企业专属角色）及其文件/工作表/字段锚点；角色 ID 不要求沿用当前示例的11类名称。profile 必须把识别结果映射为规范化 observation/证据和指标目录中的稳定字段，不能直接生成核算表或推移表。
+- `核算表`、`推移表`、`差异分析`、`图表` 只属于 `two_tables_v1` 及其附加导出层，**不是 source 输入角色**。扫描 source 时遇到这些生成结果工作表必须标为 `generated_output_input_not_allowed`，不参与两表计算；用户若要重算，应重新导入原始 source 文件。
+- 原始 source 的期间可以是交易日期、明确月份/季度或 profile 定义的业务期间；不从生成结果的累计列、缓存公式或文件名猜实绩。图表/会议导出只读同一 analysis result，不从图像猜值。
 - task：sheet后缀`任务单检视`或`任务单计划`（允许当月/下月/本期/下期/日期前缀），另有`任务依据`；表头须task_action或metric_label，且owner/due_date/planned/actual之一。已知检视布局为类别、指标目标、MP、预定、实绩、达成率、复盘说明、后续计划；计划布局为类别、指标目标、MP、预定、行动方案、时间节点、责任、状态。源“已完成”仅为导入候选信息，不凭标题覆盖应用任务。
 - 任务依据可有多块重复表头（例如不同位置起始），逐块识别并分配source_ref，标题/说明不当明细；未识别块进人工范围映射。不同块业务范围不相同时不合并。
-- 一文件可命中多个sheet角色，每sheet只一个；冲突需用户选，不能按适配器顺序吞表。独立推移与核算内推移依§2去重。
-- 不满足结构则generic_table：用户确认表头/数据范围、字段/单位、日期、record_kind、业务行键、coverage。部分识别保留待映射，不声称全表完成。
+- 一文件可命中多个 source 角色，每 sheet 只一个；冲突需用户选，不能按适配器顺序吞表。生成结果工作表不会作为 source 角色进入去重或计算。
+- 不满足结构则generic_table：标准字段表头可先生成候选映射供用户审阅；未知或歧义字段仍须确认表头/数据范围、字段/单位、日期、record_kind、业务行键、coverage。部分识别保留待映射，不声称全表完成。
+- generic_table 的候选映射在首次分析前必须由用户确认；确认绑定目录、profile hash 和表头签名，未确认时只提供扫描结果，不落 analysis revision。
+
+### 4.4 企业类型 source profile 与固定两表输出
+
+§4.3 的锚点只属于一个可替换的 `source_profile`，不能被实现当作全局业务分支。工作区在扫描前选择 profile；没有匹配 profile 时必须进入 `generic_table`/手动映射，并明确显示“企业类型未配置”，不能自动套用当前示例制造业 profile。profile 的机器合同是 [`contracts/v1/source-profile.schema.json`](../../contracts/v1/source-profile.schema.json)。
+
+profile 允许变化的内容包括：文件/工作表角色、字段别名、表头和分块规则、业务日期/状态/单位/税口径、主单与明细归属、去重键、冲突优先级、费用分类映射和来源模板列。profile 不允许包含可执行代码、任意 Excel 公式或直接写表格单元格的逻辑；它只能产出统一的 normalized observation、source evidence、coverage 和 pending/conflict 状态。指标公式仍来自工作区 metric definitions/有限 AST，不从文件名或列名拼接公式。
+
+两表生成固定经过以下边界：
+
+```text
+source files
+  → selected source_profile + version/hash
+  → normalized observations/evidence
+  → workspace metric definitions + confirmed formulas
+  → analysis revision
+  → two_tables_v1 exporter
+```
+
+`two_tables_v1` 固定核算表、推移表的指标标识、列顺序、状态语义、缺失原因、来源证据和 revision 元数据；企业专属字段不得泄漏到两表导出分支。差异分析、图表、任务和会议版是同一 analysis result 的附加投影，不能为不同企业复制另一套核心计算。
+
+profile、source template、mapping 或费用分类改变时，source manifest/input fingerprint 变化并创建新的 analysis revision；历史两表、诊断和任务继续绑定旧 profile/mapping/hash。等待中的生成提交若发现 profile/hash/revision 变化，必须拒绝写入当前结果并保留旧结果。
 
 ## 5. 空白模板和导出布局
 
-`import-template-v1.zip`含三份空白XLSX和字段说明Markdown，无样例金额、客户、人员。统一第1行template_version=1，第2行workspace/currency/tax，第3行source_from/source_to/grain，第4行policy timezone/week_start/fiscal_start及coverage，第5行空，第6行列名，第7行起输入。元数据为空时必须运行时补齐。
+模板分为两个合同：
+
+1. `template download --package source --profile <id>` 生成所选企业类型的空白来源模板包。模板列、文件清单和填表说明由 profile 决定；无样例金额、客户、人员。统一第1行template_version，第2行workspace/currency/tax，第3行source_from/source_to/grain，第4行policy timezone/week_start/fiscal_start及coverage，第5行空，第6行 profile 定义的列名，第7行起输入。元数据为空时必须运行时补齐。
+2. `template download --package output --contract two_tables_v1` 生成固定两表输出模板。其列结构沿用本节下表和既有导出合同，与 source profile 无关。任务单/会议版为附加输出，不得反过来定义 source 输入。
 
 | 文件/sheet | 从A列起的列布局 |
 | --- | --- |
@@ -257,4 +283,4 @@ policy生效[from,to)左闭右开，最后to=null；拒绝重叠。默认分析�
 
 ## 6. 验收与变更
 
-合成用例必须由独立Decimal/日期计算验证期望值，再接入Rust测试；UI/CLI读取同一核心结果。模板产物须空白打开→填合成值→导入→导出往返，核对布局、合并、空值、数字精度、总计/累计和三文件边界。规则已固定；企业填写口径/来源/覆盖是产品运行时输入，不是工程师未做的业务分析。缺必要输入时返回明确原因。
+合成用例必须由独立Decimal/日期计算验证期望值，再接入Rust测试；UI/CLI读取同一核心结果。每个 source profile 至少有一份脱敏输入夹具，必须经过空白来源模板→导入→规范化观察→固定 `two_tables_v1` 导出往返，核对布局、合并、空值、数字精度、总计/累计和来源证据。至少两个 profile 的同一规范化观察必须生成逐列一致的两表 golden fixture。规则已固定；企业填写口径/来源/覆盖是产品运行时输入，不是工程师未做的业务分析。缺必要输入时返回明确原因。

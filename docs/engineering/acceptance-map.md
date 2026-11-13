@@ -1,6 +1,6 @@
 # 验收用例 → 工作包归属映射（Phase 0 基线）
 
-依据主计划 §15（用例 1–71）与 §12.3（工作包所有权）。自动化级别：
+依据主计划 §15（用例 1–79）与 §12.3（工作包所有权）。自动化级别：
 
 - **A（自动）**：CI 可重复执行（cargo test / vitest / 静态检查）。
 - **S（半自动）**：本机脚本 + 人工触发构建/安装步骤。
@@ -12,7 +12,7 @@ UI=UI 工作包；CLI=CLI/导出工作包；DOC=Skill 与手册工作包；REL=�
 
 | 用例 | 责任 | 级别 | 证据/实现位置 |
 | --- | --- | --- | --- |
-| 1 导入两表一单.xlsx 真实覆盖期 | DATA+MAIN | M | 本机受控核对；合成断言入 DATA 测试 |
+| 1 导入当前示例企业原始 source 文件包并生成两表 | DATA+MAIN | M | 本机受控核对；合成断言入 DATA 测试；生成的核算表/推移表不作为输入 |
 | 2 公式缓存空时指标与独立计算一致 | DATA | A | DC 算例 D01–D28 执行 |
 | 3 无日期汇总文件不生成合成差异 | DATA | A | import 测试 |
 | 4 CLI/UI 指标 JSON 一致 | CLI+UI+MAIN | A | 集成测试（同一 core 结果断言） |
@@ -25,14 +25,14 @@ UI=UI 工作包；CLI=CLI/导出工作包；DOC=Skill 与手册工作包；REL=�
 | 11 导出无 Key、公式注入防护 | CLI | A | 导出测试 |
 | 12 两平台包启动 + unsigned 说明 | REL | M | 干净环境清单 |
 | 13 三任务工作表结构与字段 | CLI+DATA | A | 模板/导出往返测试 |
-| 14 真实模板适配器锚点识别 | DATA | M+A | 本机核对 + 合成夹具 |
+| 14 source profile 适配器锚点识别与生成结果输入拒绝 | DATA | M+A | 本机核对 + 合成夹具；核算表/推移表作为输入时返回 generated_output_input_not_allowed |
 | 15 月份键→月/季推移；文件级不拆趋势 | DATA | A | P 算例 |
 | 16 步骤/进度/舍入按 TS 状态表 | DATA+CLI | A | TS-01…TS-50 |
 | 17 导出 ZIP 内容边界 | CLI | A | 打包清单断言 |
 | 18 便携 ZIP 含程序/CLI/migration | REL | M+S | 包检查测试 |
 | 19 重做仅追加 revision、保留 run | DATA | A | run/revision 测试 |
 | 20 历史期间查询/源离线可查 | DATA | A | snapshot 测试 |
-| 21 模板包三类工作簿空白 | CLI | A | 模板生成测试 |
+| 21 profile 来源模板与 two_tables_v1 输出模板分离 | CLI | A | 模板生成测试；两表输出模板不回流为输入 |
 | 22 环比/同比与不可比原因 | DATA | A | P 算例 + reason 优先级 |
 | 23 图表筛选/缩放/证据/PNG | UI | A+M | vitest + 手册走查 |
 | 24 时间线按日期筛选、缺日期不排序 | UI+DATA | A | timeline 排序测试 |
@@ -83,8 +83,17 @@ UI=UI 工作包；CLI=CLI/导出工作包；DOC=Skill 与手册工作包；REL=�
 | 69 LV 矩阵真实复测 | MAIN | LV | 已达成并冻结（2026-11-02） |
 | 70 identifier/备份/恢复/四产物 | REL+DATA | A+M | migration/backup 测试 + 平台清单 |
 | 71 独立只读交叉复审 | MAIN | PT | 每轮集成后执行 |
+| 72 多 profile 规范观察→相同 two_tables_v1 golden | DATA+CLI+MAIN | A | 两个脱敏 profile 夹具逐列比较固定输出 |
+| 73 profile schema/跨字段唯一性/固定输出合同 | DATA+MAIN | A | source-profile.schema.json + validate_contracts.py 负例 |
+| 74 profile/mapping/hash 变更与旧 revision 隔离 | DATA | A | analysis revision/异步提交门禁测试 |
+| 75 source profile 模板与 two_tables_v1 输出模板分离 | CLI+UI | A+M | source/output 双模板生成与回流拒绝 |
+| 76 多布局 raw source、generic/manual mapping、缺核心输入 | DATA+CLI | A | source fixture→normalized→two_tables_v1；待补/冲突状态断言 |
+| 77 exporter 只依赖 normalized analysis result | CLI+MAIN | A | 静态依赖检查 + 新 profile 不改 exporter 的 golden 测试 |
+| 78 profile/normalize/metric/exporter 版本与所有权 | MAIN+DATA+CLI | PT+A | 合同版本、hash、模块边界和变更影响检查 |
+| 79 任务生成必须依赖当前 revision 的两表 | MAIN+UI+CLI+DATA | A | 无核算表或推移表时 UI/CLI 本地拒绝且不创建 confirmation/Provider 请求 |
+| 80 两表展示页签与下载 | UI+CLI+MAIN | A+M | 生产 UI 在同一页面切换核算表/推移表并调用 `export_tables` 下载单表或两表包；缺两表时按钮禁用 |
 
-> 基线 #8 冻结：本映射随合同演进由主 Agent 维护；新增用例必须先落归属再实现。
+> 基线 #8 冻结：本映射随合同演进由主 Agent 维护；新增用例必须先落归属再实现。当前已扩展至 80 条。
 
 ## 证据台账（随集成轮更新；主 Agent 维护）
 

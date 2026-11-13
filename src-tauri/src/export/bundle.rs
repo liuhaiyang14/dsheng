@@ -21,6 +21,7 @@ pub fn metadata_json(data: &ExportData, logs: &[(&str, &DecimalTextLog)]) -> ser
     json!({
         "schema_version": "1",
         "kind": "business_bundle",
+        "output_contract_id": m.output_contract_id,
         "workspace_id": m.workspace_id,
         "workspace_name": m.workspace_name,
         "run_id": m.run_id,
@@ -74,6 +75,7 @@ pub fn build_bundle(data: &ExportData) -> ExportResult<Vec<u8>> {
     );
     let analysis = json!({
         "schema_version": "1",
+        "output_contract_id": data.meta.output_contract_id,
         "workspace_id": data.meta.workspace_id,
         "run_id": data.meta.run_id,
         "revision_no": data.meta.revision_no,

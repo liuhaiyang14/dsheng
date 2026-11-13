@@ -48,6 +48,12 @@ pub enum Command {
         workspace: Option<String>,
         #[arg(long)]
         dir: String,
+        /// source profile id 或本地 profile JSON 路径
+        #[arg(long, conflicts_with = "generic")]
+        source_profile: Option<String>,
+        /// 未配置企业 profile 时显式使用通用手工映射模式
+        #[arg(long)]
+        generic: bool,
     },
     Mapping {
         #[command(subcommand)]
@@ -82,6 +88,12 @@ pub enum Command {
         recalculate: bool,
         #[arg(long)]
         input_json: Option<String>,
+        /// source profile id 或本地 profile JSON 路径
+        #[arg(long, conflicts_with = "generic")]
+        source_profile: Option<String>,
+        /// 未配置企业 profile 时显式使用通用手工映射模式
+        #[arg(long)]
+        generic: bool,
     },
     Analysis {
         #[command(subcommand)]
@@ -659,6 +671,11 @@ pub enum TemplateAction {
     Download {
         #[arg(long)]
         package: String,
+        /// output 包固定为 two_tables_v1；source 包可指定 profile id
+        #[arg(long)]
+        contract: Option<String>,
+        #[arg(long)]
+        profile: Option<String>,
         #[arg(long)]
         out: String,
     },

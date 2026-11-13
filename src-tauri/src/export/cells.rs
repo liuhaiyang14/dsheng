@@ -10,6 +10,11 @@ use super::ExportResult;
 use dsheng_core::analysis::export_layout::{csv_export_text, xlsx_export_kind, XlsxCellKind};
 use rust_xlsxwriter::{Format, Worksheet};
 
+/// Excel 单元格文本上限（UTF-16 code units）。长证据串必须保留为可下载文本，
+/// 但不能让一个来源单元格超过 XLSX 的硬限制而使整份核算表导出失败。
+const XLSX_MAX_TEXT_UNITS: usize = 32_767;
+const XLSX_TRUNCATION_MARKER: &str = "…[已截断]";
+
 /// 一次写入的记录：>15 位有效数的单元格（number_storage=decimal_text）。
 #[derive(Debug, Default, Clone)]
 pub struct DecimalTextLog {
@@ -38,9 +43,32 @@ pub fn a1(row: u32, col: u16) -> String {
 /// 写文本格（含防护：=+-@ 开头仍写文本类型——rust_xlsxwriter write_string 本就
 /// 不会解释为公式；显式用 string 类型即为防护）。
 pub fn write_text(ws: &mut Worksheet, row: u32, col: u16, text: &str) -> ExportResult<()> {
-    ws.write_string(row, col, text)
+    let safe = truncate_xlsx_text(text);
+    ws.write_string(row, col, &safe)
         .map(|_| ())
         .map_err(|e| super::ExportError(format!("写文本失败 {}: {e}", a1(row, col))))
+}
+
+/// 将任意业务文本压到 XLSX 单元格上限内；按 UTF-16 计数，避免 emoji 等
+/// 非 BMP 字符造成“看起来未超长、实际写入失败”的边界错误。
+pub fn truncate_xlsx_text(text: &str) -> String {
+    if text.encode_utf16().count() <= XLSX_MAX_TEXT_UNITS {
+        return text.to_owned();
+    }
+    let marker_units = XLSX_TRUNCATION_MARKER.encode_utf16().count();
+    let limit = XLSX_MAX_TEXT_UNITS.saturating_sub(marker_units);
+    let mut out = String::new();
+    let mut used = 0usize;
+    for ch in text.chars() {
+        let units = ch.len_utf16();
+        if used + units > limit {
+            break;
+        }
+        out.push(ch);
+        used += units;
+    }
+    out.push_str(XLSX_TRUNCATION_MARKER);
+    out
 }
 
 /// 写业务数值格：规范 decimal 字符串 → 数值或 decimal 文本（>15 位有效数）。
@@ -173,5 +201,14 @@ mod tests {
             csv_row(&["=SUM(A1)".into(), "a,b".into()]),
             "'=SUM(A1),\"a,b\""
         );
+    }
+
+    #[test]
+    fn xlsx_text_is_bounded_in_utf16_units() {
+        let text = "😀".repeat(20_000);
+        let safe = truncate_xlsx_text(&text);
+        assert!(safe.encode_utf16().count() <= XLSX_MAX_TEXT_UNITS);
+        assert!(safe.ends_with(XLSX_TRUNCATION_MARKER));
+        assert_eq!(truncate_xlsx_text("短文本"), "短文本");
     }
 }

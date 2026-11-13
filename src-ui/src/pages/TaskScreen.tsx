@@ -64,6 +64,9 @@ function friendlyError(err: unknown): string {
   if (/PROVIDER_KEY_MISSING|no Key|未配置.*Key/i.test(raw)) {
     return '模型服务缺少访问凭证，请到「Provider 设置」补充后重试。';
   }
+  if (/two_tables|核算表和推移表|两表/i.test(raw)) {
+    return '请先完成当前期间的核算表和推移表，再生成任务单。';
+  }
   if (/schema_version|required property|additional properties|unexpected|validation|json schema/i.test(raw)) {
     return '模型返回的内容格式不完整，未保存结果。请重新生成。';
   }
@@ -97,6 +100,7 @@ export function TaskScreen() {
   const hasData = workspaceHasData(app.data);
   const tasks = app.data.tasks;
   const detail = app.data.currentDetail;
+  const twoTablesReady = detail?.two_tables_ready === true;
   const historical = detail != null && app.data.history.some((h) => h.run_id === detail.run_id && h.current_revision_no !== detail.analysis_revision_no);
   const runId = detail?.run_id ?? null;
 
@@ -194,6 +198,10 @@ export function TaskScreen() {
     if (historical || sending || app.loading || busy || candidate) return;
     if (!hasData || !detail) {
       setNotice('请先为当前企业档案导入数据并完成字段映射。');
+      return;
+    }
+    if (!twoTablesReady) {
+      setNotice('请先完成当前期间的核算表和推移表，再生成任务单。');
       return;
     }
     setPreviewError(null);
@@ -335,7 +343,7 @@ export function TaskScreen() {
             </div>
           </div>
           <div className="head-controls">
-            <button type="button" className="primary" onClick={openGenerate}>
+            <button type="button" className="primary" onClick={openGenerate} disabled>
               生成任务单
             </button>
           </div>
@@ -370,7 +378,7 @@ export function TaskScreen() {
             type="button"
             className="primary"
             onClick={openGenerate}
-            disabled={busy || sending || historical || app.loading || candidate != null}
+            disabled={busy || sending || historical || app.loading || candidate != null || !twoTablesReady}
             data-testid="generate-task-button"
           >
             生成任务单
@@ -381,6 +389,18 @@ export function TaskScreen() {
       {notice ? (
         <div ref={noticeRef} className="notice workspace-empty" data-testid="task-notice" role="status">
           <span>{notice}</span>
+        </div>
+      ) : null}
+
+      {!twoTablesReady ? (
+        <div className="notice" data-testid="task-two-tables-gate" role="alert">
+          <b>任务单生成已暂停</b>
+          <span>
+            当前 analysis revision {detail.analysis_revision_no} 尚未同时生成核算表和推移表；完成本地核算后才允许发起任务生成请求。
+          </span>
+          <button type="button" className="outline" onClick={() => app.setScreen('tables')}>
+            查看两表状态
+          </button>
         </div>
       ) : null}
 

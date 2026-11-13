@@ -89,6 +89,13 @@ pub struct SourceSelection {
     pub sheet: Option<String>,
     pub range: String,
     pub content_hash: String,
+    /// 选择来源时绑定的 source profile 身份；纳入 manifest/fingerprint。
+    #[serde(default)]
+    pub source_profile_id: String,
+    #[serde(default)]
+    pub source_profile_version: u32,
+    #[serde(default)]
+    pub source_profile_hash: String,
 }
 
 /// 指标定义快照（按 metric_key/scope 排序后进指纹）。
@@ -98,6 +105,11 @@ pub struct MetricDefSnapshot {
     pub version: u32,
     pub scope: String,
     pub semantic_hash: String,
+    /// 导出旧 revision 时用于恢复累计/单位语义；旧数据库快照缺失时保持 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_signature: Option<serde_json::Value>,
 }
 
 /// 手工输入快照。
@@ -190,6 +202,9 @@ impl AnalysisRevisionInput {
                 "range": s.range,
                 "sheet": s.sheet,
                 "source_id": s.source_id,
+                "source_profile_id": s.source_profile_id,
+                "source_profile_version": s.source_profile_version,
+                "source_profile_hash": s.source_profile_hash,
             })).collect::<Vec<_>>(),
             "target_period": self.target_period.as_ref().map(|p| p.to_period_string()),
         })

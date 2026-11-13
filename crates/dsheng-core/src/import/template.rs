@@ -14,6 +14,14 @@ use super::headers::{
 };
 use crate::contracts::domain::DateRange;
 
+/// 生成结果工作表名称（仅属于 two_tables_v1/附加导出层，禁止作为 source 输入）。
+///
+/// 该判定只按精确 sheet 名称，不读取文件名或内容，避免把原始 source
+/// 的企业自定义表误判为生成结果。
+pub fn is_generated_output_sheet_name(name: &str) -> bool {
+    matches!(name.trim(), "核算表" | "推移表" | "差异分析" | "图表")
+}
+
 /// sheet 角色。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SheetRole {
@@ -84,11 +92,11 @@ pub fn detect_sheet_role_with_names(
 ) -> Option<SheetMatch> {
     let blocks = find_header_blocks(header_rows);
     let best = blocks.first().cloned();
-    let fields: Vec<&'static str> = best
+    let fields: Vec<String> = best
         .as_ref()
-        .map(|b| b.columns.iter().map(|(_, f)| *f).collect())
+        .map(|b| b.columns.iter().map(|(_, f)| f.clone()).collect())
         .unwrap_or_default();
-    let has = |f: &str| fields.contains(&map_header_alias(f));
+    let has = |f: &str| fields.iter().any(|field| field == map_header_alias(f));
     let name = sheet_name.trim();
     let mut anchors = Vec::new();
     let mut transposed = None;
@@ -376,6 +384,13 @@ mod tests {
         assert_eq!(plan.role, SheetRole::TaskEvidence); // 有任务依据列 → 依据块
         assert!(is_task_sheet("当月任务单检视"));
         assert!(!is_task_sheet("核算表"));
+    }
+
+    #[test]
+    fn generated_output_sheets_are_marked_by_name() {
+        assert!(is_generated_output_sheet_name("核算表"));
+        assert!(is_generated_output_sheet_name("图表"));
+        assert!(!is_generated_output_sheet_name("销售明细"));
     }
 
     #[test]

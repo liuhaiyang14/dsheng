@@ -466,6 +466,96 @@
       "revenue_semantics": false
     },
     {
+      "metric_key": "value_added",
+      "label": "附加值（扣人工前）",
+      "label_aliases": [
+        "附加值",
+        "附加值（扣人工前）"
+      ],
+      "semantic_type": "configured_derived",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "exclusive_confirmed"
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "recompute_after_aggregation",
+      "formula": {
+        "op": "sub",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "order_gross_profit"
+          },
+          {
+            "op": "ref",
+            "metric_key": "operating_expense"
+          }
+        ]
+      },
+      "required_inputs": [
+        "order_gross_profit",
+        "operating_expense"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "扣人工前；费用分类未确认时保持待确认。",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
+      "metric_key": "operating_income",
+      "label": "经营收益（扣人工后）",
+      "label_aliases": [
+        "经营收益",
+        "经营收益（扣人工后）"
+      ],
+      "semantic_type": "configured_derived",
+      "unit": {
+        "dimension": "money",
+        "base_unit": "元",
+        "currency": "workspace_confirmed",
+        "tax_basis": "exclusive_confirmed"
+      },
+      "direction": "up",
+      "target_constraint_scope": "explicit_target_only",
+      "aggregation": "recompute_after_aggregation",
+      "formula": {
+        "op": "sub",
+        "args": [
+          {
+            "op": "ref",
+            "metric_key": "value_added"
+          },
+          {
+            "op": "ref",
+            "metric_key": "labor_cost"
+          }
+        ]
+      },
+      "required_inputs": [
+        "value_added",
+        "labor_cost"
+      ],
+      "denominator_policy": "positive_only",
+      "comparison_policy": {
+        "positive_base": "relative_change",
+        "zero_or_negative_base": "absolute_only"
+      },
+      "version": 1,
+      "configuration_required": false,
+      "notes": "扣人工后；人工未确认时保持待补。",
+      "effective_from": "workspace_initial_confirmation_date",
+      "revenue_semantics": false
+    },
+    {
       "metric_key": "order_gross_margin",
       "label": "订单毛利率",
       "label_aliases": [

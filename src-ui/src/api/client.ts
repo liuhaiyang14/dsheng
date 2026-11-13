@@ -58,6 +58,10 @@ export interface AnalyzeInput {
   policy_id?: string;
   /** 历史回算：按指定口径重算（可选）。 */
   recalculate?: boolean;
+  /** source profile 绑定；未提供时由核心使用 generic profile。 */
+  source_profile?: string;
+  /** 显式使用通用手工映射模式。 */
+  generic?: boolean;
 }
 
 export interface DiagnosisGenerateRequest {
@@ -142,14 +146,39 @@ export interface DshengClient {
   providerDelete(input: ProviderDeleteInput): Promise<void>;
 
   // ---- 数据源 ----
-  scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView>;
-  /** 空白导入模板包（三工作簿＋字段说明）落盘到指定路径。 */
-  templateDownload(outPath: string): Promise<ExportResult>;
+  scan(
+    workspaceId: string,
+    directoryLabel: string,
+    sourceProfile?: string,
+    generic?: boolean,
+  ): Promise<ScanSummaryView>;
+  /** 下载当前 source profile 的原始数据模板；两表属于生成输出，不在此包内。 */
+  templateDownload(
+    outPath: string,
+    packageName?: 'source' | 'output',
+    profile?: string,
+    contract?: string,
+  ): Promise<ExportResult>;
+  /** 导出当前已生成的两表；输出层不参与 source 导入。 */
+  exportTables(input: {
+    workspaceId: string;
+    runId: string;
+    revision?: number;
+    kind: 'accounting' | 'trend' | 'bundle';
+    outPath: string;
+  }): Promise<ExportResult>;
   /** 一键注册常用指标（含真实科目全名别名；幂等，已注册跳过）。 */
   metricRegisterDefaults(workspaceId: string): Promise<{ registered: number; skipped_already_present: string[]; failed: unknown[] }>;
   fieldMappings(workspaceId: string, runId: string): Promise<
     { tool_field: string; source_label: string; recognized: string; usage: string }[]
   >;
+  /** 首次 generic source 分析前确认字段映射；确认绑定目录与 profile hash。 */
+  sourceMappingSet(
+    workspaceId: string,
+    directoryLabel: string,
+    profileHash: string,
+    mappings?: unknown[],
+  ): Promise<{ confirmed: boolean }>;
 
   // ---- 经营分析（本地计算，无 Provider） ----
   analyze(input: AnalyzeInput): Promise<AnalysisRunView>;

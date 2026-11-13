@@ -14,6 +14,8 @@
 
 ## 2. 分析版本、输入指纹与提交门禁
 
+任务生成的前置条件是当前 analysis revision 已成功物化固定 `two_tables_v1` 输出中的核算表和推移表。缺任一输出时，服务返回本地数据校验错误并停止在 Provider 之前；UI 应禁用“生成任务单”，CLI 不得创建 confirmation 或发送请求。两表输出只从当前 revision 的 normalized observations/analysis 读取，不能通过重新导入旧核算表或推移表绕过该门禁。
+
 ### 2.1 不可变分析 revision
 
 每次 analyze 成功都会事务创建一份不可变 analysis revision，包括第一次 revision 1；analysis_runs.current_revision_no 是当前指针。不能只保存旧 revision 而漏掉当前输入快照。相同 workspace+period_key 重做仍保留 run_id，但增加 revision_no；输入相同也产生新的显式重做记录，不自动把旧诊断当作新版结果。

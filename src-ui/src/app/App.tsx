@@ -7,6 +7,7 @@ import { PageErrorBoundary } from '../components/PageErrorBoundary';
 import { ErrorBanner } from '../components/bits';
 import { SourceScreen } from '../pages/SourceScreen';
 import { AnalysisScreen } from '../pages/AnalysisScreen';
+import { TablesScreen } from '../pages/TablesScreen';
 import { DiagnosisScreen } from '../pages/DiagnosisScreen';
 import { TaskScreen } from '../pages/TaskScreen';
 import { HistoryScreen } from '../pages/HistoryScreen';
@@ -16,6 +17,7 @@ import { SystemSettingsScreen } from '../pages/SystemSettingsScreen';
 const NAV_ITEMS: { id: ScreenId; icon: string }[] = [
   { id: 'source', icon: '↳' },
   { id: 'analysis', icon: '⌁' },
+  { id: 'tables', icon: '▤' },
   { id: 'diagnosis', icon: '⌕' },
   { id: 'task', icon: '□' },
   { id: 'history', icon: '◷' },
@@ -143,6 +145,7 @@ function Shell() {
           <PageErrorBoundary key={app.screen === 'provider' || app.screen === 'system-settings' ? `${app.screen}:${app.activeWorkspaceId}` : `${app.screen}:${app.activeWorkspaceId}:${app.selectedRun?.runId ?? ''}:${app.selectedRun?.revision ?? 'current'}:${app.data.currentDetail?.analysis_revision_no ?? ''}`}>
             {app.screen === 'source' ? <SourceScreen /> : null}
             {app.screen === 'analysis' ? <AnalysisScreen /> : null}
+            {app.screen === 'tables' ? <TablesScreen /> : null}
             {app.screen === 'diagnosis' ? <DiagnosisScreen /> : null}
             {app.screen === 'task' ? <TaskScreen /> : null}
             {app.screen === 'history' ? <HistoryScreen /> : null}

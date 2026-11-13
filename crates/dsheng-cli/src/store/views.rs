@@ -447,6 +447,38 @@ pub fn task_ids(conn: &Connection, workspace_id: Uuid, run: Option<&str>) -> Cli
         .collect()
 }
 
+/// 导出/读取不可变分析 revision 的任务；同一 run 的后续 revision 不得污染历史导出。
+pub fn task_ids_for_revision(
+    conn: &Connection,
+    workspace_id: Uuid,
+    run_id: &str,
+    revision: u32,
+) -> CliResult<Vec<Uuid>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT t.task_id FROM tasks t
+         JOIN task_period_links l ON l.task_id = t.task_id
+         WHERE t.workspace_id = ?1 AND l.run_id = ?2 AND l.analysis_revision_no = ?3
+         ORDER BY t.created_at",
+    )?;
+    let ids: Vec<String> = stmt
+        .query_map(
+            params![workspace_id.to_string(), run_id, revision as i64],
+            |r| r.get(0),
+        )?
+        .collect::<Result<_, _>>()
+        .map_err(CliError::from)?;
+    ids.into_iter()
+        .map(|raw| {
+            Uuid::parse_str(&raw).map_err(|_| {
+                CliError::new(
+                    dsheng_core::contracts::cli::CliErrorCode::LocalSaveFailed,
+                    "task_id 非法",
+                )
+            })
+        })
+        .collect()
+}
+
 /// timelineEntryView（planned_start/due/completed/progress_event；date null 不参与排序）。
 pub fn timeline_entries(
     conn: &Connection,

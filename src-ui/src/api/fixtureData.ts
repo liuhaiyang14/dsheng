@@ -142,27 +142,27 @@ export const fixtureScan: Record<string, ScanSummaryView> = {
     files: [
       {
         file_id: 'f-1',
-        file_label: '示例核算表_202610.xlsx',
+        file_label: '示例销售出库_202610.xlsx',
         row_count: 824,
         sheet_count: 2,
         mapping_status: 'mapped',
-        note: '核算表、差异分析 · 期间字段已识别',
+        note: '原始销售出库 · 期间字段已识别',
       },
       {
         file_id: 'f-2',
-        file_label: '示例推移表_202610.xlsx',
+        file_label: '示例采购入库_202610.xlsx',
         row_count: 1372,
         sheet_count: 2,
         mapping_status: 'mapped',
-        note: '日度推移 · 日期连续',
+        note: '原始采购入库 · 日期连续',
       },
       {
         file_id: 'f-3',
-        file_label: '示例任务依据_202610.xlsx',
+        file_label: '示例费用人工_202610.xlsx',
         row_count: 290,
         sheet_count: 3,
         mapping_status: 'pending_review',
-        note: '任务检视、下期计划、任务依据',
+        note: '经营费用与实发工资 · 待补项可补录',
       },
     ],
     total_rows: 2486,
@@ -188,31 +188,31 @@ export const fixtureFieldMappings: Record<string, FieldMappingRow[]> = {
   [WS_DEMO_ID]: [
     {
       tool_field: '指标实绩',
-      source_label: '核算表 / 10月实绩',
+      source_label: '销售出库 / 含税售价',
       recognized: '数值 · 已匹配',
       usage: '计算预实差异与达成率',
     },
     {
       tool_field: '计划 / 目标',
-      source_label: '核算表 / 月度预定',
+      source_label: '目标补录 / 月度预定',
       recognized: '数值 · 已匹配',
       usage: '作为目标对照基准',
     },
     {
       tool_field: '分析期间',
-      source_label: '推移表 / 业务日期',
+      source_label: '销售出库 / 业务日期',
       recognized: '日期 · 已匹配',
       usage: '按日聚合，并汇总为周/月/季',
     },
     {
       tool_field: '工时',
-      source_label: '推移表 / 有效工时',
+      source_label: '工时台账 / 有效工时',
       recognized: '1 天缺值',
       usage: '缺值日不参与单位时间指标',
     },
     {
       tool_field: '任务责任岗位',
-      source_label: '任务依据 / 责任岗位',
+      source_label: '任务原始导出 / 责任岗位',
       recognized: '文本 · 已匹配',
       usage: '生成责任人和任务时间线',
     },
@@ -266,6 +266,7 @@ export const fixtureAnalysisRun: AnalysisRunView = {
   analysis_input_fingerprint:
     'a13f2c9d84a1b6e0572c8d4f1a9b3e7c6d52f8a014b9e6c3d7f2a8b5e1c4d9f06b7',
   grain: 'day',
+  two_tables_ready: true,
   metrics: [
     {
       metric_id: 'm-settle',

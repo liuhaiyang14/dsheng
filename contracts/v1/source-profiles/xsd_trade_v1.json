@@ -1,0 +1,36 @@
+{
+  "schema_version": "1",
+  "profile_id": "xsd_trade_v1",
+  "version": 1,
+  "enterprise_type": "trading_manufacturing",
+  "display_name": "多业务单据经营源适配器",
+  "source_template_version": 1,
+  "template": {"files": ["sales-outbound.xlsx", "purchase-inbound.xlsx", "salary.xlsx", "expenses.xlsx", "receipts.xlsx", "payments.xlsx", "invoices.xlsx"], "sheet_name": "source", "columns": ["期间", "指标", "单位", "实际值"]},
+  "output_contract_id": "two_tables_v1",
+  "file_roles": [
+    {"role_id":"sales_outbound","required":false,"file_matchers":["销售出库"],"sheet_matchers":["销售出库"],"field_map":{}},
+    {"role_id":"purchase_inbound","required":false,"file_matchers":["采购入库"],"sheet_matchers":["采购入库"],"field_map":{}},
+    {"role_id":"purchase_order","required":false,"file_matchers":["采购订单"],"sheet_matchers":["采购订单"],"field_map":{}},
+    {"role_id":"salary","required":false,"file_matchers":["工资条"],"sheet_matchers":["工资条"],"field_map":{}},
+    {"role_id":"expenses","required":false,"file_matchers":["费用报销单"],"sheet_matchers":["费用报销单"],"field_map":{}},
+    {"role_id":"receipts","required":false,"file_matchers":["收款单"],"sheet_matchers":["收款单"],"field_map":{}},
+    {"role_id":"payments","required":false,"file_matchers":["付款单"],"sheet_matchers":["付款单"],"field_map":{}},
+    {"role_id":"invoices","required":false,"file_matchers":["销项发票"],"sheet_matchers":["销项发票"],"field_map":{}},
+    {"role_id":"generic_source","required":false,"file_matchers":[],"sheet_matchers":[],"field_map":{"period":"期间","metric_label":"指标","planned":"计划值","actual":"实际值"}}
+  ],
+  "field_aliases": {"period":["期间"],"metric_label":["指标","科目"],"unit":["单位"],"planned":["计划值","月度预定"],"actual":["实际值","月度实绩"]},
+  "row_rules": {"header_rows_max": 20, "detail_key_fields":["data_id"], "date_field":"期间", "amount_fields":["实际值"]},
+  "normalization": {"currency":"CNY", "tax_basis":"confirm_at_runtime", "timezone":"Asia/Shanghai", "status_map":{"确认":"valid","审批通过":"valid","流转完成":"valid","进行中":"valid","作废":"invalid"}},
+  "dedupe": {"same_content":"dedupe", "different_content":"manual_review", "detail_and_total":"select_authoritative"},
+  "record_mappings": [
+    {"mapping_id":"sales_net_outbound","file_matchers":["销售出库"],"sheet_matchers":["销售出库"],"metric_key":"sales_net","value_fields":["出库产品售价总额(含税)/元"],"date_fields":["出库时间"],"status_field":"产品出库确认","accepted_statuses":["确认"]},
+    {"mapping_id":"order_cost_outbound","file_matchers":["销售出库"],"sheet_matchers":["销售出库"],"metric_key":"order_cost","value_fields":["出库产品成本总额/元"],"date_fields":["出库时间"],"status_field":"产品出库确认","accepted_statuses":["确认"]},
+    {"mapping_id":"inbound_amount","file_matchers":["采购入库"],"sheet_matchers":["采购入库"],"metric_key":"inbound_amount","value_fields":["入库产品采购价总额(含税)/元"],"date_fields":["入库时间"],"status_field":"合格品入库确认","accepted_statuses":["确认","合格"]},
+    {"mapping_id":"purchase_signed","file_matchers":["采购订单"],"sheet_matchers":["采购订单"],"metric_key":"purchase_signed_amount","value_fields":["采购金额合计(不含税)/元"],"date_fields":["订单签订日期"],"status_field":"审批结果","accepted_statuses":["审批通过","流转完成"]},
+    {"mapping_id":"labor_cost","file_matchers":["工资条"],"sheet_matchers":["工资条"],"metric_key":"labor_cost","value_fields":["当月实发"],"date_fields":["薪资归属年份","薪资归属月份"],"period_kind":"year_month"},
+    {"mapping_id":"operating_expense","file_matchers":["费用报销单"],"sheet_matchers":["费用报销单"],"metric_key":"operating_expense","value_fields":["报销金额/元"],"date_fields":["申请时间"],"status_field":"报销审核结果","accepted_statuses":["通过"],"requires_confirmation":true,"scope_field":"报销类型"},
+    {"mapping_id":"receipts","file_matchers":["收款单"],"sheet_matchers":["收款单"],"metric_key":"receipts_amount","value_fields":["收款金额/元"],"date_fields":["收款时间"],"status_field":"收款方式"},
+    {"mapping_id":"payments","file_matchers":["付款单"],"sheet_matchers":["付款单"],"metric_key":"payments_amount","value_fields":["付款金额/元"],"date_fields":["付款时间"]},
+    {"mapping_id":"outbound_invoice","file_matchers":["销项发票"],"sheet_matchers":["销项发票"],"metric_key":"invoice_amount","value_fields":["发票金额(含税)/元"],"date_fields":["开票时间"],"status_field":"开票状态","accepted_statuses":["已开票","开票成功","完成"]}
+  ]
+}

@@ -8,6 +8,7 @@ import { FIXTURE_DEMO_ANNOTATION, type FieldMappingRow } from '../api';
 /** 数据源屏：目录扫描结果与字段映射（只读呈现核心返回）。 */
 export function SourceScreen() {
   const app = useApp();
+  const [sourceProfile, setSourceProfile] = useState('generic');
   const [mappings, setMappings] = useState<FieldMappingRow[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
@@ -68,7 +69,12 @@ export function SourceScreen() {
       pushDiag(`workspace_list 失败: ${String(e).slice(0, 100)}`);
     }
     try {
-      const r = await invoke('template_download', { outPath: '/tmp/dsheng-selftest-template.zip' });
+      const r = await invoke('template_download', {
+        outPath: '/tmp/dsheng-selftest-source-template.zip',
+        package: 'source',
+        profile: sourceProfile === 'generic' ? null : sourceProfile,
+        contract: null,
+      });
       pushDiag(`template_download → ${JSON.stringify(r).slice(0, 100)}`);
     } catch (e) {
       pushDiag(`template_download 失败: ${String(e).slice(0, 120)}`);
@@ -82,7 +88,12 @@ export function SourceScreen() {
         ]);
       try {
         const r = (await withTimeout(
-          invoke('scan', { workspaceId: app.activeWorkspaceId, directoryLabel: '/tmp' }),
+          invoke('scan', {
+            workspaceId: app.activeWorkspaceId,
+            directoryLabel: '/tmp',
+            sourceProfile: sourceProfile === 'generic' ? null : sourceProfile,
+            generic: sourceProfile === 'generic',
+          }),
           8000,
           'scan(/tmp)',
         )) as { ok?: boolean; error?: unknown };
@@ -92,7 +103,12 @@ export function SourceScreen() {
       }
       try {
         const r = (await withTimeout(
-          invoke('scan', { workspaceId: app.activeWorkspaceId, directoryLabel: '/tmp' }),
+          invoke('scan', {
+            workspaceId: app.activeWorkspaceId,
+            directoryLabel: '/tmp',
+            sourceProfile: sourceProfile === 'generic' ? null : sourceProfile,
+            generic: sourceProfile === 'generic',
+          }),
           15000,
           'scan(ds)',
         )) as { ok?: boolean; data?: { files?: unknown[] }; error?: unknown };
@@ -118,7 +134,12 @@ export function SourceScreen() {
     pushDiag(`scan 调用：workspace=${app.activeWorkspaceId} dir=${path}`);
     try {
       const summary = await Promise.race([
-        app.client.scan(app.activeWorkspaceId, path),
+        app.client.scan(
+          app.activeWorkspaceId,
+          path,
+          sourceProfile === 'generic' ? undefined : sourceProfile,
+          sourceProfile === 'generic',
+        ),
         new Promise<never>((_, rej) =>
           setTimeout(() => rej(new Error('核心未在 15 秒内返回（scan 挂起）')), 15000),
         ),
@@ -159,6 +180,38 @@ export function SourceScreen() {
     }
   };
 
+  /** generic source 必须先明确确认字段映射，确认记录绑定本次目录与 profile hash。 */
+  const confirmGenericMapping = async () => {
+    if (!app.client || !app.activeWorkspaceId || !lastDir || !scan?.source_profile) {
+      setScanError('缺少目录或 source profile，无法确认映射。');
+      return;
+    }
+    setScanBusy(true);
+    setScanError(null);
+    try {
+      await app.client.sourceMappingSet(
+        app.activeWorkspaceId,
+        lastDir,
+        scan.source_profile.hash,
+        [],
+      );
+      const summary = await app.client.scan(
+        app.activeWorkspaceId,
+        lastDir,
+        scan.source_profile.mode === 'generic'
+          ? undefined
+          : (scan.source_profile.profile_ref ?? scan.source_profile.profile_id),
+        scan.source_profile.mode === 'generic',
+      );
+      await app.reloadWorkspaceData({ keepScan: summary });
+      setScanNote('字段映射已确认；现在可以到「经营分析」运行本地分析。');
+    } catch (err) {
+      setScanError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setScanBusy(false);
+    }
+  };
+
   /** 下载空白导入模板包（本地生成，无网络）。 */
   const downloadTemplate = async () => {
     if (!app.client) {
@@ -171,16 +224,20 @@ export function SourceScreen() {
     };
     const save = w.__TAURI__?.dialog?.save;
     if (typeof save === 'function') {
-      out = await save({ title: '保存导入模板包', defaultPath: 'import-template-v1.zip' });
+      out = await save({ title: '保存原始数据模板包', defaultPath: 'source-template-v1.zip' });
     } else {
-      out = window.prompt('保存模板包的路径（演示/测试通道）', '/tmp/import-template-v1.zip');
+      out = window.prompt('保存原始数据模板包的路径（演示/测试通道）', '/tmp/source-template-v1.zip');
     }
     if (!out) return;
     setScanBusy(true);
     setScanError(null);
     try {
-      const r = await app.client.templateDownload(out);
-      setScanNote(`模板包已写入 ${r.out}（${r.bytes} 字节）；含核算表/推移表/任务单三份空白工作簿与字段说明。`);
+      const r = await app.client.templateDownload(
+        out,
+        'source',
+        sourceProfile === 'generic' ? undefined : sourceProfile,
+      );
+      setScanNote(`原始数据模板已写入 ${r.out}（${r.bytes} 字节）；两表会由原始数据生成，不作为导入文件。`);
     } catch (err) {
       setScanError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -201,7 +258,7 @@ export function SourceScreen() {
           </div>
         </div>
         <div className="head-controls">
-          <button type="button" className="outline" onClick={() => void downloadTemplate()} disabled={scanBusy}>下载导入模板</button>
+          <button type="button" className="outline" onClick={() => void downloadTemplate()} disabled={scanBusy}>下载原始数据模板</button>
         </div>
       </div>
 
@@ -218,14 +275,32 @@ export function SourceScreen() {
       {app.activeWorkspace ? (
         <div className="panel source-intake-panel">
           <div className="panel-head">
-            <span className="panel-title">导入经营数据</span>
+            <span className="panel-title">导入原始经营数据</span>
             <span className="panel-note" data-testid="source-scan-status">{scanBusy ? '正在扫描…' : scanError ? '本次扫描失败' : scan ? '已扫描 · 本地解析' : '未扫描'}</span>
+          </div>
+          <div className="source-profile-row">
+            <label className="period-field">原始数据模板
+              <input
+                className="select"
+                aria-label="原始数据模板"
+                value={sourceProfile}
+                list="source-profile-options"
+                disabled={scanBusy}
+                onChange={(event) => setSourceProfile(event.target.value)}
+              />
+              <datalist id="source-profile-options">
+                <option value="generic" label="通用字段映射（手工确认）" />
+                <option value="manufacturing_demo" label="示例制造业内置 profile" />
+                <option value="service_demo" label="合成服务业内置 profile" />
+              </datalist>
+            </label>
+            <span className="panel-note">扫描会记录 profile 版本与 hash；核算表、推移表只能作为生成结果查看。</span>
           </div>
           <ImportDropzone busy={scanBusy} onPath={(path, note) => void runScan(path, note)} onDiag={pushDiag} />
           <div className="source-directory-summary">
             <div data-testid="source-directory">{lastDir ? `有效数据目录：${lastDir}` : '尚未成功扫描数据目录'}</div>
             {lastDir ? <button type="button" className="outline" disabled={scanBusy} onClick={() => void runScan(lastDir)}>重新扫描</button> : null}
-            {scan ? <p>数据覆盖：{scan.coverage.from} 至 {scan.coverage.to} · {scan.files.length} 个文件 · {scan.total_rows} 行{scanError ? '（上次成功扫描）' : ''}</p> : <p>选择目录或拖入文件夹后，识别结果会显示在这里。</p>}
+            {scan ? <p>数据覆盖：{scan.coverage.from} 至 {scan.coverage.to} · {scan.files.length} 个文件 · {scan.total_rows} 行 · profile：{scan.source_profile?.profile_id ?? 'generic'}{scanError ? '（上次成功扫描）' : ''}</p> : <p>选择目录或拖入文件夹后，识别结果会显示在这里。</p>}
           </div>
           {scanNote ? <div className="notice" data-testid="scan-note"><b>导入说明</b><span>{scanNote}</span></div> : null}
           {scanError ? <div className="notice" role="alert" data-testid="scan-error"><b>扫描失败</b><span>{scanError}</span></div> : null}
@@ -257,6 +332,15 @@ export function SourceScreen() {
             未识别的表仍会按通用表格保留，不丢数据。
           </span>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            {scan.source_profile?.mode === 'generic' ? <button
+              type="button"
+              className="primary"
+              disabled={scanBusy || !lastDir}
+              onClick={() => void confirmGenericMapping()}
+              data-testid="confirm-source-mapping-button"
+            >
+              {scanBusy ? '处理中…' : '确认通用字段映射'}
+            </button> : null}
             <button
               type="button"
               className="primary"

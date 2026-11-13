@@ -73,12 +73,12 @@ fn read_sheet(path: &std::path::Path, sheet: &str) -> Vec<Vec<String>> {
 #[test]
 fn s4_template_zip_layout() {
     let tmp = tempfile::tempdir().unwrap();
-    let out = tmp.path().join("import-template-v1.zip");
+    let out = tmp.path().join("source-template-v1.zip");
     let (stdout, code) = run(&[
         "template",
         "download",
-        "--package",
-        "import",
+        "--package", "source",
+        "--profile", "manufacturing_demo",
         "--out",
         out.to_string_lossy().as_ref(),
         "--json",
@@ -86,29 +86,27 @@ fn s4_template_zip_layout() {
     assert_eq!(code, 0, "{stdout}");
     let entries = unzip(&std::fs::read(&out).unwrap());
     let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
-    assert!(names.contains(&"核算表模板.xlsx"), "{names:?}");
-    assert!(names.contains(&"推移表模板.xlsx"));
-    assert!(names.contains(&"任务单模板.xlsx"));
+    assert!(names.contains(&"manufacturing-source.xlsx"), "{names:?}");
     assert!(names.contains(&"字段说明.md"));
-    // 空白布局：A1 键、B1=1、第 6 行列名、第 7 行起无数据
-    let acc = tmp.path().join("核算表模板.xlsx");
+    // source profile 空白布局：A1 键、B1=1、第 6 行列名、第 7 行起无数据
+    let acc = tmp.path().join("manufacturing-source.xlsx");
     std::fs::write(
         &acc,
         entries
             .iter()
-            .find(|(n, _)| n == "核算表模板.xlsx")
+            .find(|(n, _)| n == "manufacturing-source.xlsx")
             .unwrap()
             .1
             .clone(),
     )
     .unwrap();
-    let grid = read_sheet(&acc, "核算表");
+    let grid = read_sheet(&acc, "source");
     assert_eq!(grid[0][0], "dsheng_template_version");
     assert_eq!(grid[0][1], "1");
     assert_eq!(grid[2][0], "source_from");
     assert_eq!(grid[3][6], "coverage_status");
-    assert_eq!(grid[5][0], "科目");
-    assert_eq!(grid[5][6], "月度实绩");
+    assert_eq!(grid[5][0], "期间");
+    assert_eq!(grid[5][4], "月度实绩");
     assert!(grid.len() == 6, "空白模板第 7 行起无数据: {}", grid.len());
     // 字段说明含技术列与防护规则
     let md = String::from_utf8(
@@ -120,8 +118,9 @@ fn s4_template_zip_layout() {
             .clone(),
     )
     .unwrap();
-    assert!(md.contains("task_id"));
-    assert!(md.contains("decimal_text"));
+    assert!(md.contains("profile_id"));
+    assert!(md.contains("output_contract_id"));
+    assert!(md.contains("期间") && md.contains("月度实绩"));
 }
 
 #[test]
@@ -160,10 +159,10 @@ fn s4_roundtrip_template_fill_import_export() {
     assert_eq!(grid[3][0], "timezone");
     assert_eq!(grid[5][6], "月度实绩");
     assert_eq!(grid[6][0], "销售额", "第 7 行数据");
-    assert_eq!(grid[6][6], "11500.25", "decimal 词法精确往返");
+    assert_eq!(grid[6][6], "24100.5", "两桶累计值保持十进制词法");
     // 空值保留：年度计划·当月目标列为空（视图无年度分解时不造值）
     assert_eq!(grid[6][4], "");
-    // 3) 推移 sheet：单桶＋flow 累计
+    // 3) 推移 sheet：双桶＋flow 累计
     let trend = read_sheet(&acc_path, "推移表");
     assert_eq!(trend[5][0], "科目");
     let data_rows: Vec<&Vec<String>> = trend
@@ -176,7 +175,7 @@ fn s4_roundtrip_template_fill_import_export() {
         .iter()
         .rfind(|c| !c.is_empty())
         .expect("累计列非空");
-    assert_eq!(last_non_empty, "11500.25", "flow 单桶累计=该桶值");
+    assert_eq!(last_non_empty, "24100.5", "flow 双桶累计=两桶之和");
     // 4) metadata.json：结构/指纹/decimal_text 政策；无 Key；无本机绝对路径
     let metadata: Value = serde_json::from_slice(&by_name("metadata.json")).expect("metadata json");
     assert_eq!(metadata["run_id"], f.run_id);
@@ -202,56 +201,29 @@ fn s4_roundtrip_template_fill_import_export() {
     assert_eq!(meeting["page_count"], 10);
     assert_eq!(meeting["pages"].as_array().unwrap().len(), 10);
     assert_eq!(meeting["pages"][6]["content"]["status"], "未提供");
-    // 6) 模板往返：以模板同布局填合成值 → analyze 导入 → 与导出值一致
+    // 6) 原始 source 往返：填写 source profile 布局 → analyze → 生成两表
     let fill_dir = out_dir.join("filled");
     std::fs::create_dir_all(&fill_dir).unwrap();
-    let filled = fill_dir.join("核算表填写.xlsx");
+    let filled = fill_dir.join("source-filled.xlsx");
     {
         use rust_xlsxwriter::*;
         let mut book = Workbook::new();
         let ws = book.add_worksheet();
-        ws.set_name("核算表").unwrap();
-        // 模板同布局：元数据键值对 + 第 6 行列名 + 第 7 行数据（等价用户填写）
-        for (r, c, k, v) in [
-            (0u32, 0u16, "dsheng_template_version", "1"),
-            (1, 0, "workspace_name", "合成门店"),
-            (1, 2, "currency", "CNY"),
-            (1, 4, "tax_basis", "exclusive"),
-            (2, 0, "source_from", "2026-10-01"),
-            (2, 2, "source_to", "2026-10-31"),
-            (2, 4, "grain", "month"),
-            (3, 0, "timezone", "Asia/Shanghai"),
-            (3, 2, "week_start_day", "1"),
-            (3, 4, "fiscal_year_start_month", "1"),
-            (3, 6, "coverage_status", "complete"),
-            (3, 8, "empty_days_are_zero", "false"),
-        ] {
-            ws.write_string(r, c, k).unwrap();
-            if !v.is_empty() {
-                ws.write_string(r, c + 1, v).unwrap();
-            }
+        ws.set_name("source").unwrap();
+        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"].iter().enumerate() {
+            ws.write_string(0, c as u16, *h).unwrap();
         }
-        for (c, h) in [
-            "科目",
-            "单位",
-            "计算公式/取数来源",
-            "本月MP",
-            "年度计划·当月目标",
-            "月度预定",
-            "月度实绩",
-            "预实差异额",
-            "预定比",
-            "年度计划比",
-        ]
-        .iter()
-        .enumerate()
-        {
-            ws.write_string(5, c as u16, *h).unwrap();
-        }
-        ws.write_string(6, 0, "销售额").unwrap();
-        ws.write_string(6, 1, "元").unwrap();
-        ws.write_string(6, 5, "12000.5").unwrap();
-        ws.write_string(6, 6, "11777.75").unwrap();
+        ws.write_string(1, 0, "销售额").unwrap();
+        ws.write_string(1, 1, "元").unwrap();
+        ws.write_string(1, 2, "12000.5").unwrap();
+        ws.write_string(1, 3, "11777.75").unwrap();
+        ws.write_string(1, 4, "12500").unwrap();
+        ws.write_string(1, 5, "2026-10-01").unwrap();
+        ws.write_string(2, 0, "销售额").unwrap();
+        ws.write_string(2, 1, "元").unwrap();
+        ws.write_string(2, 2, "0").unwrap();
+        ws.write_string(2, 4, "0").unwrap();
+        ws.write_string(2, 5, "2026-10-02").unwrap();
         book.save(&filled).unwrap();
     }
     let (stdout, code) = run(&[
@@ -276,8 +248,29 @@ fn s4_roundtrip_template_fill_import_export() {
         imported["metrics"][0]["actual_value"], "11777.75",
         "纯填写模板（单来源）导入值精确"
     );
-    // 冲突场景：同目录两个来源同期间不同值 → 冲突（值 null，不造均值）
-    std::fs::copy(f.dir.join("核算表模板.xlsx"), fill_dir.join("原始表.xlsx")).unwrap();
+    // 冲突场景：同目录两个 source 来源同期间不同值 → 冲突（值 null，不造均值）
+    let conflict_file = fill_dir.join("source-conflict.xlsx");
+    {
+        use rust_xlsxwriter::*;
+        let mut book = Workbook::new();
+        let ws = book.add_worksheet();
+        ws.set_name("source").unwrap();
+        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"].iter().enumerate() {
+            ws.write_string(0, c as u16, *h).unwrap();
+        }
+        ws.write_string(1, 0, "销售额").unwrap();
+        ws.write_string(1, 1, "元").unwrap();
+        ws.write_string(1, 2, "12000.5").unwrap();
+        ws.write_string(1, 3, "11888.75").unwrap();
+        ws.write_string(1, 4, "12500").unwrap();
+        ws.write_string(1, 5, "2026-10-01").unwrap();
+        ws.write_string(2, 0, "销售额").unwrap();
+        ws.write_string(2, 1, "元").unwrap();
+        ws.write_string(2, 2, "0").unwrap();
+        ws.write_string(2, 4, "0").unwrap();
+        ws.write_string(2, 5, "2026-10-02").unwrap();
+        book.save(&conflict_file).unwrap();
+    }
     let (stdout, code) = run(&[
         "analyze",
         "--db",
@@ -330,14 +323,23 @@ fn s4_roundtrip_template_fill_import_export() {
         use rust_xlsxwriter::*;
         let mut book = Workbook::new();
         let ws = book.add_worksheet();
-        ws.set_name("核算表").unwrap();
-        for (c, h) in ["科目", "单位", "月度预定", "月度实绩"].iter().enumerate() {
+        ws.set_name("source").unwrap();
+        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"].iter().enumerate() {
             ws.write_string(0, c as u16, *h).unwrap();
         }
         ws.write_string(1, 0, "销售额").unwrap();
         ws.write_string(1, 1, "元").unwrap();
         // 17 位有效数（≤28 有效位、6 位小数上限内）
         ws.write_string(1, 2, "1234567890123456.5").unwrap();
+        ws.write_string(1, 3, "1234567890123456.5").unwrap();
+        ws.write_string(1, 4, "0").unwrap();
+        ws.write_string(1, 5, "2026-10-01").unwrap();
+        ws.write_string(2, 0, "销售额").unwrap();
+        ws.write_string(2, 1, "元").unwrap();
+        ws.write_string(2, 2, "0").unwrap();
+        ws.write_string(2, 3, "0").unwrap();
+        ws.write_string(2, 4, "0").unwrap();
+        ws.write_string(2, 5, "2026-10-02").unwrap();
         book.save(&big_file).unwrap();
     }
     // 独立 workspace（避免与 Fixture 来源冲突）
@@ -417,6 +419,89 @@ fn s4_roundtrip_template_fill_import_export() {
     );
     let grid = read_sheet(&big_wb, "核算表");
     assert_eq!(grid[6][5], "1234567890123456.5", "decimal 文本保真");
+}
+
+#[test]
+fn historical_revision_keeps_its_own_input_fingerprint() {
+    let f = Fixture::new("s4-revision-fingerprint");
+    let rev1_fingerprint: String = {
+        let conn = rusqlite::Connection::open(&f.db).unwrap();
+        conn.query_row(
+            "SELECT analysis_input_fingerprint FROM run_revisions WHERE run_id = ?1 AND revision_no = 1",
+            rusqlite::params![f.run_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+
+    // 新增一份同期间 source，触发同一 run 的 revision 2；revision 1 仍保留。
+    {
+        use rust_xlsxwriter::*;
+        let mut book = Workbook::new();
+        let ws = book.add_worksheet();
+        ws.set_name("source").unwrap();
+        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"]
+            .iter()
+            .enumerate()
+        {
+            ws.write_string(0, c as u16, *h).unwrap();
+        }
+        ws.write_string(1, 0, "销售额").unwrap();
+        ws.write_string(1, 1, "元").unwrap();
+        ws.write_string(1, 2, "12000").unwrap();
+        ws.write_string(1, 3, "11999").unwrap();
+        ws.write_string(1, 4, "12500").unwrap();
+        ws.write_string(1, 5, "2026-10-03").unwrap();
+        book.save(f.dir.join("source-data-v2.xlsx")).unwrap();
+    }
+    let (stdout, code) = run(&[
+        "analyze",
+        "--db",
+        &f.db,
+        "--workspace",
+        &f.workspace.to_string(),
+        "--dir",
+        &f.dir.to_string_lossy(),
+        "--from",
+        "2026-10-01",
+        "--to",
+        "2026-10-31",
+        "--grain",
+        "month",
+        "--json",
+    ]);
+    assert_eq!(code, 0, "{stdout}");
+    let latest = data_of(&stdout);
+    assert_eq!(latest["run_id"], f.run_id);
+    assert_eq!(latest["current_revision_no"], 2);
+
+    let conn = rusqlite::Connection::open(&f.db).unwrap();
+    let rev2_fingerprint: String = conn
+        .query_row(
+            "SELECT analysis_input_fingerprint FROM run_revisions WHERE run_id = ?1 AND revision_no = 2",
+            rusqlite::params![f.run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_ne!(rev1_fingerprint, rev2_fingerprint);
+
+    let view = dsheng_cli::store::analysis::analysis_run_view(
+        &conn,
+        f.workspace,
+        &f.run_id,
+        1,
+    )
+    .unwrap();
+    assert_eq!(view["current_revision_no"], 2);
+    assert_eq!(view["analysis_input_fingerprint"], rev1_fingerprint);
+    let exported = dsheng_cli::cmd::export_cmd::build_export_data(
+        &conn,
+        f.workspace,
+        &f.run_id,
+        Some(1),
+    )
+    .unwrap();
+    assert_eq!(exported.meta.analysis_input_fingerprint, rev1_fingerprint);
 }
 
 #[test]
@@ -549,22 +634,26 @@ fn s4_formula_injection_guard_in_task_export() {
 fn s4_meeting_markdown_and_chart_variants() {
     let f = Fixture::new("s4-meeting");
     let dir = &f.dir;
-    // 双桶序列（两月推移）：手写趋势表
+    // 双桶序列：手写原始来源表，推移表由 analyze 生成
     let trend_dir = dir.join("trend");
     std::fs::create_dir_all(&trend_dir).unwrap();
-    let trend_file = trend_dir.join("推移.xlsx");
+    let trend_file = trend_dir.join("source-data.xlsx");
     {
         use rust_xlsxwriter::*;
         let mut book = Workbook::new();
         let ws = book.add_worksheet();
-        ws.set_name("推移表").unwrap();
-        for (c, h) in ["科目", "单位", "2026-09", "2026-10"].iter().enumerate() {
+        ws.set_name("source").unwrap();
+        for (c, h) in ["科目", "单位", "月度实绩", "期间"].iter().enumerate() {
             ws.write_string(0, c as u16, *h).unwrap();
         }
         ws.write_string(1, 0, "销售额").unwrap();
         ws.write_string(1, 1, "元").unwrap();
         ws.write_string(1, 2, "11000.5").unwrap();
-        ws.write_string(1, 3, "11500.25").unwrap();
+        ws.write_string(1, 3, "2026-10-01").unwrap();
+        ws.write_string(2, 0, "销售额").unwrap();
+        ws.write_string(2, 1, "元").unwrap();
+        ws.write_string(2, 2, "11500.25").unwrap();
+        ws.write_string(2, 3, "2026-10-02").unwrap();
         book.save(&trend_file).unwrap();
     }
     let (stdout, code) = run(&[

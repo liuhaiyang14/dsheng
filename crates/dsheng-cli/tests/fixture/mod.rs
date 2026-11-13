@@ -97,11 +97,11 @@ impl Fixture {
             )
             .unwrap();
         }
-        // 合成核算表 + analyze
+        // 合成 generic source + analyze（两表是生成结果，不作为输入）
         let mut book = Workbook::new();
         let sheet = book.add_worksheet();
-        sheet.set_name("核算表").unwrap();
-        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标"]
+        sheet.set_name("source").unwrap();
+        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"]
             .iter()
             .enumerate()
         {
@@ -111,7 +111,13 @@ impl Fixture {
         sheet.write_string(1, 2, "12000.5").unwrap();
         sheet.write_string(1, 3, "11500.25").unwrap();
         sheet.write_string(1, 4, "12500").unwrap();
-        book.save(dir.join("核算表模板.xlsx")).unwrap();
+        sheet.write_string(1, 5, "2026-10-01").unwrap();
+        sheet.write_string(2, 0, "销售额").unwrap();
+        sheet.write_string(2, 2, "13000.5").unwrap();
+        sheet.write_string(2, 3, "12600.25").unwrap();
+        sheet.write_string(2, 4, "12500").unwrap();
+        sheet.write_string(2, 5, "2026-10-02").unwrap();
+        book.save(dir.join("source-data.xlsx")).unwrap();
         let (out, code) = run(&[
             "analyze",
             "--db",

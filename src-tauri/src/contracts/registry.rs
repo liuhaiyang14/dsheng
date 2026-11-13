@@ -66,11 +66,15 @@ pub const COMMANDS: &[CommandSpec] = &[
     // ---- 数据源 / 经营分析 ----
     CommandSpec {
         name: "template_download",
-        args: &["outPath"],
+        args: &["outPath", "package", "profile", "contract"],
+    },
+    CommandSpec {
+        name: "source_mapping_set",
+        args: &["workspaceId", "directoryLabel", "profileHash", "mappings"],
     },
     CommandSpec {
         name: "scan",
-        args: &["workspaceId", "directoryLabel"],
+        args: &["workspaceId", "directoryLabel", "sourceProfile", "generic"],
     },
     CommandSpec {
         name: "metric_register_defaults",
@@ -83,6 +87,10 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "analyze",
         args: &["input"],
+    },
+    CommandSpec {
+        name: "export_tables",
+        args: &["workspaceId", "runId", "revision", "kind", "outPath"],
     },
     // ---- 诊断（双门禁 preview/confirm + 读/导出） ----
     CommandSpec {

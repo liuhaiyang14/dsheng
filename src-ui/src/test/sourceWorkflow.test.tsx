@@ -42,6 +42,13 @@ it('单一导入区从未扫描到成功，跨页保留扫描结果，重新打�
   fireEvent.click(screen.getByText('重新分析数据'));
   expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled());
+  // generic_table candidates require an explicit mapping confirmation before
+  // local analysis can create a revision.
+  fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /数据源/ }));
+  fireEvent.click(screen.getByTestId('confirm-source-mapping-button'));
+  await waitFor(() => expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull());
+  fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /经营分析/ }));
   await waitFor(() => expect(screen.getByRole('button', { name: '运行本地分析' })).not.toBeDisabled());
 });
 it('失败扫描显示真实失败状态，保留上次有效目录而不保存失败路径', async () => {

@@ -46,7 +46,15 @@ fn partial_period_has_actual_evidence_without_comparisons_or_view_extensions() {
     assert!(view.get("diagnosis_evidence_by_metric").is_none());
     assert!(view["metrics"][0].get("evidence_ids").is_none());
     let evidence = ids(&f, &view, 1);
-    assert_eq!(evidence, vec!["cell:核算表模板.xlsx:核算表:D2"]);
+    // Evidence is anchored to the raw source revision; generated two-table
+    // sheets are not an import source and therefore cannot appear here.
+    assert_eq!(
+        evidence,
+        vec![
+            "cell:source-data.xlsx:source:D2",
+            "cell:source-data.xlsx:source:D3"
+        ]
+    );
     let conn = Connection::open(&f.db).unwrap();
     let run = view["run_id"].as_str().unwrap();
     assert_eq!(
@@ -96,13 +104,20 @@ fn prior_revision_evidence_survives_source_changes_and_removal() {
     let second = partial_analysis(&f);
     assert_eq!(second["run_id"], first["run_id"]);
     assert_eq!(second["current_revision_no"], 2);
-    assert_eq!(ids(&f, &second, 2), vec!["cell:核算表模板.xlsx:核算表:D3"]);
-    // Current source caches/files are irrelevant when reading a historical analysis revision.
+    assert_eq!(
+        ids(&f, &second, 2),
+        vec![
+            "cell:source-data.xlsx:source:D2",
+            "cell:source-data.xlsx:source:D3"
+        ]
+    );
+    // Generated output sheets are rejected as input; current source caches/files
+    // are irrelevant when reading a historical analysis revision.
     let conn = Connection::open(&f.db).unwrap();
     conn.execute("DELETE FROM cli_source_cells", []).unwrap();
     std::fs::remove_file(f.dir.join("核算表模板.xlsx")).unwrap();
     assert_eq!(ids(&f, &first, 1), old);
-    assert_eq!(ids(&f, &second, 2), vec!["cell:核算表模板.xlsx:核算表:D3"]);
+    assert_eq!(ids(&f, &second, 2), old);
 }
 
 #[test]

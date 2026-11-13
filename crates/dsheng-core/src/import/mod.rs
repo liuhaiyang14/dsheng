@@ -24,8 +24,8 @@ pub use scan::{
     PERIOD_CONFIRMATION_REQUIRED,
 };
 pub use template::{
-    detect_sheet_role, detect_sheet_role_with_names, is_task_sheet, period_with_year_context,
-    SheetMatch, SheetRole, TransposedTrendLayout,
+    detect_sheet_role, detect_sheet_role_with_names, is_generated_output_sheet_name, is_task_sheet,
+    period_with_year_context, SheetMatch, SheetRole, TransposedTrendLayout,
 };
 pub use value::{
     classify_cell, expand_merged_anchor, normalize_money_to_yuan, parse_amount_text,

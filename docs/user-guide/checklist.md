@@ -38,11 +38,11 @@ CLI 步骤均可用 `--json` 观察 envelope；`<id>` 代指实际 UUID。
 
 ## D. 导入与分析（[import-and-templates.md](import-and-templates.md) / [analysis.md](analysis.md)）
 
-- [ ] D1 `dsheng template download --package import --out import-template-v1.zip`，
-      解包见三份空白 XLSX + 字段说明，无数值样例。
-- [ ] D2 在核算表模板第 7 行起填入 1–2 行合成/演示数值（科目、单位、月度预定、
-      月度实绩；不要使用真实客户数据做走查）。
-- [ ] D3 `dsheng scan --workspace <id> --dir <目录> --json`：文件
+- [ ] D1 `dsheng template download --package source --profile <profile-id> --out source-template.zip`，
+      解包见当前 profile 的空白原始 source 模板；另用 `--package output --contract two_tables_v1`
+      验证固定两表输出模板。两表输出模板不作为输入。
+- [ ] D2 按 source profile 模板第 7 行起填入 1–2 行合成原始业务数据（不要使用真实客户数据做走查）。
+- [ ] D3 `dsheng scan --workspace <id> --dir <目录> --source-profile <profile-id> --json`：文件
       `mapping_status="mapped"`；扩展名不支持的文件只出现在 `pending_inputs`。
 - [ ] D4 （若有表头不在别名表）`dsheng mapping show --workspace <id> --run <id> --json`
       查看未映射列并 `mapping set` 补齐。

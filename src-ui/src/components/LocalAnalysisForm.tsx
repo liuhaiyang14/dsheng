@@ -44,6 +44,8 @@ export function LocalAnalysisForm() {
   const monthStartDay = policy?.policy.month_start_day ?? 1;
   const scanMatchesPolicy = scan?.workspace_id === app.activeWorkspaceId
     && !!policy && scan.available_period_policy_id === policy.period_policy_id;
+  const mappingPending = scan?.source_profile?.mode === 'generic'
+    && (scan.files ?? []).some((file) => file.mapping_status === 'pending_review');
   const periods = useMemo(() => {
     const found = new Map<string, AvailablePeriod>();
     if (scanMatchesPolicy && scan) {
@@ -76,7 +78,15 @@ export function LocalAnalysisForm() {
     setScanning(true);
     setScanError(null);
     try {
-      const summary = await app.client.scan(workspaceId, app.sourceDirectory);
+      const selectedProfile = scan?.source_profile;
+      const summary = await app.client.scan(
+        workspaceId,
+        app.sourceDirectory,
+        selectedProfile && selectedProfile.mode !== 'generic'
+          ? (selectedProfile.profile_ref ?? selectedProfile.profile_id)
+          : undefined,
+        !selectedProfile || selectedProfile.mode === 'generic',
+      );
       if (!mounted.current || context.current.workspaceId !== workspaceId || context.current.policyId !== policyId) return;
       await app.reloadWorkspaceData({ keepScan: summary });
     } catch (error) {
@@ -88,7 +98,7 @@ export function LocalAnalysisForm() {
     }
   };
   const submit = () => {
-    if (disabled || !selected || !app.activeWorkspaceId || !policy || !app.sourceDirectory || !scan) return;
+    if (disabled || mappingPending || !selected || !app.activeWorkspaceId || !policy || !app.sourceDirectory || !scan) return;
     const exists = app.data.history.some((entry) => entry.cadence === selected.grain
       && periodIdentity(entry.period, entry.cadence, monthStartDay) === periodIdentity(selected, selected.grain, monthStartDay));
     if (exists) {
@@ -115,7 +125,7 @@ export function LocalAnalysisForm() {
             {periods.map((period) => <option key={periodKey(period)} value={periodKey(period)}>{periodLabel(period, period.grain, monthStartDay)}</option>)}
           </select>
         </label>
-        <button type="submit" className="primary" disabled={disabled || !selected || !app.activeWorkspaceId || !app.sourceDirectory || !cadence}>运行本地分析</button>
+        <button type="submit" className="primary" disabled={disabled || mappingPending || !selected || !app.activeWorkspaceId || !app.sourceDirectory || !cadence}>运行本地分析</button>
         {app.sourceDirectory ? <button type="button" className="outline" disabled={disabled} onClick={() => void rescan()}>{scanning ? '正在扫描…' : '重新扫描数据'}</button> : null}
       </form>
       <p className="period-help">仅列出导入数据中可分析的期间，按系统设置的核算周期计算。</p>
@@ -123,6 +133,7 @@ export function LocalAnalysisForm() {
         : <>
           {scanNeeded ? <p className="period-help">请重新扫描数据，读取当前核算周期的可分析期间。</p>
             : !periods.length ? <p className="period-help">未识别到可分析的数据，请检查数据源后重新扫描。</p> : null}
+          {mappingPending ? <p className="period-help">通用 source 的字段映射尚未确认，请先到「数据源」点击“确认通用字段映射”。</p> : null}
           <p className="period-help">数据目录：{app.sourceDirectory}</p>
         </>}
       {scanError ? <p className="notice error" role="alert">{scanError}</p> : null}

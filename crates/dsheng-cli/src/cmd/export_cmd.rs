@@ -25,26 +25,43 @@ pub fn build_export_data(
     revision: Option<u32>,
 ) -> CliResult<ExportData> {
     ctx::ensure_object_in_workspace(conn, "analysis_runs", "run_id", run_id, workspace_id, "run")?;
-    let (current, fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
+    let (current, _) = dsheng_core::repository::analysis_runs::current_revision(
         conn,
         &workspace_id.to_string(),
         run_id,
     )
     .map_err(CliError::from)?;
     let revision = revision.unwrap_or(current);
+    // 所有业务导出均以固定 two_tables_v1 为基础；没有完整物化登记时，
+    // 不能写出空/半成品两表或带有误导性依据的会议包。
+    crate::store::sources::require_two_tables_materialized(
+        conn,
+        workspace_id,
+        run_id,
+        revision,
+    )?;
     let run_view = analysis_store::analysis_run_view(conn, workspace_id, run_id, revision)?;
-    let (policy_raw, sources_raw, defs_raw, base_refs_raw, action_raw, created_at): (
+    let (
+        policy_raw,
+        sources_raw,
+        defs_raw,
+        base_refs_raw,
+        action_raw,
+        created_at,
+        fingerprint,
+    ): (
         String,
         String,
         String,
         String,
         Option<String>,
         String,
+        String,
     ) = conn
         .query_row(
             "SELECT period_policy_snapshot_json, source_selection_snapshot_json,
                     metric_definitions_snapshot_json, comparison_base_refs_json,
-                    action_period_snapshot_json, created_at
+                    action_period_snapshot_json, created_at, analysis_input_fingerprint
              FROM run_revisions WHERE run_id = ?1 AND revision_no = ?2",
             params![run_id, revision as i64],
             |r| {
@@ -55,6 +72,7 @@ pub fn build_export_data(
                     r.get(3)?,
                     r.get(4)?,
                     r.get(5)?,
+                    r.get(6)?,
                 ))
             },
         )
@@ -77,6 +95,24 @@ pub fn build_export_data(
     let mut semantic_types: std::collections::BTreeMap<String, String> = Default::default();
     let mut currency: Option<String> = None;
     let mut tax_basis: Option<String> = None;
+    // 新 revision 快照带有当时的语义；优先使用快照，避免指标升版后旧导出
+    // 被当前定义重新解释。旧快照没有这些可选字段时再走兼容回退。
+    for def in &defs {
+        let Some(key) = def.get("metric_key").and_then(Value::as_str) else {
+            continue;
+        };
+        if let Some(st) = def.get("semantic_type").and_then(Value::as_str) {
+            semantic_types.insert(key.to_string(), st.to_string());
+        }
+        if let Some(unit) = def.get("unit_signature") {
+            if currency.is_none() {
+                currency = unit.get("currency").and_then(Value::as_str).map(str::to_string);
+            }
+            if tax_basis.is_none() {
+                tax_basis = unit.get("tax_basis").and_then(Value::as_str).map(str::to_string);
+            }
+        }
+    }
     {
         let mut stmt = conn.prepare(
             "SELECT metric_key, semantic_type, unit_signature_json FROM metric_definitions m
@@ -91,7 +127,7 @@ pub fn build_export_data(
             .collect::<Result<_, _>>()
             .map_err(CliError::from)?;
         for (key, st, unit_json) in rows {
-            semantic_types.insert(key, st);
+            semantic_types.entry(key).or_insert(st);
             if let Ok(u) = serde_json::from_str::<Value>(&unit_json) {
                 if currency.is_none() {
                     currency = u["currency"].as_str().map(str::to_string);
@@ -102,6 +138,28 @@ pub fn build_export_data(
             }
         }
     }
+    // revision 自己的 source profile/coverage 口径优先于当前工作区定义；尤其
+    // confirm_at_runtime 不能被默认 money unit 的 exclusive 覆盖。
+    if let Some(profile_tax_basis) = policy
+        .get("source_profile")
+        .and_then(|profile| profile.get("config"))
+        .and_then(|config| config.get("normalization"))
+        .and_then(|normalization| normalization.get("tax_basis"))
+        .and_then(Value::as_str)
+    {
+        tax_basis = Some(profile_tax_basis.to_string());
+    }
+    let coverage_status = policy
+        .get("coverage")
+        .and_then(|coverage| coverage.get("status"))
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        .to_string();
+    let empty_days_are_zero = policy
+        .get("coverage")
+        .and_then(|coverage| coverage.get("empty_days_are_zero"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     let series: Vec<Value> = run_view["series"]
         .as_array()
         .cloned()
@@ -123,7 +181,7 @@ pub fn build_export_data(
         .collect();
     let metrics: Vec<Value> = run_view["metrics"].as_array().cloned().unwrap_or_default();
     // 任务（run 关联）＋证据行
-    let task_ids = views::task_ids(conn, workspace_id, Some(run_id))?;
+    let task_ids = views::task_ids_for_revision(conn, workspace_id, run_id, revision)?;
     let tasks: Vec<Value> = task_ids
         .iter()
         .map(|id| views::task_view(conn, workspace_id, *id))
@@ -184,13 +242,15 @@ pub fn build_export_data(
     let diagnosis: Option<Value> = conn
         .query_row(
             "SELECT report_json FROM diagnosis_reports WHERE run_id = ?1 AND workspace_id = ?2
+             AND analysis_revision_no = ?3
              ORDER BY updated_at DESC, report_revision_no DESC LIMIT 1",
-            params![run_id, workspace_id.to_string()],
+            params![run_id, workspace_id.to_string(), revision as i64],
             |r| r.get::<_, String>(0),
         )
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok());
     let meta = ExportMeta {
+        output_contract_id: "two_tables_v1".into(),
         workspace_id: workspace_id.to_string(),
         workspace_name,
         run_id: run_id.to_string(),
@@ -229,8 +289,8 @@ pub fn build_export_data(
             .as_ref()
             .and_then(|a| a["to"].as_str().map(str::to_string)),
         grain: run_view["grain"].as_str().unwrap_or("month").to_string(),
-        coverage_status: "unknown".into(),
-        empty_days_are_zero: false,
+        coverage_status,
+        empty_days_are_zero,
         metric_hashes: defs
             .iter()
             .map(|d| lib::MetricHashMeta {
@@ -382,22 +442,55 @@ pub fn template(action: cli::TemplateAction, _db: Option<&String>) -> CliResult<
     match action {
         cli::TemplateAction::Download {
             package,
+            contract,
+            profile,
             out: out_path,
         } => {
-            if package != "import" {
-                return Err(CliError::invalid("--package 仅支持 import").with_field("--package"));
-            }
-            let bytes = lib::template::build_template_zip().map_err(export_err)?;
+            let (bytes, package_name, entries): (Vec<u8>, &str, Vec<String>) = match package.as_str()
+            {
+                "output" => {
+                    if contract.as_deref() != Some("two_tables_v1") {
+                        return Err(CliError::invalid(
+                            "--package output 需要 --contract two_tables_v1",
+                        )
+                        .with_field("--contract"));
+                    }
+                    (
+                        lib::template::build_two_tables_v1_zip().map_err(export_err)?,
+                        lib::template::OUTPUT_TEMPLATE_ZIP_NAME,
+                        vec![
+                            lib::template::TEMPLATE_ACCOUNTING.to_string(),
+                            lib::template::TEMPLATE_TREND.to_string(),
+                        ],
+                    )
+                }
+                "source" => {
+                    let profile_id = profile.as_deref().unwrap_or("generic");
+                    // 模板下载与 source 扫描使用同一 profile 解析规则：未知 ID
+                    // 必须在入口处失败，不能静默退回 generic 模板。
+                    crate::store::sources::resolve_source_profile(Some(profile_id), false)?;
+                    (
+                        lib::template::build_source_profile_zip(profile_id).map_err(export_err)?,
+                        lib::template::SOURCE_TEMPLATE_ZIP_NAME,
+                        lib::template::source_profile_template_files(profile_id),
+                    )
+                }
+                _ => {
+                    return Err(CliError::invalid("--package 仅支持 source|output")
+                        .with_field("--package"))
+                }
+            };
             let size = out::write_out_file(&out_path, &bytes)?;
             let mut written = out::export_written(&out_path, size);
             written["kind"] = json!("template");
-            written["package"] = json!(lib::template::TEMPLATE_ZIP_NAME);
-            written["entries"] = json!([
-                lib::template::TEMPLATE_ACCOUNTING,
-                lib::template::TEMPLATE_TREND,
-                lib::template::TEMPLATE_TASK,
-                lib::template::TEMPLATE_FIELDS_MD,
-            ]);
+            written["package"] = json!(package_name);
+            if let Some(contract) = contract {
+                written["contract"] = json!(contract);
+            }
+            if let Some(profile) = profile {
+                written["profile"] = json!(profile);
+            }
+            written["entries"] = json!(entries);
             Ok(written)
         }
     }

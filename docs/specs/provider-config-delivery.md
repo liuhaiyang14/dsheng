@@ -58,12 +58,13 @@ diagnosis generate/continue、task generate、generation retry 复用同一流�
 | 默认Provider | Provider设置→设为默认 | provider use --provider --expected-revision | expected_revision为workspace配置revision |
 | 清Key/删除Provider | Provider设置→清空/删除 | provider clear-key/delete --expected-revision --confirm-local | 删除活动attempt使用的配置拒绝；默认删除后null，历史快照保留 |
 | Token/超时预算 | Provider设置→请求预算 | provider set --input-json | Provider同revision；仅新预览，不改执行中attempt |
-| 字段映射 | 数据源→映射 | mapping show/set --run --input-json | 版本化草稿；重算才进入新analysis revision |
+| 字段映射 | 数据源→映射 | 首次 generic 确认绑定目录/profile hash；已有 run 用 mapping show/set --run --input-json | 未确认的候选映射不能进入 analysis revision |
 | 手工输入 | 经营分析→待补输入 | manual-input list/set --period-key --input-json | workspace+period+metric/input；必填source_note，重算生效 |
 | 指标/核算口径 | 系统设置→核算口径 | metric list/set --input-json | metric-catalog同字段；expected_revision/effective_from必填，新版本 |
 | 来源冲突 | 数据源→冲突 | source-conflict list/resolve --run --input-json | 明确选择source evidence并写reason；不改原值，重算生效 |
 | 历史回算 | 历史→指定口径重算 | analyze --policy --recalculate --input-json | 本地预览后计算；按period_key生成新revision或记录 |
-| 模板 | 数据源→下载模板 | template download --package import --out | 空白三类工作簿和字段说明 |
+| 来源模板 | 数据源→下载模板 | template download --package source --profile <id> --out | 当前企业类型的空白 source 模板和字段说明 |
+| 两表输出模板 | 两表展示/下载→固定输出格式 | template download --package output --contract two_tables_v1 --out | 固定核算表/推移表输出布局；两表不作为输入 |
 
 新建企业默认 Asia/Shanghai、week_start_day=1（ISO周一）、fiscal_year_start_month=1；UI展示并确认，CLI省略时明确输出采用默认，不依赖宿主时区。cadence与首次effective_from必填。后续改时区必须创建period_policy，不直接修改历史；workspace.timezone_id仅新策略默认/当前显示缓存。period_policy包含timezone_id，历史run用快照。公式/映射/输入/冲突合同由data-period-import定义，配置值可由企业填写，不由开发者猜测。
 

@@ -1,0 +1,16 @@
+{
+  "schema_version": "1",
+  "profile_id": "service_demo",
+  "version": 1,
+  "enterprise_type": "service",
+  "display_name": "合成服务业项目经营数据",
+  "source_template_version": 1,
+  "template": {"files": ["service-source.xlsx"], "sheet_name": "source", "columns": ["期间", "指标", "单位", "计划值", "实际值", "项目"]},
+  "output_contract_id": "two_tables_v1",
+  "file_roles": [{"role_id": "service_source", "required": true, "file_matchers": [], "sheet_matchers": [], "field_map": {"period": "期间", "metric_label": "指标", "unit": "单位", "planned": "计划值", "actual": "实际值", "scope": "项目"}}],
+  "field_aliases": {"period": ["期间", "日期", "服务日期"], "metric_label": ["指标", "指标名称", "科目"], "unit": ["单位"], "planned": ["计划值", "月度计划"], "actual": ["实际值", "月度实绩"], "scope": ["项目", "项目名称"]},
+  "row_rules": {"header_rows_max": 20, "detail_key_fields": ["period", "metric_label", "scope"], "date_field": "period", "amount_fields": ["planned", "actual"]},
+  "normalization": {"currency": "CNY", "tax_basis": "not_applicable", "timezone": "Asia/Shanghai", "status_map": {"有效": "valid", "取消": "invalid"}},
+  "dedupe": {"same_content": "dedupe", "different_content": "manual_review", "detail_and_total": "manual_review"},
+  "notes": "内置演示 profile；实际企业可用本地 JSON profile 替换，输出合同不变。"
+}

@@ -10,7 +10,7 @@
 //! - 单工作簿（核算/推移/任务）；
 //! - 会议版 10 页 md/json；
 //! - 图表 png/csv/xlsx；
-//! - 模板包 import-template-v1.zip（三空白 XLSX＋字段说明）。
+//! - source profile 输入模板包与固定 two_tables_v1 两表输出模板包；生成结果不回灌为输入。
 //!
 //! 不变量：文本以 `=`、`+`、`-`、`@` 开头写文本类型（CSV 单引号转义）；
 //! 超过 15 位有效数写 decimal 文本并标 `number_storage=decimal_text`；
@@ -44,6 +44,8 @@ pub type ExportResult<T> = Result<T, ExportError>;
 /// source manifests、基期 run/revision、过滤器；不写本机绝对路径/Key）。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExportMeta {
+    /// 所有业务结果固定使用 two_tables_v1；source profile 只影响输入适配。
+    pub output_contract_id: String,
     pub workspace_id: String,
     pub workspace_name: String,
     pub run_id: String,

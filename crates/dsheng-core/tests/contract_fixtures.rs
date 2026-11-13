@@ -17,7 +17,7 @@ fn metric_catalog_parses_into_frozen_types() {
     let raw = read_contract("contracts/v1/metric-catalog.json");
     let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let metrics = v["metrics"].as_array().expect("metrics 数组");
-    assert_eq!(metrics.len(), 26, "目录 26 个指标");
+    assert_eq!(metrics.len(), 28, "目录 28 个指标");
     for m in metrics {
         let entry: MetricCatalogEntry = serde_json::from_value(m.clone())
             .unwrap_or_else(|e| panic!("指标 {} 解析失败: {e}", m["metric_key"]));

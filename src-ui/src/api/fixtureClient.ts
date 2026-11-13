@@ -124,6 +124,8 @@ export class FixtureClient implements DshengClient {
   /** 仅记 key 是否存在与最近一次传入长度；绝不把 Key 放进任何返回值。 */
   private providerKeys = new Map<string, { present: boolean }>();
   private scans: Record<string, ScanSummaryView>;
+  /** generic mapping confirmation is directory/profile scoped, like the Rust sidecar. */
+  private confirmedGenericMappings = new Set<string>();
   private tasks: TaskView[];
   private reports: DiagnosisReport[];
   private manualCreates = new Map<string, { signature: string; taskId: string }>();
@@ -424,30 +426,77 @@ export class FixtureClient implements DshengClient {
 
   // ---- 数据源 ----
 
-  async templateDownload(outPath: string): Promise<import('./client').ExportResult> {
+  async templateDownload(
+    outPath: string,
+    packageName: 'source' | 'output' = 'source',
+    profile?: string,
+    contract?: string,
+  ): Promise<import('./client').ExportResult> {
     // 演示层：不产生真实文件，仅回执合同形状
+    void packageName;
+    void profile;
+    void contract;
     return { written: true, out: outPath, bytes: 2048 };
+  }
+
+  async exportTables(input: {
+    workspaceId: string;
+    runId: string;
+    revision?: number;
+    kind: 'accounting' | 'trend' | 'bundle';
+    outPath: string;
+  }): Promise<import('./client').ExportResult> {
+    this.requireWorkspace(input.workspaceId);
+    const run = this.analyzedRuns.get(input.runId) ?? fixtureAnalysisRun;
+    if (run.two_tables_ready !== true) {
+      throw new DshengCliError({
+        code: 'DATA_VALIDATION_FAILED',
+        message: '当前分析 revision 尚未生成完整的 two_tables_v1 核算表和推移表',
+        field: 'run_id',
+        details: null,
+      });
+    }
+    return {
+      written: true,
+      out: input.outPath,
+      bytes: input.kind === 'bundle' ? 8192 : 4096,
+    };
   }
 
   async metricRegisterDefaults(): Promise<{ registered: number; skipped_already_present: string[]; failed: unknown[] }> {
     return { registered: 7, skipped_already_present: [], failed: [] };
   }
 
-  async scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView> {
+  async scan(workspaceId: string, directoryLabel: string, sourceProfile?: string, generic = false): Promise<ScanSummaryView> {
     const workspace = this.requireWorkspace(workspaceId);
+    const mappingConfirmed = this.confirmedGenericMappings.has(`${workspaceId}:${directoryLabel}`);
+    const withMappingState = (summary: ScanSummaryView): ScanSummaryView => ({
+      ...summary,
+      files: generic && mappingConfirmed
+        ? summary.files.map((file) => ({ ...file, mapping_status: 'mapped' as const }))
+        : summary.files,
+    });
     if (!this.hasData(workspaceId)) {
       const empty = this.scans[workspaceId] ?? this.scans[WS_EMPTY_ID];
-      return structuredClone({ ...empty, workspace_id: workspaceId, directory_label: directoryLabel ?? '',
+      return structuredClone({ ...withMappingState({ ...empty, workspace_id: workspaceId, directory_label: directoryLabel ?? '' }),
+        source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: 'fixture', mode: generic ? 'generic' : 'profile' },
         available_periods: [], available_period_policy_id: workspace.current_period_policy_id });
     }
     const cadence = this.policies.find((policy) => policy.period_policy_id === workspace.current_period_policy_id)?.policy.cadence;
-    return structuredClone({ ...this.scans[workspaceId], directory_label: directoryLabel,
+    return structuredClone({ ...withMappingState({ ...this.scans[workspaceId], directory_label: directoryLabel }),
+      source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: 'fixture', mode: generic ? 'generic' : 'profile' },
       available_periods: cadence ? fixtureAvailablePeriods[cadence] : [], available_period_policy_id: workspace.current_period_policy_id });
   }
 
   async fieldMappings(workspaceId: string, _runId: string) {
     this.requireWorkspace(workspaceId);
     return structuredClone(fixtureFieldMappings[workspaceId] ?? []);
+  }
+
+  async sourceMappingSet(workspaceId: string, directoryLabel: string, _profileHash: string, _mappings: unknown[] = []) {
+    this.requireWorkspace(workspaceId);
+    this.confirmedGenericMappings.add(`${workspaceId}:${directoryLabel}`);
+    return { confirmed: true };
   }
 
   // ---- 经营分析 ----
@@ -713,6 +762,15 @@ export class FixtureClient implements DshengClient {
         details: null,
       });
     }
+    const analysis = this.analyzedRuns.get(request.run_id) ?? fixtureAnalysisRun;
+    if (analysis.two_tables_ready !== true) {
+      throw new DshengCliError({
+        code: 'DATA_VALIDATION_FAILED',
+        message: '当前分析版本尚未生成完整核算表和推移表，不能生成任务单',
+        field: 'two_tables_ready',
+        details: null,
+      });
+    }
     if (request.diagnosis_report_id) {
       const report = (await this.diagnosisList(request.workspace_id, request.run_id))
         .find((r) => r.report_id === request.diagnosis_report_id && r.is_latest && r.referenceable);
@@ -726,7 +784,6 @@ export class FixtureClient implements DshengClient {
       }
     }
     const preview = this.buildPreview('task', 'task_generate', request);
-    const analysis = this.analyzedRuns.get(request.run_id) ?? fixtureAnalysisRun;
     const report = this.reports.find((item) => item.report_id === request.diagnosis_report_id);
     preview.task_context_summary = {
       prior_task_titles: this.tasks.filter((task) => task.workspace_id === request.workspace_id
@@ -1570,6 +1627,7 @@ export class FixtureClient implements DshengClient {
       captured_at: entry.updated_at,
       metrics: structuredClone(this.analyzedRuns.get(runId)?.metrics ?? fixtureAnalysisRun.metrics),
       series: structuredClone(this.analyzedRuns.get(runId)?.series ?? fixtureAnalysisRun.series),
+      two_tables_ready: (this.analyzedRuns.get(runId) ?? fixtureAnalysisRun).two_tables_ready === true,
       grain: entry.cadence,
       period: entry.period,
       tasks,

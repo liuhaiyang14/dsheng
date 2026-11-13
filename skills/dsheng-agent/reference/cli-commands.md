@@ -77,7 +77,7 @@
 | `export workbook` | `dsheng export --workspace <id> --run <id> [--revision <n>] --workbook <accounting|trend|task> --out <path.xlsx>` | — |  |
 | `export meeting` | `dsheng export --workspace <id> --run <id> [--revision <n>] --meeting --format <md|json> --out <path>` | — |  |
 | `export chart` | `dsheng export --workspace <id> --run <id> [--revision <n>] --chart <id> --format <png|csv|xlsx> --out <path>` | — |  |
-| `template download` | `dsheng template download --package import --out <path.zip>` | 入：`docs/specs/data-period-import.md` |  |
+| `template download` | `dsheng template download --package <source|output> [--profile <profile-id>] [--contract two_tables_v1] --out <path.zip>` | 入：`contracts/v1/source-profile.schema.json` | source 模板按企业类型变化；output 固定 two_tables_v1；两表不作为输入 |
 
 ## 实现注记（与合同不冲突的当前行为）
 

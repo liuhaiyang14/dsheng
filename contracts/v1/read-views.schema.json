@@ -68,7 +68,19 @@
             "granularity": { "$ref": "#/$defs/cadence" }
           }
         },
-        "pending_inputs": { "type": "array", "items": { "type": "string" } }
+        "pending_inputs": { "type": "array", "items": { "type": "string" } },
+        "source_profile": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["profile_id", "version", "hash", "mode"],
+          "properties": {
+            "profile_id": { "type": "string", "minLength": 1 },
+            "version": { "type": "integer", "minimum": 1 },
+            "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "mode": { "type": "string", "minLength": 1 },
+            "profile_ref": { "type": ["string", "null"] }
+          }
+        }
       }
     },
     "fieldMappingView": {
@@ -116,7 +128,7 @@
     "metricRowView": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["metric_id", "metric_key", "metric_label", "unit", "direction", "target_value", "actual_value", "delta", "mom", "yoy"],
+      "required": ["metric_id", "metric_key", "metric_label", "unit", "direction", "target_value", "actual_value", "delta", "status", "pending_reasons", "mom", "yoy"],
       "properties": {
         "metric_id": { "$ref": "#/$defs/uuidString" },
         "metric_key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
@@ -126,6 +138,8 @@
         "target_value": { "$ref": "#/$defs/decimalString" },
         "actual_value": { "$ref": "#/$defs/decimalString" },
         "delta": { "$ref": "#/$defs/decimalString", "description": "actual - target；缺任一操作数为 null" },
+        "status": { "enum": ["ready", "pending"] },
+        "pending_reasons": { "type": "array", "items": { "type": "string" } },
         "mom": { "oneOf": [{ "$ref": "#/$defs/comparisonView" }, { "type": "null" }] },
         "yoy": { "oneOf": [{ "$ref": "#/$defs/comparisonView" }, { "type": "null" }] }
       }
@@ -166,9 +180,23 @@
         "period": { "$ref": "#/$defs/dateRange" },
         "current_revision_no": { "type": "integer", "minimum": 1 },
         "analysis_input_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "two_tables_ready": { "type": "boolean" },
         "grain": { "$ref": "#/$defs/cadence" },
         "metrics": { "type": "array", "items": { "$ref": "#/$defs/metricRowView" } },
-        "series": { "type": "array", "items": { "$ref": "#/$defs/metricSeriesView" } }
+        "series": { "type": "array", "items": { "$ref": "#/$defs/metricSeriesView" } },
+        "source_profile": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["profile_id", "version", "hash", "mode"],
+          "properties": {
+            "profile_id": { "type": "string", "minLength": 1 },
+            "version": { "type": "integer", "minimum": 1 },
+            "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+            "mode": { "type": "string", "minLength": 1 },
+            "profile_ref": { "type": ["string", "null"] },
+            "config": { "type": ["object", "null"] }
+          }
+        }
       }
     },
 
@@ -377,6 +405,7 @@
         "analysis_revision_no": { "type": "integer", "minimum": 1 },
         "analysis_input_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
         "task_plan_period": { "anyOf": [{ "$ref": "#/$defs/dateRange" }, { "type": "null" }] },
+        "two_tables_ready": { "type": "boolean" },
         "task_snapshot_no": { "type": "integer", "minimum": 0 },
         "captured_at": { "$ref": "#/$defs/isoDateTime" },
         "metrics": { "type": "array", "items": { "$ref": "#/$defs/metricRowView" } },

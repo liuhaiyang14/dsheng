@@ -613,3 +613,11 @@ tr:last-child td { border-bottom: 0; }
 .task-create-dialog .modal-body { max-height: 68vh; overflow: auto; }
 .task-create-step { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 16px; }
 @media (max-width: 640px) { .task-step-fields { grid-template-columns: 1fr; } }
+
+/* 两表生成结果页签 */
+.table-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-top: 16px; }
+.table-tab { border: 1px solid var(--line); border-bottom: 0; background: #f4f5f2; color: var(--muted); padding: 9px 16px; font: inherit; font-size: 12px; cursor: pointer; }
+.table-tab.active { background: #fff; color: var(--ink); font-weight: 650; border-top: 2px solid var(--gold); padding-top: 8px; }
+.panel-footnote { padding: 10px 15px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); line-height: 1.5; }
+.panel-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 15px 15px; }
+.status-banner.warning { border-color: #d8bd82; background: #fffaf0; }

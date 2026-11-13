@@ -300,8 +300,10 @@ run export --db "$DB" --workspace "$WS" --run "$RUN" --workbook task --out "$TMP
 expect_rc 0 "$RC" "export --workbook task"
 run export --db "$DB" --workspace "$WS" --run "$RUN" --meeting --format md --out "$TMP/meeting.md" --json
 expect_rc 0 "$RC" "export --meeting --format md"
-run template download --package import --out "$TMP/import-template.zip" --json
-expect_rc 0 "$RC" "template download --package import"
+run template download --package source --profile generic --out "$TMP/source-template.zip" --json
+expect_rc 0 "$RC" "template download --package source --profile generic"
+run template download --package output --contract two_tables_v1 --out "$TMP/two-tables-output.zip" --json
+expect_rc 0 "$RC" "template download --package output --contract two_tables_v1"
 
 step "history list（版本历史只读）"
 run history list --db "$DB" --workspace "$WS" --json

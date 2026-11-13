@@ -75,6 +75,13 @@ describe('S4 经营分析屏', () => {
     expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
     await waitFor(() => expect(screen.getByLabelText('分析期间')).toBeEnabled());
+    // The fixture scan uses generic_table; confirm its directory mapping before
+    // asserting that an analysis revision can be created.
+    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /数据源/ }));
+    fireEvent.click(screen.getByTestId('confirm-source-mapping-button'));
+    await waitFor(() => expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull());
+    fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /经营分析/ }));
+    await waitFor(() => expect(screen.getByLabelText('分析期间')).toBeEnabled());
     expect(screen.queryByLabelText('分析开始日期')).toBeNull();
     expect(screen.queryByLabelText('分析结束日期')).toBeNull();
     const periods = within(screen.getByLabelText('分析期间')).getAllByRole('option');

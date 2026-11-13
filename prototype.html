@@ -219,12 +219,38 @@
     .chart .series { fill: none; stroke: #a83c32; stroke-width: 3; }
     .chart .series-compare { fill: none; stroke: #2f6370; stroke-width: 2; stroke-dasharray: 5 4; }
     .chart .point { fill: #fff; stroke: #a83c32; stroke-width: 2; }
+    .missing-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+    .missing-item { border: 1px solid #eadbb9; background: #fffaf0; padding: 11px 12px; min-height: 96px; }
+    .missing-item strong { display: block; font-size: 11px; color: #705722; }
+    .missing-item p { margin: 5px 0 0; color: #806b42; font-size: 10px; line-height: 1.55; }
+    .status-banner { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid #cbdde0; background: var(--blue-wash); color: var(--blue); font-size: 11px; line-height: 1.55; }
+    .status-banner strong { color: var(--ink); }
+    .table-preview-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 16px; }
+    .table-preview .panel-body { padding: 0; }
+    .table-preview table th, .table-preview table td { font-size: 10px; }
+    .download-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+    .download-card { padding: 17px; background: #fff; border: 1px solid var(--line); }
+    .download-card h3 { margin: 0; font-size: 14px; }
+    .download-card p { margin: 8px 0 14px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .download-meta { color: var(--muted); font-size: 10px; margin-bottom: 13px; }
+    .table-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-top: 16px; }
+    .table-tab { border: 1px solid var(--line); border-bottom: 0; background: #f4f5f2; color: var(--muted); padding: 9px 16px; font: inherit; font-size: 11px; cursor: pointer; }
+    .table-tab.active { background: white; color: var(--ink); font-weight: 650; border-top: 2px solid var(--gold); padding-top: 8px; }
+    .table-panel { margin-top: 0; }
+    .table-panel[hidden] { display: none !important; }
+    .table-panel .panel-body { padding: 0; }
+    .table-panel .panel-head { border-top: 0; }
+    .gate-block { border: 1px solid #e5c7c2; background: var(--red-wash); color: var(--red-dark); padding: 12px 14px; margin: 14px 16px; font-size: 11px; line-height: 1.55; }
+    .gate-block strong { display: block; font-size: 12px; margin-bottom: 3px; }
+    .gate-block.ready { border-color: #cbded2; background: var(--green-wash); color: var(--green); }
+    .gate-block.ready strong { color: var(--ink); }
     @media (max-width: 980px) {
       .window { width: 100%; min-height: 100vh; margin: 0; border: 0; grid-template-columns: 205px minmax(0, 1fr); }
       .content { padding: 22px 18px 32px; }
       .topbar { padding: 0 18px; }
       .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .analysis-grid, .task-layout, .source-grid, .diagnosis-layout { grid-template-columns: 1fr; }
+      .analysis-grid, .task-layout, .source-grid, .diagnosis-layout, .table-preview-grid, .download-grid { grid-template-columns: 1fr; }
+      .missing-grid { grid-template-columns: 1fr; }
       .timeline-lane { grid-template-columns: 110px 1fr 150px; }
     }
     @media (max-width: 680px) {
@@ -259,6 +285,7 @@
       <nav class="nav">
         <button class="active" data-screen="source"><span class="icon">↳</span>数据源</button>
         <button data-screen="analysis"><span class="icon">⌁</span>经营分析</button>
+        <button data-screen="tables"><span class="icon">▤</span>两表展示/下载</button>
         <button data-screen="diagnosis"><span class="icon">⌕</span>经营问题诊断</button>
         <button data-screen="task"><span class="icon">□</span>任务单</button>
         <button data-screen="history"><span class="icon">◷</span>历史查询</button>
@@ -272,33 +299,53 @@
         <div class="notice workspace-empty" id="workspaceEmptyNotice" hidden><b>当前企业档案还没有数据</b><span>“新建空白档案”是一个独立的空档案示例。请先选择本地目录并完成字段映射；它不会显示或读取其他企业的分析、任务、历史和 Provider。</span></div>
         <div class="screen active" id="source">
           <div class="screen-head"><div><div class="eyebrow">01 · source intake</div><h2>数据源</h2><div class="sub">示例制造企业 · 读取本地目录，核对期间、字段与数据口径。</div></div><div class="head-controls"><button class="outline" id="downloadTemplate">下载导入模板</button><button class="outline" id="chooseDirectory">更换目录</button><button class="primary" id="scanFiles">重新扫描</button></div></div>
-          <div class="notice"><b>演示数据说明</b><span>以下企业名、目录、文件、金额和人员岗位均为虚构，用于展示完整流程，不来自你提供的业务文件。真实版本会在调用模型前展示将发送的文件、工作表、行数与内容范围，并要求确认。</span></div>
+          <div class="notice"><b>演示数据说明</b><span>以下企业名、目录、文件、金额和人员岗位均为虚构，用于展示完整流程，不来自你提供的业务文件。原始导入先在本地完成识别、映射与核算；只有生成诊断或任务建议时才进入模型确认流程。</span></div>
+          <div class="panel source-profile-panel"><div class="panel-head"><span class="panel-title">输入适配器 / source profile</span><span class="tag blue">输入可变 · 输出固定</span></div><div class="mapping"><div class="mapping-row"><label for="sourceProfileSelect">当前 profile</label><select class="select" id="sourceProfileSelect"><option value="manufacturing_demo">示例制造业 · 经营复盘导出</option><option value="service_demo">合成服务业 · 项目经营导出（演示）</option></select></div><div class="mapping-row"><label>适配说明</label><span id="sourceProfileDescription">适配销售出库、费用报销、工资条和辅助勾稽表；字段映射可调整，文件类别不构成全局固定逻辑。</span></div><div class="mapping-row"><label>模板范围</label><span id="sourceProfileTemplates">按当前 profile 下载对应模板与字段说明。</span></div><div class="mapping-row"><label>输出 contract</label><span><span class="tag green">two_tables_v1 · 固定</span> 原始来源先归一化，再生成核算表与推移表。</span></div></div></div>
+          <div class="status-banner"><span class="status-dot gold-dot"></span><div><strong>关键指标检查</strong><br>销售额、对应出库成本、经营费用、人工费、总工时和计划目标分别检查。缺失值显示“待补”，不按 0 参与计算；不影响的指标仍可先生成。</div></div>
+          <div class="missing-grid">
+            <div class="missing-item"><strong>经营收益</strong><p>依赖销售额、出库成本、非人工经营费用和人工费。缺任一项时标记待补。</p></div>
+            <div class="missing-item"><strong>单位时间指标</strong><p>依赖附加值或经营收益以及总工时。缺工时只影响每小时指标。</p></div>
+            <div class="missing-item"><strong>预实差异</strong><p>依赖月度预定或年度当月目标。缺目标时保留实绩，不生成达成率。</p></div>
+          </div>
           <div class="source-grid">
             <div class="panel"><div class="panel-head"><span class="panel-title">本地目录</span><span class="panel-note"><span class="status-dot"></span>已扫描 · 只读</span></div><div class="dropzone"><div><div class="folder">⌂</div><p>经营复盘 / 2026 年 10 月</p><small>核算周期：日度 · 数据覆盖：2026-10-01 至 2026-10-28</small></div></div><div class="path">示例路径：~/Documents/经营复盘/示例制造企业/2026-10</div></div>
-            <div class="panel"><div class="panel-head"><span class="panel-title">已识别文件</span><span class="panel-note">3 个文件 · 2,486 行</span></div><div class="file-list">
-              <div class="file"><div><div class="file-name">示例核算表_202610.xlsx</div><div class="file-meta">核算表、差异分析 · 824 行 · 期间字段已识别</div></div><span class="tag green">映射完成</span></div>
-              <div class="file"><div><div class="file-name">示例推移表_202610.xlsx</div><div class="file-meta">日度推移、图表数据 · 1,372 行 · 日期连续</div></div><span class="tag green">映射完成</span></div>
-              <div class="file"><div><div class="file-name">示例任务依据_202610.xlsx</div><div class="file-meta">任务检视、下期计划、任务依据 · 290 行</div></div><span class="tag gold">1 项待核对</span></div>
-            </div></div>
+            <div class="panel"><div class="panel-head"><span class="panel-title">已识别文件</span><span class="panel-note" id="sourceFileNote">当前 profile · 3 个文件 · 2,486 行</span></div><div class="file-list" id="sourceFileList"></div></div>
           </div>
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">字段映射</span><span class="panel-note">自动识别 · 可手动修正 · 当前映射已确认</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>工具字段</th><th>来源表 / 字段</th><th>识别结果</th><th>用途</th></tr></thead><tbody>
-            <tr><td>指标实绩</td><td>核算表 / 10月实绩</td><td><span class="tag green">数值 · 已匹配</span></td><td>计算预实差异与达成率</td></tr>
-            <tr><td>计划 / 目标</td><td>核算表 / 月度预定</td><td><span class="tag green">数值 · 已匹配</span></td><td>作为目标对照基准</td></tr>
-            <tr><td>分析期间</td><td>推移表 / 业务日期</td><td><span class="tag green">日期 · 已匹配</span></td><td>按日聚合，并汇总为周/月/季</td></tr>
-            <tr><td>工时</td><td>推移表 / 有效工时</td><td><span class="tag gold">1 天缺值</span></td><td>缺值日不参与单位时间指标</td></tr>
-            <tr><td>任务责任岗位</td><td>任务依据 / 责任岗位</td><td><span class="tag green">文本 · 已匹配</span></td><td>生成责任人和任务时间线</td></tr>
-          </tbody></table><div class="table-foot">来源单元格示例：核算表!F12、推移表!A2:H29。缺失工时为“待补”，不会按 0 参与计算。</div></div></div>
+            <tr><td>销售额</td><td>销售出库 / 出库产品售价总额（含税）</td><td><span class="tag green">金额 · 已匹配</span></td><td>收入实绩</td></tr>
+            <tr><td>对应出库成本</td><td>销售出库 / 出库产品成本总额</td><td><span class="tag green">金额 · 已匹配</span></td><td>毛利与附加值</td></tr>
+            <tr><td>经营费用</td><td>费用报销单 / 报销金额、报销类型</td><td><span class="tag gold">分类待确认</span></td><td>非人工经营费用</td></tr>
+            <tr><td>人工费</td><td>工资条 / 薪资归属月、当月实发</td><td><span class="tag green">金额 · 已匹配</span></td><td>经营收益及人工费率</td></tr>
+            <tr><td>计划 / 工时 / 期初</td><td>手工补录 · 期间 + 指标</td><td><span class="tag gold">缺项待补</span></td><td>影响目标或效率指标，不补为 0</td></tr>
+          </tbody></table><div class="table-foot">原始数据先生成两表可计算部分；缺失目标、工时和期初输入可补录后重算。字段映射或补录变化会生成新的分析版本。</div></div></div>
         </div>
 
         <div class="screen" id="analysis">
           <div class="screen-head"><div><div class="eyebrow">02 · operating review</div><h2>经营分析</h2><div class="sub">示例制造企业 · 2026-10-01 至 2026-10-28 · 日度聚合，可切换周 / 月 / 季度</div></div><div class="head-controls"><select class="select" id="analysisWindow"><option>本期：2026-10-01 至 10-28</option><option>上期：2026-09-01 至 09-30</option></select><select class="select" id="analysisGrain"><option value="day">日度</option><option value="week">周度</option><option value="month">月度</option><option value="quarter">季度</option></select></div></div>
+          <div class="status-banner"><span class="status-dot"></span><div><strong>本期两表已生成</strong><br>本地计算已完成。经营收益依赖人工费，单位时间指标仍有 1 天工时待补；目标缺失时不会生成达成率。</div></div>
           <div class="metric-grid"><div class="metric"><div class="label">结算收益</div><div class="value">¥ 184,600</div><div class="delta bad">↓ 低于目标 ¥ 25,400</div><div class="metric-sub"><span>达成率 87.9%</span><span>环比 -4.2%</span></div></div><div class="metric"><div class="label">订单毛利率</div><div class="value">18.6%</div><div class="delta good">↑ 同比 +2.1 个百分点</div><div class="metric-sub"><span>目标 20.0%</span><span>环比 +0.8pp</span></div></div><div class="metric"><div class="label">回款率</div><div class="value">92.4%</div><div class="delta good">↑ 环比 +3.6 个百分点</div><div class="metric-sub"><span>开票 ¥ 1.26m</span><span>未回款 ¥ 95k</span></div></div><div class="metric"><div class="label">单位时间附加值</div><div class="value">¥ 428 / 时</div><div class="delta warn">↓ 1 天工时待补</div><div class="metric-sub"><span>有效工时 431h</span><span>同比 +6.4%</span></div></div></div>
           <div class="analysis-grid"><div class="panel"><div class="panel-head"><span class="panel-title">核算表 · 预实差异</span><span class="panel-note">本期 28 天 · 公式由本地 Rust 核算</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>指标</th><th>目标</th><th>实绩</th><th>差异</th><th>环比</th><th>同比</th><th>状态</th></tr></thead><tbody><tr><td>结算收益</td><td>¥ 210,000</td><td>¥ 184,600</td><td class="bad">-¥ 25,400</td><td class="bad">-4.2%</td><td class="good">+8.7%</td><td><span class="tag red">重点</span></td></tr><tr><td>订单毛利率</td><td>20.0%</td><td>18.6%</td><td class="bad">-1.4pp</td><td class="good">+0.8pp</td><td class="good">+2.1pp</td><td><span class="tag gold">关注</span></td></tr><tr><td>回款率</td><td>90.0%</td><td>92.4%</td><td class="good">+2.4pp</td><td class="good">+3.6pp</td><td class="good">+5.2pp</td><td><span class="tag green">达标</span></td></tr><tr><td>单位时间附加值</td><td>¥ 450 / 时</td><td>¥ 428 / 时</td><td class="bad">-¥ 22</td><td class="bad">-2.8%</td><td class="good">+6.4%</td><td><span class="tag gold">待补 1 天</span></td></tr></tbody></table><div class="table-foot">同比基期：2025-10 同策略版本；环比基期：2026-09。无可比数据时显示原因，不把缺失值当 0。</div></div></div><div class="panel"><div class="panel-head"><span class="panel-title">异常信号</span><span class="panel-note">按差异贡献排序</span></div><div class="bar-row compact"><div class="bar-label"><span>结算收益未达目标</span><b class="bad">-¥ 25.4k</b></div><div class="bar-track"><div class="bar-fill" style="width:78%"></div></div></div><div class="bar-row compact"><div class="bar-label"><span>订单毛利率偏低</span><b class="warn">-1.4pp</b></div><div class="bar-track"><div class="bar-fill gold" style="width:44%"></div></div></div><div class="bar-row compact"><div class="bar-label"><span>工时字段缺 1 天</span><b class="warn">待补</b></div><div class="bar-track"><div class="bar-fill blue" style="width:20%"></div></div></div><div class="root-card"><h4>建议优先处理</h4><p>先核对高折扣订单的成本口径，再补录 10 月 17 日有效工时；这两项直接影响任务单。</p><span class="tag red">已生成 2 项重点任务</span></div></div></div>
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">经营图表</span><span class="panel-note">静态演示图（虚构数据）；正式版仅绘制已解析的真实期间，不合成趋势</span></div><div class="chart-toolbar"><select class="select" id="chartMetric"><option value="settlement">结算收益</option><option value="margin">订单毛利率</option><option value="cash">回款率</option></select><select class="select" id="chartType"><option>趋势折线</option><option>计划 / 实绩柱状</option><option>差异瀑布</option><option>分类构成</option><option>指标排行</option><option>目标对照组合图</option></select><select class="select" id="chartCompare"><option>环比</option><option>同比</option><option>不比较</option></select><button class="outline" id="chartDataButton">查看数据表</button><button class="outline" id="exportChartButton">导出 PNG</button></div><div class="chart" id="chartCanvas"><svg viewBox="0 0 780 220" role="img" aria-label="结算收益日度趋势图"><line class="gridline" x1="54" y1="34" x2="750" y2="34"/><line class="gridline" x1="54" y1="88" x2="750" y2="88"/><line class="gridline" x1="54" y1="142" x2="750" y2="142"/><line class="gridline" x1="54" y1="196" x2="750" y2="196"/><text class="axis-label" x="8" y="38">12k</text><text class="axis-label" x="8" y="92">8k</text><text class="axis-label" x="8" y="146">4k</text><text class="axis-label" x="20" y="200">0</text><polyline class="series-compare" points="54,112 120,100 186,118 252,92 318,80 384,97 450,72 516,88 582,62 648,77 714,54 750,61"/><polyline class="series" points="54,128 120,122 186,136 252,106 318,116 384,101 450,91 516,108 582,78 648,95 714,70 750,76"/><circle class="point" cx="750" cy="76" r="4"/><text class="axis-label" x="42" y="214">10-01</text><text class="axis-label" x="250" y="214">10-08</text><text class="axis-label" x="465" y="214">10-16</text><text class="axis-label" x="690" y="214">10-28</text></svg></div><div class="legend"><span>本期：2026-10</span><span class="actual">环比：2026-09</span><span>点选数据表可查看来源证据</span></div></div>
         </div>
 
+        <div class="screen" id="tables">
+          <div class="screen-head"><div><div class="eyebrow">03 · generated statements</div><h2>两表展示 / 下载</h2><div class="sub">两表由原始业务数据和已确认补录在本机确定性计算生成；页签可切换核算表、推移表，并下载当前表或两表包。</div></div><div class="head-controls"><select class="select"><option>本期：2026-10</option><option>上期：2026-09</option></select><button class="outline" id="downloadOutputTemplate">下载输出模板</button><button class="outline" id="tablesToDownload">下载两表包</button></div></div>
+          <div class="status-banner"><span class="status-dot"></span><div><strong>核算表与推移表已存在 · <span id="tableStatusRevision">revision 3</span></strong><br><span id="tableStatusSource">来源覆盖 2026-10-01 至 2026-10-28</span>；附加值、经营收益和缺项状态已绑定到本版本。下方金额均为交互原型的虚构演示值，正式版按导入原始数据重算。</div></div>
+          <div class="table-tabs" role="tablist" aria-label="两表类型">
+            <button class="table-tab active" type="button" role="tab" aria-selected="true" aria-controls="accountingTablePanel" id="accountingTableTab" data-table-tab="accounting">核算表</button>
+            <button class="table-tab" type="button" role="tab" aria-selected="false" aria-controls="trendTablePanel" id="trendTableTab" data-table-tab="trend">推移表</button>
+          </div>
+          <div class="table-panel" id="accountingTablePanel" data-table-panel="accounting" role="tabpanel" aria-labelledby="accountingTableTab">
+            <div class="panel table-preview"><div class="panel-head"><span class="panel-title" id="accountingTableTitle">核算表 · 2026 年 10 月</span><span class="tag green">已生成</span></div><div class="panel-body"><table class="data-table"><thead><tr><th>科目</th><th>计算口径</th><th>实绩</th><th>状态</th></tr></thead><tbody id="accountingTableBody"></tbody><tfoot><tr><td class="table-foot" colspan="4" id="accountingTableFoot">缺项保留原因和来源，不按 0 填充。</td></tr></tfoot></table><div style="padding:12px 16px"><button class="primary" id="downloadAccounting">下载核算表</button></div></div></div>
+          </div>
+          <div class="table-panel" id="trendTablePanel" data-table-panel="trend" role="tabpanel" aria-labelledby="trendTableTab" hidden>
+            <div class="panel table-preview"><div class="panel-head"><span class="panel-title" id="trendTableTitle">推移表 · 2026 年</span><span class="tag blue">月度序列</span></div><div class="panel-body"><table class="data-table"><thead><tr><th>月份</th><th>销售额</th><th>附加值</th><th>经营收益</th></tr></thead><tbody id="trendTableBody"></tbody><tfoot><tr><td class="table-foot" colspan="4" id="trendTableFoot">金额累计求和；比率与每小时指标使用累计分子、分母重算。</td></tr></tfoot></table><div style="padding:12px 16px"><button class="primary" id="downloadTrend">下载推移表</button></div></div></div>
+          </div>
+          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">两表导出说明</span><span class="panel-note">下载前不调用模型</span></div><div class="mapping"><div class="mapping-row"><label>当前来源</label><span id="tableExportSource">按当前 source profile 归一化后本地计算</span></div><div class="mapping-row"><label>输出合同</label><span><span class="tag green">two_tables_v1 · 固定</span> 正式版输出为固定 XLSX；原型下载以 TSV/TXT 模拟。</span></div><div class="mapping-row"><label>关键缺项</label><span class="tag gold">工时待补 · 月度目标待补</span></div><div class="mapping-row"><label>版本约束</label><span>重新导入或补录后，旧文件仍可下载，新结果将生成新的 revision。</span></div><button class="outline" id="downloadTablesBundle">下载两表包（含来源说明）</button></div></div>
+        </div>
+
         <div class="screen" id="diagnosis">
-          <div class="screen-head"><div><div class="eyebrow">03 · issue diagnosis</div><h2>经营问题诊断</h2><div class="sub">针对经营分析中的重点差异形成独立报告；报告不会自动生成或修改任务。</div></div><div class="head-controls"><select class="select" id="diagnosisFramework" aria-label="诊断模式"><option value="5why">5WHY · 因果追查</option><option value="5w">5W · 问题界定</option><option value="5w2h">5W2H · 问题与行动要素</option></select><button class="primary" id="generateDiagnosisButton">生成诊断报告</button></div></div>
+          <div class="screen-head"><div><div class="eyebrow">05 · issue diagnosis</div><h2>经营问题诊断</h2><div class="sub">针对经营分析中的重点差异形成独立报告；报告不会自动生成或修改任务。</div></div><div class="head-controls"><select class="select" id="diagnosisFramework" aria-label="诊断模式"><option value="5why">5WHY · 因果追查</option><option value="5w">5W · 问题界定</option><option value="5w2h">5W2H · 问题与行动要素</option></select><button class="primary" id="generateDiagnosisButton">生成诊断报告</button></div></div>
           <div class="notice"><b>模式说明</b><span>5WHY 用于逐层追查原因；5W 用于界定问题背景；5W2H 用于结构化问题及行动要素。切换框架会选择或新建独立演示报告，保留原报告的范围和补充记录。只有你补充新事实并点击“继续分析”才会进入下一轮；不会自动追问。</span></div>
           <div class="diagnosis-layout">
             <div class="panel"><div class="panel-head"><span class="panel-title">本期诊断记录</span><span class="panel-note" id="diagnosisRecordCount">2026-10 · 2 份</span></div><div class="diagnosis-list" id="diagnosisList">
@@ -315,20 +362,21 @@
         </div>
 
         <div class="screen" id="task">
-          <div class="screen-head"><div><div class="eyebrow">04 · action sheet</div><h2>任务单</h2><div class="sub">依据经营差异明确改善目标、拆解行动步骤，并用 SMART 原则校验目标及子目标。</div></div><div class="head-controls"><button class="primary" id="generateTaskButton">生成任务单</button></div></div>
-          <div class="task-layout"><div class="panel"><div class="panel-head"><span class="panel-title">任务单检视 / 计划</span><span class="panel-note">2026-10 · 2 项任务 · 点击查看详情</span></div><table class="task-table"><thead><tr><th>任务 / 指标</th><th>周期角色</th><th>目标 / 节点</th><th>责任岗位</th><th>进度</th></tr></thead><tbody><tr data-task="task-a"><td><div class="task-name" data-task-title>核对高折扣订单成本口径</div><div class="file-meta" data-task-summary>结算收益 · 10 月目标 ¥210,000</div></td><td><span class="tag blue" data-task-role>本期检视</span><div class="task-source">来源：核算表!F12</div></td><td data-task-target>¥ 25,400 差异<br><span class="file-meta" data-task-due>截止 2026-10-31</span></td><td data-task-owner>经营管理岗</td><td><span class="tag gold" data-progress-label>25% · 进行中</span></td></tr><tr data-task="task-b"><td><div class="task-name" data-task-title>补录有效工时并调整排产</div><div class="file-meta" data-task-summary>单位时间附加值 · 1 天待补</div></td><td><span class="tag red" data-task-role>下期计划</span><div class="task-source">来源：推移表!A17:H17</div></td><td data-task-target>¥ 450 / 时<br><span class="file-meta" data-task-due>计划 2026-11-01 至 11-07</span></td><td data-task-owner>生产计划岗</td><td><span class="tag red" data-progress-label>50% · 进行中</span></td></tr></tbody></table><div class="task-generation-note"><strong>任务单制定原则</strong><p>根据经营差异和 Skill 明确改善目标，再按业务依据拆解行动步骤。用 SMART 校验总体目标和拆解后的子目标是否具体、可衡量、可实现、与经营重点相关且有期限；责任人、节点和验收依据作为执行字段单独确认，信息不足时标记为待确认。</p><label><input type="checkbox" id="useDiagnosisContext" checked /><span>可选参考本期已保存的“结算收益差异 · 5WHY”报告；报告中的假设仍需核实。取消勾选或没有报告都不影响按经营数据制定任务。</span></label></div><div class="root-card"><h4>任务推进方式</h4><p>勾选行动步骤会自动更新进度；手工调整必须填写本次进展或阻塞原因，所有变化都会进入任务时间线。</p></div></div><div class="panel"><div class="panel-head"><span class="panel-title">本期任务制定依据</span><span class="panel-note">经营差异 · Skill · SMART 检查</span></div><div class="mapping"><div class="mapping-row"><label>关联指标</label><span>结算收益 · 实绩 ¥184,600 · 目标 ¥210,000</span></div><div class="mapping-row"><label>来源期间与位置</label><span><span class="evidence-ref">核算表!F12</span> · 2026-10-01 至 10-28 · 环比 -4.2%</span></div><div class="mapping-row"><label>目标与行动检查</label><span>先明确具体改善目标及衡量方式；按已有依据评估可实现性和相关性，并为行动补充责任人、节点与验收依据。</span></div></div></div></div>
-          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">任务依据</span><span class="panel-note">指标 → 来源证据 → 行动方案</span></div><div class="mapping"><div class="mapping-row"><label>关联指标</label><span>结算收益 · 实绩 ¥184,600 · 目标 ¥210,000</span></div><div class="mapping-row"><label>来源期间与位置</label><span><span class="evidence-ref">核算表!F12</span> · 2026-10-01 至 10-28 · 环比 -4.2%</span></div><div class="mapping-row"><label>MP 名称 / 单位</label><span>销售最大化 · 元 / 月</span></div><div class="mapping-row"><label>可核验证据</label><span>高折扣订单 7 笔待复核；模型建议仅作为待确认线索</span></div></div></div><div class="footer-note">当前页面展示的是虚构演示数据；桌面版会将分析和任务进度保存到当前企业的 SQLite。</div>
+          <div class="screen-head"><div><div class="eyebrow">06 · action sheet</div><h2>任务单</h2><div class="sub">依据经营差异明确改善目标、拆解行动步骤，并用 SMART 原则校验目标及子目标。</div></div><div class="head-controls"><button class="primary" id="generateTaskButton">生成任务单</button></div></div>
+          <div class="gate-block ready" id="taskTableGate"><strong>生成前置条件：两表已存在</strong><span id="taskTableGateText">当前可引用核算表和推移表 revision 3。任务单生成会绑定两表版本；两表缺失时不能发起模型请求。</span></div>
+          <div class="task-layout"><div class="panel"><div class="panel-head"><span class="panel-title">任务单检视 / 计划</span><span class="panel-note">2026-10 · 2 项任务 · 点击查看详情</span></div><table class="task-table"><thead><tr><th>任务 / 指标</th><th>周期角色</th><th>目标 / 节点</th><th>责任岗位</th><th>进度</th></tr></thead><tbody><tr data-task="task-a"><td><div class="task-name" data-task-title>核对高折扣订单成本口径</div><div class="file-meta" data-task-summary>结算收益 · 10 月目标 ¥210,000</div></td><td><span class="tag blue" data-task-role>本期检视</span><div class="task-source">输出证据：核算表!F12</div></td><td data-task-target>¥ 25,400 差异<br><span class="file-meta" data-task-due>截止 2026-10-31</span></td><td data-task-owner>经营管理岗</td><td><span class="tag gold" data-progress-label>25% · 进行中</span></td></tr><tr data-task="task-b"><td><div class="task-name" data-task-title>补录有效工时并调整排产</div><div class="file-meta" data-task-summary>单位时间附加值 · 1 天待补</div></td><td><span class="tag red" data-task-role>下期计划</span><div class="task-source">输出证据：推移表!A17:H17</div></td><td data-task-target>¥ 450 / 时<br><span class="file-meta" data-task-due>计划 2026-11-01 至 11-07</span></td><td data-task-owner>生产计划岗</td><td><span class="tag red" data-progress-label>50% · 进行中</span></td></tr></tbody></table><div class="task-generation-note"><strong>任务单制定原则</strong><p>根据经营差异和 Skill 明确改善目标，再按业务依据拆解行动步骤。用 SMART 校验总体目标和拆解后的子目标是否具体、可衡量、可实现、与经营重点相关且有期限；责任人、节点和验收依据作为执行字段单独确认，信息不足时标记为待确认。</p><label><input type="checkbox" id="useDiagnosisContext" checked /><span>可选参考本期已保存的“结算收益差异 · 5WHY”报告；报告中的假设仍需核实。取消勾选或没有报告都不影响按经营数据制定任务。</span></label></div><div class="root-card"><h4>任务推进方式</h4><p>勾选行动步骤会自动更新进度；手工调整必须填写本次进展或阻塞原因，所有变化都会进入任务时间线。</p></div></div><div class="panel"><div class="panel-head"><span class="panel-title">本期任务制定依据</span><span class="panel-note">经营差异 · Skill · SMART 检查</span></div><div class="mapping"><div class="mapping-row"><label>关联指标</label><span>结算收益 · 实绩 ¥184,600 · 目标 ¥210,000</span></div><div class="mapping-row"><label>生成结果输出证据</label><span><span class="evidence-ref">核算表!F12</span> · 2026-10-01 至 10-28 · 环比 -4.2%</span></div><div class="mapping-row"><label>目标与行动检查</label><span>先明确具体改善目标及衡量方式；按已有依据评估可实现性和相关性，并为行动补充责任人、节点与验收依据。</span></div></div></div></div>
+          <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">任务依据</span><span class="panel-note">指标 → 生成结果输出证据 → 行动方案</span></div><div class="mapping"><div class="mapping-row"><label>关联指标</label><span>结算收益 · 实绩 ¥184,600 · 目标 ¥210,000</span></div><div class="mapping-row"><label>生成结果输出证据</label><span><span class="evidence-ref">核算表!F12</span> · 2026-10-01 至 10-28 · 环比 -4.2%</span></div><div class="mapping-row"><label>MP 名称 / 单位</label><span>销售最大化 · 元 / 月</span></div><div class="mapping-row"><label>可核验证据</label><span>高折扣订单 7 笔待复核；模型建议仅作为待确认线索</span></div></div></div><div class="footer-note">当前页面展示的是虚构演示数据；桌面版会将分析和任务进度保存到当前企业的 SQLite。</div>
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">任务时间线</span><span class="panel-note">按计划日期和进度事件查看</span></div><div class="chart-toolbar"><select class="select" id="taskTimelineGrain"><option value="day">日</option><option value="week">周</option><option value="month">月</option><option value="quarter">季度</option></select><input class="select" type="date" id="timelineFrom" aria-label="时间线开始日期" /><input class="select" type="date" id="timelineTo" aria-label="时间线结束日期" /><select class="select" id="timelineStatus"><option value="all">全部状态</option><option>待开始</option><option>进行中</option><option>有阻塞</option><option>已完成</option><option>已延期</option></select></div><div class="timeline-board" id="taskTimeline"></div></div><div class="footer-note">演示状态仅存在于当前页面；桌面版会将分析和任务进度保存到本地 SQLite。</div>
         </div>
 
         <div class="screen" id="history">
-          <div class="screen-head"><div><div class="eyebrow">04 · local history</div><h2>历史查询</h2><div class="sub">按企业、核算周期和期间检索已保存的分析结果。</div></div><div class="head-controls"><select class="select"><option>全部周期策略</option><option>月度 · 版本 1</option><option>日度 · 版本 2</option></select><input class="select" type="month" value="2026-09" aria-label="查询期间" /></div></div>
+          <div class="screen-head"><div><div class="eyebrow">07 · local history</div><h2>历史查询</h2><div class="sub">按企业、核算周期和期间检索已保存的分析结果。</div></div><div class="head-controls"><select class="select"><option>全部周期策略</option><option>月度 · 版本 1</option><option>日度 · 版本 2</option></select><input class="select" type="month" value="2026-09" aria-label="查询期间" /></div></div>
           <div class="panel"><div class="panel-head"><span class="panel-title">已保存期间</span><span class="panel-note">同一企业 + 周期 + 期间重做会更新当前版本并保留快照</span></div><table class="data-table"><thead><tr><th>期间</th><th>核算周期</th><th>版本</th><th>更新于</th><th>结果</th><th>操作</th></tr></thead><tbody><tr><td>2026-10-01 至 10-28</td><td>日度 · 策略版本 2</td><td>1</td><td>2026-10-29 09:18</td><td>4 指标 · 2 任务 · 6 图表</td><td><button class="outline history-view">查看</button><button class="outline history-rerun">重新分析</button></td></tr><tr><td>2026-09-01 至 09-30</td><td>月度 · 策略版本 1</td><td>2</td><td>2026-10-01 16:42</td><td>4 指标 · 3 任务 · 5 图表</td><td><button class="outline history-view">查看</button><button class="outline history-rerun">重新分析</button></td></tr></tbody></table></div>
           <div class="root-card"><h4>周期变更记录</h4><p>企业从月度切换为日度后，新分析采用新策略；已有月度结果仍保留，历史期间可按旧策略查看或显式回算。</p></div>
         </div>
-        <div class="screen" id="provider"><div class="screen-head"><div><div class="eyebrow">05 · provider</div><h2>Provider 设置</h2><div class="sub" id="providerSubtitle">示例制造企业 · 配置模型服务连接并保存到当前企业的本地 SQLite。</div></div></div><div class="setting-intro"><strong>Provider 设置是做什么的？</strong>Base URL 决定请求发往哪里，模型名决定使用哪个模型，API Key 是访问凭证。演示值均为假数据；真实版本界面掩码显示，Key 不进入日志、提示词、导出或错误信息。<b>注意：API Key 以明文保存在本机 SQLite 数据库中；能读取当前用户数据库文件的人也能读取 Key。</b>保存配置不做模型连接测试；实际发送前在预览中确认范围与大小。</div><div class="panel" style="max-width:820px"><div class="panel-head"><span class="panel-title">OpenAI 兼容 Provider</span><span class="tag green" id="providerStatus">已保存 · 本地</span></div><div class="mapping"><div class="mapping-row"><div><label>Base URL</label><small class="setting-help">模型服务的实际兼容 Base URL；不要求以 /v1 结尾。仅允许 HTTPS，回环地址可用 HTTP。</small></div><input class="select" id="providerBaseUrl" value="https://api.demo-provider.local/v1" /></div><div class="mapping-row"><div><label>模型</label><small class="setting-help">用于生成根因分析、任务步骤和行动建议的模型名称。</small></div><input class="select" id="providerModel" value="demo-reasoner-32b" /></div><div class="mapping-row"><div><label>API Key</label><small class="setting-help">访问 Provider 的凭证；演示值不是真实密钥，界面始终掩码显示。</small></div><input class="select mock-key" id="providerKey" type="password" value="demo-local-key-2026" /></div><div style="display:flex;gap:8px;align-items:center"><button class="primary" id="saveProvider">保存 Provider</button><button class="outline" id="testProvider">测试连接</button><span class="panel-note" id="providerNotice">最近保存：2026-10-29 09:12</span></div></div></div></div>
+        <div class="screen" id="provider"><div class="screen-head"><div><div class="eyebrow">provider</div><h2>Provider 设置</h2><div class="sub" id="providerSubtitle">示例制造企业 · 配置模型服务连接并保存到当前企业的本地 SQLite。</div></div></div><div class="setting-intro"><strong>Provider 设置是做什么的？</strong>Base URL 决定请求发往哪里，模型名决定使用哪个模型，API Key 是访问凭证。演示值均为假数据；真实版本界面掩码显示，Key 不进入日志、提示词、导出或错误信息。<b>注意：API Key 以明文保存在本机 SQLite 数据库中；能读取当前用户数据库文件的人也能读取 Key。</b>保存配置不做模型连接测试；实际发送前在预览中确认范围与大小。</div><div class="panel" style="max-width:820px"><div class="panel-head"><span class="panel-title">OpenAI 兼容 Provider</span><span class="tag green" id="providerStatus">已保存 · 本地</span></div><div class="mapping"><div class="mapping-row"><div><label>Base URL</label><small class="setting-help">模型服务的实际兼容 Base URL；不要求以 /v1 结尾。仅允许 HTTPS，回环地址可用 HTTP。</small></div><input class="select" id="providerBaseUrl" value="https://api.demo-provider.local/v1" /></div><div class="mapping-row"><div><label>模型</label><small class="setting-help">用于生成根因分析、任务步骤和行动建议的模型名称。</small></div><input class="select" id="providerModel" value="demo-reasoner-32b" /></div><div class="mapping-row"><div><label>API Key</label><small class="setting-help">访问 Provider 的凭证；演示值不是真实密钥，界面始终掩码显示。</small></div><input class="select mock-key" id="providerKey" type="password" value="demo-local-key-2026" /></div><div style="display:flex;gap:8px;align-items:center"><button class="primary" id="saveProvider">保存 Provider</button><button class="outline" id="testProvider">测试连接</button><span class="panel-note" id="providerNotice">最近保存：2026-10-29 09:12</span></div></div></div></div>
         <div class="screen" id="system-settings">
-          <div class="screen-head"><div><div class="eyebrow">06 · system settings</div><h2>系统设置</h2><div class="sub" id="systemSettingsSubtitle">示例制造企业 · 管理当前企业档案的周期、日期边界与本机数据。</div></div></div>
+          <div class="screen-head"><div><div class="eyebrow">system settings</div><h2>系统设置</h2><div class="sub" id="systemSettingsSubtitle">示例制造企业 · 管理当前企业档案的周期、日期边界与本机数据。</div></div></div>
           <div class="setting-intro"><strong>“企业档案”是什么？</strong>它就是本机里给一家企业单独建的一份资料夹，不是云端账号。每份档案有自己的数据目录、字段对应关系、核算周期、指标算法、Provider、历史分析和任务记录。切换顶部的企业档案后，只能看到该企业自己的内容；不同企业的数据不会混在一起。</div>
           <div class="panel" style="max-width:940px"><div class="panel-head"><span class="panel-title">企业档案与核算周期</span><span class="panel-note" id="currentWorkspaceLabel">当前：示例制造企业 · 策略 v2</span></div><div class="mapping">
             <div class="mapping-row"><div><label>企业名称</label><small class="setting-help">只是本机中的识别名称，不会修改原始表格；切换档案时用于区分各企业。</small></div><input class="select" id="workspaceName" value="示例制造企业" /></div>
@@ -343,7 +391,7 @@
           <div class="workspace-profile-details"><h3 class="setting-group-title">这份企业档案包含什么</h3>
           <div class="panel" style="max-width:940px"><div class="mapping">
             <div class="mapping-row"><div><label>数据目录</label><small class="setting-help">来源文件放在哪里；应用读取目录并展示识别结果，原文件仍留在原位置。</small></div><span>~/Documents/经营复盘/示例制造企业/2026-10</span></div>
-            <div class="mapping-row"><div><label>字段映射</label><small class="setting-help">把表格列对应到实绩、目标、日期、工时等工具字段；映射决定哪些值参与计算。</small></div><span>实绩 ← 核算表!10月实绩 · 日期 ← 推移表!业务日期</span></div>
+            <div class="mapping-row"><div><label>字段映射</label><small class="setting-help">把原始 source/profile 列对应到实绩、目标、日期、工时等工具字段；映射决定哪些值参与计算。</small></div><span>实绩 ← 销售出库.含税售价 · 日期 ← 销售出库.业务日期</span></div>
             <div class="mapping-row"><div><label>指标与公式</label><small class="setting-help">规定指标如何汇总和计算；例如毛利率 = 毛利 ÷ 销售额，单位时间附加值 = 结算收益 ÷ 有效工时。</small></div><span>当前 12 个指标定义 · 缺字段不默认按 0</span></div>
             <div class="mapping-row"><div><label>手工补录</label><small class="setting-help">保存文件没有提供的目标、人工费或工时，并记录单位、期间和说明；分析结果会标明手工来源。</small></div><span>本期有 1 项：2026-10-17 有效工时待补</span></div>
             <div class="mapping-row"><div><label>Provider 连接</label><small class="setting-help">为当前企业选择模型地址、模型名和本地 API Key；实际发送前每次展示内容并等待确认。</small></div><span>OpenAI 兼容 · demo-reasoner-32b · 已配置演示值</span></div>
@@ -369,7 +417,85 @@
     <div class="drawer-actions"><div><span class="save-note">演示状态保留在当前页面；桌面版写入本地 SQLite。</span><div class="task-save-status" id="taskSaveNotice">已有演示任务，可直接修改</div></div><div style="display:flex;gap:8px"><button class="outline" id="saveTask">保存任务</button><button class="primary" id="saveUpdate">保存进度</button></div></div>
   </aside>
   <script>
-    const labels = { source: '数据源', analysis: '经营分析', diagnosis: '经营问题诊断', task: '任务单', history: '历史查询', provider: 'Provider 设置', 'system-settings': '系统设置' };
+    const labels = { source: '数据源', analysis: '经营分析', tables: '两表展示/下载', diagnosis: '经营问题诊断', task: '任务单', history: '历史查询', provider: 'Provider 设置', 'system-settings': '系统设置' };
+    const sourceProfiles = {
+      manufacturing_demo: {
+        label: '示例制造业 · 经营复盘导出',
+        description: '适配销售出库、费用报销、工资条和辅助勾稽表；字段映射可调整，文件类别不构成全局固定逻辑。',
+        templates: '当前 profile 模板：销售出库、费用报销单、工资条及可选辅助勾稽字段（具体列可调整）。',
+        download: '演示下载：示例制造业 profile 模板包，包含销售出库、费用报销单、工资条及辅助勾稽字段说明。',
+        fileNote: 'manufacturing_demo · 3 个文件 · 2,486 行',
+        files: [
+          ['销售出库_202610.xlsx', '原始业务单据 · 出库时间、含税售价、出库成本 · 主单与明细已识别', 'green', '已识别'],
+          ['费用报销单_202610.xlsx', '原始业务单据 · 申请时间、报销类型、报销金额 · 分类待确认 1 项', 'gold', '待核对'],
+          ['工资条_202610.xlsx', '薪资归属月、当月实发 · 6 人 · 人工费可计入经营收益', 'green', '已识别'],
+          ['销售订单_202610.xlsx 等辅助表', '订单、入库、发票、收付款、资金账户 · 用于经营参考与勾稽', 'blue', '辅助来源']
+        ]
+      },
+      service_demo: {
+        label: '合成服务业 · 项目经营导出（演示）',
+        description: '演示按项目工时、服务收入、外包成本和费用明细归一化；输入列与制造业 profile 不同。',
+        templates: '当前 profile 模板：项目收入、工时台账、外包成本、费用明细及可选回款字段。',
+        download: '演示下载：合成服务业 profile 模板包，包含项目收入、工时台账、外包成本和费用明细字段说明。',
+        fileNote: 'service_demo · 4 个文件 · 1,128 行（合成演示）',
+        files: [
+          ['项目收入_202610.xlsx', '合成项目单据 · 项目、服务确认日、含税收入 · 已识别', 'green', '已识别'],
+          ['项目工时_202610.xlsx', '项目工时台账 · 人员、工时、归属期间 · 可计算效率', 'green', '已识别'],
+          ['外包成本_202610.xlsx', '外包服务成本 · 供应商、项目、结算金额 · 成本待核对 1 项', 'gold', '待核对'],
+          ['服务费用_202610.xlsx 等辅助表', '费用、回款、合同节点 · 用于经营参考与勾稽', 'blue', '辅助来源']
+        ]
+      }
+    };
+    const twoTableViewModel = {
+      contract: 'two_tables_v1', revision: 3, period: '2026-10', sourceCoverage: '2026-10-01 至 2026-10-28', sourceProfile: 'manufacturing_demo',
+      accounting: {
+        title: '核算表 · 2026 年 10 月',
+        rows: [
+          { item: '销售额', basis: '销售出库含税售价', actual: '¥ 184,600', export: '184600', status: '有效', statusClass: 'green' },
+          { item: '对应出库成本', basis: '出库成本总额', actual: '¥ 92,300', export: '92300', status: '有效', statusClass: 'green' },
+          { item: '附加值（扣人工前）', basis: '销售 − 成本 − 经营费用', actual: '¥ 118,200', export: '118200', status: '有效', statusClass: 'green' },
+          { item: '经营收益（扣人工后）', basis: '附加值 − 人工费', actual: '¥ 96,400', export: '96400', status: '有效', statusClass: 'green' },
+          { item: '单位时间附加值', basis: '附加值 ÷ 总工时', actual: '待补', export: '待补', status: '工时待补', statusClass: 'gold' },
+          { item: '月度预定 / 达成率', basis: '手工目标', actual: '待补', export: '待补', status: '目标待补', statusClass: 'gold' }
+        ],
+        foot: '缺项保留原因和来源，不按 0 填充。'
+      },
+      trend: {
+        title: '推移表 · 2026 年',
+        columns: ['月份', '销售额', '附加值', '经营收益'],
+        rows: [
+          { period: '2026-07', sales: '¥421,163', value: '¥135,200', profit: '¥112,375', exportSales: '421163', exportValue: '135200', exportProfit: '112375' },
+          { period: '2026-08', sales: '¥361,921', value: '¥121,680', profit: '¥106,608', exportSales: '361921', exportValue: '121680', exportProfit: '106608' },
+          { period: '2026-09', sales: '¥780,142', value: '¥270,312', profit: '¥217,473', exportSales: '780142', exportValue: '270312', exportProfit: '217473' },
+          { period: '2026-10', sales: '¥184,600', value: '¥118,200', profit: '¥96,400', exportSales: '184600', exportValue: '118200', exportProfit: '96400' },
+          { period: '累计', sales: '¥1,747,826', value: '按累计重算', profit: '按累计重算', exportSales: '1747826', exportValue: '按累计重算', exportProfit: '按累计重算' }
+        ],
+        foot: '金额累计求和；比率与每小时指标使用累计分子、分母重算。'
+      },
+      missing: ['工时待补', '月度目标待补']
+    };
+    const renderSourceProfile = () => {
+      const select = document.getElementById('sourceProfileSelect');
+      const profile = sourceProfiles[select.value];
+      twoTableViewModel.sourceProfile = select.value;
+      document.getElementById('sourceProfileDescription').textContent = profile.description;
+      document.getElementById('sourceProfileTemplates').textContent = profile.templates;
+      document.getElementById('sourceFileNote').textContent = profile.fileNote;
+      document.getElementById('sourceFileList').innerHTML = profile.files.map(([name, meta, color, tag]) => `<div class="file"><div><div class="file-name">${name}</div><div class="file-meta">${meta}</div></div><span class="tag ${color}">${tag}</span></div>`).join('');
+      renderTwoTableViewModel();
+    };
+    const renderTwoTableViewModel = () => {
+      const profile = sourceProfiles[twoTableViewModel.sourceProfile];
+      document.getElementById('tableStatusRevision').textContent = `revision ${twoTableViewModel.revision}`;
+      document.getElementById('tableStatusSource').textContent = `来源 profile：${profile.label} · 覆盖 ${twoTableViewModel.sourceCoverage}`;
+      document.getElementById('tableExportSource').textContent = `${profile.label} · 归一化后本地计算`;
+      document.getElementById('accountingTableTitle').textContent = twoTableViewModel.accounting.title;
+      document.getElementById('accountingTableBody').innerHTML = twoTableViewModel.accounting.rows.map(row => `<tr><td>${row.item}</td><td>${row.basis}</td><td>${row.actual}</td><td><span class="tag ${row.statusClass}">${row.status}</span></td></tr>`).join('');
+      document.getElementById('accountingTableFoot').textContent = twoTableViewModel.accounting.foot;
+      document.getElementById('trendTableTitle').textContent = twoTableViewModel.trend.title;
+      document.getElementById('trendTableBody').innerHTML = twoTableViewModel.trend.rows.map(row => `<tr><td>${row.period}</td><td>${row.sales}</td><td>${row.value}</td><td>${row.profit}</td></tr>`).join('');
+      document.getElementById('trendTableFoot').textContent = twoTableViewModel.trend.foot;
+    };
     document.querySelectorAll('[data-screen]').forEach(btn => btn.addEventListener('click', () => {
       document.querySelectorAll('[data-screen]').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
@@ -443,18 +569,20 @@
     const cycleCadence = document.getElementById('cycleCadence');
     let policyVersion = 2;
     const workspaceState = {
-      sample: { name: '示例制造企业', cadence: 'day', version: 2, foot: '示例制造企业', source: '示例制造企业 · 2026-10 日度经营复盘', hasData: true, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '2026-10-01', provider: { baseUrl: 'https://api.demo-provider.local/v1', model: 'demo-reasoner-32b', apiKey: 'demo-local-key-2026' } },
-      'sample-2': { name: '新建空白档案', cadence: 'month', version: 1, foot: '新建空白档案', source: '新建空白档案 · 尚未导入数据', hasData: false, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '', provider: { baseUrl: '', model: '', apiKey: '' } }
+      sample: { name: '示例制造企业', cadence: 'day', version: 2, foot: '示例制造企业', source: '示例制造企业 · 2026-10 日度经营复盘', sourceProfile: 'manufacturing_demo', hasData: true, tablesReady: true, tableRevision: 3, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '2026-10-01', provider: { baseUrl: 'https://api.demo-provider.local/v1', model: 'demo-reasoner-32b', apiKey: 'demo-local-key-2026' } },
+      'sample-2': { name: '新建空白档案', cadence: 'month', version: 1, foot: '新建空白档案', source: '新建空白档案 · 尚未导入数据', sourceProfile: 'manufacturing_demo', hasData: false, tablesReady: false, tableRevision: null, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '', provider: { baseUrl: '', model: '', apiKey: '' } }
     };
     const workspaceSelect = document.getElementById('workspaceSelect');
     const applyWorkspace = () => {
       const workspace = workspaceState[workspaceSelect.value];
       document.getElementById('workspaceFoot').textContent = workspace.foot;
-      const dataScreens = ['source', 'analysis', 'diagnosis', 'task', 'history'];
+      const dataScreens = ['source', 'analysis', 'tables', 'diagnosis', 'task', 'history'];
       dataScreens.forEach(id => {
         const screen = document.getElementById(id);
         [...screen.children].forEach(child => {
-          if (!child.classList.contains('screen-head')) child.hidden = !workspace.hasData;
+          // Keep the task prerequisite visible even for an empty archive so the
+          // reason generation is unavailable remains explicit.
+          if (!child.classList.contains('screen-head') && child.id !== 'taskTableGate') child.hidden = !workspace.hasData;
         });
       });
       document.getElementById('workspaceEmptyNotice').hidden = workspace.hasData;
@@ -462,6 +590,21 @@
       document.getElementById('workspaceProfileEmpty').hidden = workspace.hasData;
       document.querySelector('#source .sub').textContent = workspace.hasData ? `${workspace.source} · 读取本地目录，核对期间、字段与数据口径。` : `${workspace.name} · 尚未选择数据目录，请先导入文件并确认字段映射。`;
       document.querySelector('#analysis .sub').textContent = workspace.hasData ? `${workspace.name} · 2026-10-01 至 2026-10-28 · 日度聚合，可切换周 / 月 / 季度` : `${workspace.name} · 尚无分析期间`;
+      document.getElementById('sourceProfileSelect').value = workspace.sourceProfile || 'manufacturing_demo';
+      renderSourceProfile();
+      const tablesReady = Boolean(workspace.tablesReady);
+      const gate = document.getElementById('taskTableGate');
+      const gateText = document.getElementById('taskTableGateText');
+      const generateTaskButton = document.getElementById('generateTaskButton');
+      if (gate && gateText && generateTaskButton) {
+        gate.classList.toggle('ready', tablesReady);
+        gate.classList.toggle('gate-block', true);
+        gateText.textContent = tablesReady
+          ? `当前可引用核算表和推移表 revision ${workspace.tableRevision}。任务单生成会绑定两表版本；两表缺失时不能发起模型请求。`
+          : '当前企业尚未生成核算表和推移表。请先完成原始数据导入、映射与本地核算；任务单生成已禁用。';
+        generateTaskButton.disabled = !tablesReady;
+        generateTaskButton.title = tablesReady ? '两表已存在，可生成任务单' : '必须先生成两表';
+      }
       document.getElementById('systemSettingsSubtitle').textContent = `${workspace.name} · 管理当前企业档案的周期、日期边界与本机数据。`;
       document.querySelector('#providerSubtitle').textContent = `${workspace.name} · 配置模型服务连接并保存到当前企业的本地 SQLite。`;
       document.getElementById('currentWorkspaceLabel').textContent = `当前：${workspace.name} · 策略 v${workspace.version}`;
@@ -503,10 +646,55 @@
       document.getElementById('providerNotice').textContent = '原型未发起连接 · 当前仅演示配置入口';
       alert('这是交互原型，仅检查地址已填写；没有发起网络请求，不能据此判断 Provider 可用。');
     });
-    document.getElementById('exportButton').addEventListener('click', () => alert('演示导出：经营数据包包含核算表、推移表、任务单和结构化 JSON；诊断报告通过诊断页单独下载。不包含 API Key 或原始数据库。'));
-    document.getElementById('downloadTemplate').addEventListener('click', () => alert('演示下载：空白模板包包含核算表、推移表、任务单和字段说明，不含业务样例数据。'));
+    document.getElementById('sourceProfileSelect').addEventListener('change', renderSourceProfile);
+    renderSourceProfile();
+    document.getElementById('exportButton').addEventListener('click', () => document.querySelector('[data-screen="tables"]').click());
+    document.getElementById('downloadTemplate').addEventListener('click', () => {
+      const profile = sourceProfiles[document.getElementById('sourceProfileSelect').value];
+      alert(`${profile.download} 输出 contract：${twoTableViewModel.contract}（正式版固定 XLSX；原型仅演示下载入口）。`);
+    });
+    document.getElementById('downloadOutputTemplate').addEventListener('click', () => {
+      alert('固定 two_tables_v1 输出模板包已准备下载（正式版为 XLSX；原型仅演示下载入口）。');
+    });
+    document.getElementById('tablesToDownload').addEventListener('click', () => document.getElementById('downloadTablesBundle').click());
+    document.querySelectorAll('[data-table-tab]').forEach(tab => tab.addEventListener('click', () => {
+      const selected = tab.dataset.tableTab;
+      document.querySelectorAll('[data-table-tab]').forEach(item => {
+        const active = item === tab;
+        item.classList.toggle('active', active);
+        item.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      document.querySelectorAll('[data-table-panel]').forEach(panel => { panel.hidden = panel.dataset.tablePanel !== selected; });
+    }));
+    const downloadText = (filename, content) => {
+      const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    };
+    const buildTsv = (headers, rows) => `${[headers, ...rows].map(row => row.join('\t')).join('\n')}\n`;
+    document.getElementById('downloadAccounting').addEventListener('click', () => {
+      if (!workspaceState[workspaceSelect.value].tablesReady) return alert('当前没有可下载的核算表，请先完成原始数据导入和本地核算。');
+      const rows = twoTableViewModel.accounting.rows.map(row => [row.item, row.basis, row.export, row.status]);
+      downloadText(`核算表_${twoTableViewModel.period}_revision${twoTableViewModel.revision}.tsv`, buildTsv(['科目', '计算口径', '实绩', '状态'], rows));
+    });
+    document.getElementById('downloadTrend').addEventListener('click', () => {
+      if (!workspaceState[workspaceSelect.value].tablesReady) return alert('当前没有可下载的推移表，请先完成原始数据导入和本地核算。');
+      const rows = twoTableViewModel.trend.rows.map(row => [row.period, row.exportSales, row.exportValue, row.exportProfit]);
+      downloadText(`推移表_${twoTableViewModel.period}_revision${twoTableViewModel.revision}.tsv`, buildTsv(twoTableViewModel.trend.columns, rows));
+    });
+    document.getElementById('downloadTablesBundle').addEventListener('click', () => {
+      if (!workspaceState[workspaceSelect.value].tablesReady) return alert('当前没有可下载的两表包，请先完成原始数据导入和本地核算。');
+      const profile = sourceProfiles[twoTableViewModel.sourceProfile];
+      const accountingRows = twoTableViewModel.accounting.rows.map(row => [row.item, row.basis, row.export, row.status]);
+      const trendRows = twoTableViewModel.trend.rows.map(row => [row.period, row.exportSales, row.exportValue, row.exportProfit]);
+      const content = [`两表包 · ${twoTableViewModel.contract} · revision ${twoTableViewModel.revision}`, `来源 profile：${profile.label}`, `来源覆盖：${twoTableViewModel.sourceCoverage}`, `缺项：${twoTableViewModel.missing.join('；')}`, '正式版固定 XLSX 输出合同；本文件为交互原型演示导出。', '', '--- 核算表 ---', buildTsv(['科目', '计算口径', '实绩', '状态'], accountingRows), '--- 推移表 ---', buildTsv(twoTableViewModel.trend.columns, trendRows)].join('\n');
+      downloadText(`两表包_${twoTableViewModel.period}_revision${twoTableViewModel.revision}.txt`, content);
+    });
     document.getElementById('chooseDirectory').addEventListener('click', () => alert('正式版本会打开系统目录选择器；当前原型使用虚构目录。'));
-    document.getElementById('scanFiles').addEventListener('click', () => alert('已重新扫描示例目录：3 个文件、2,486 行，1 项工时待补。'));
+    document.getElementById('scanFiles').addEventListener('click', () => alert(`已重新扫描当前 profile：${sourceProfiles[document.getElementById('sourceProfileSelect').value].fileNote}。两表输出 contract 保持 ${twoTableViewModel.contract}。`));
     if (cycleCadence) cycleCadence.addEventListener('change', () => {
       const labels = { day: '日度', week: '周度', month: '月度', quarter: '季度' };
       document.getElementById('policyNotice').textContent = `待保存：${labels[cycleCadence.value]}；将同时保存周起始日、财年起始月和时区，生效日期后建立新版本。`;
@@ -739,11 +927,13 @@
       renderRootCause();
     });
     document.getElementById('generateTaskButton').addEventListener('click', () => {
-      if (!workspaceState[workspaceSelect.value].hasData) return alert('请先为当前企业档案导入数据并完成字段映射。');
+      const workspace = workspaceState[workspaceSelect.value];
+      if (!workspace.hasData) return alert('请先为当前企业档案导入数据并完成字段映射。');
+      if (!workspace.tablesReady) return alert('任务单生成已拦截：必须先生成核算表和推移表。');
       const useDiagnosis = document.getElementById('useDiagnosisContext').checked;
       const reference = useDiagnosis ? '会将本期已保存诊断报告作为可选补充上下文，并明确其待核实状态。' : '不引用诊断报告，仅根据经营差异和 Skill 原则明确改善目标并拆解行动步骤。';
       const confirmed = confirm(`生成任务单\n\n任务依据：本期经营差异和 Skill 中的任务单要求；SMART 用于校验总体目标及拆解后的子目标是否具体、可衡量、可实现、与经营重点相关且有期限。责任人、行动节点和验收依据会作为执行字段单独确认。\n${reference}\n\n正式版本会先展示 Provider、文件范围和 payload 估算，并等待确认。原型当前不会实际调用 Provider。`);
-      if (confirmed) alert('任务单生成请求已在原型中确认；不会自动开启诊断，也不会真实调用 Provider。');
+      if (confirmed) alert(`任务单生成请求已在原型中确认；已绑定核算表与推移表 revision ${workspace.tableRevision}。不会自动开启诊断，也不会真实调用 Provider。`);
     });
 
     function renderTaskDetail() {

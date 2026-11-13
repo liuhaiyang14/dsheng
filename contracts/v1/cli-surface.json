@@ -144,11 +144,14 @@
     },
     {
       "command": "scan",
-      "syntax": "dsheng scan --workspace <id> --dir <path> --json",
+      "syntax": "dsheng scan --workspace <id> --dir <path> [--source-profile <profile-id>|--generic] --json",
       "kind": "read",
       "provider_calls_maximum": 0,
       "input_contract": "docs/specs/data-period-import.md",
-      "notes": [],
+      "notes": [
+        "scan reads raw source files only; generated 核算表/推移表 sheets are rejected as input",
+        "profile selection is explicit when supplied; if omitted, runtime binds the generic profile and never falls back to the current example profile"
+      ],
       "output_contract": "contracts/v1/read-views.schema.json#/$defs/scanSummaryView"
     },
     {
@@ -525,11 +528,14 @@
     },
     {
       "command": "template download",
-      "syntax": "dsheng template download --package import --out <path.zip>",
+      "syntax": "dsheng template download --package <source|output> [--profile <profile-id>] [--contract two_tables_v1] --out <path.zip>",
       "kind": "export",
       "provider_calls_maximum": 0,
-      "input_contract": "docs/specs/data-period-import.md",
-      "notes": []
+      "input_contract": "contracts/v1/source-profile.schema.json",
+      "notes": [
+        "source package is profile-specific; output package is fixed two_tables_v1",
+        "核算表/推移表 are generated outputs and are never imported"
+      ]
     },
     {
       "command": "version",

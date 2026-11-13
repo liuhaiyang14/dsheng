@@ -358,6 +358,106 @@ def validate_collections(documents, counts):
     counts["cli_error_codes_parsed"] = len(cli["errors"])
 
 
+def source_profile_fixture():
+    """Minimal profile fixture for the source→normalized boundary."""
+    return {
+        "schema_version": "1",
+        "profile_id": "synthetic_erp_v1",
+        "version": 1,
+        "enterprise_type": "synthetic",
+        "display_name": "合成企业输入适配器",
+        "source_template_version": 1,
+        "template": {"files": ["source.xlsx"], "sheet_name": "source", "columns": ["业务日期", "指标", "单位", "计划值", "实际值", "数据来源"]},
+        "output_contract_id": "two_tables_v1",
+        "file_roles": [{
+            "role_id": "sales_export",
+            "required": True,
+            "file_matchers": ["sales"],
+            "sheet_matchers": ["records"],
+            "field_map": {"business_date": "date", "amount": "amount", "document_id": "id"}
+        }],
+        "field_aliases": {
+            "business_date": ["日期"],
+            "amount": ["金额"]
+        },
+        "row_rules": {
+            "header_rows_max": 3,
+            "detail_key_fields": ["document_id", "line_id"],
+            "date_field": "business_date",
+            "amount_fields": ["amount"]
+        },
+        "normalization": {
+            "currency": "CNY",
+            "tax_basis": "confirm_at_runtime",
+            "timezone": "Asia/Shanghai",
+            "status_map": {"完成": "completed"}
+        },
+        "dedupe": {
+            "same_content": "dedupe",
+            "different_content": "manual_review",
+            "detail_and_total": "select_authoritative"
+        }
+    }
+
+
+def validate_source_profiles(documents, validators, counts):
+    """Validate profile JSON plus cross-field uniqueness not expressible in JSON Schema."""
+    schema = documents[CONTRACTS / "source-profile.schema.json"]
+    schema_id = schema["$id"]
+    valid = source_profile_fixture()
+    require(not list(validators[schema_id].iter_errors(valid)), "Valid source profile fixture rejected")
+
+    duplicate_alias = deepcopy(valid)
+    duplicate_alias["field_aliases"]["amount"].append("日期")
+    alias_errors = validate_profile_cross_fields(duplicate_alias)
+    require(any("duplicate field alias" in error for error in alias_errors),
+            "Cross-field duplicate alias was not rejected")
+
+    duplicate_role = deepcopy(valid)
+    duplicate_role["file_roles"].append(deepcopy(duplicate_role["file_roles"][0]))
+    role_errors = validate_profile_cross_fields(duplicate_role)
+    require(any("duplicate role_id" in error for error in role_errors),
+            "Duplicate source role was not rejected")
+
+    wrong_output = deepcopy(valid)
+    wrong_output["output_contract_id"] = "accounting_v0"
+    require(list(validators[schema_id].iter_errors(wrong_output)),
+            "Profile with non-fixed output contract was accepted")
+    profiles_dir = CONTRACTS / "source-profiles"
+    profile_paths = sorted(profiles_dir.glob("*.json"))
+    require(profile_paths, "No versioned source profiles found")
+    for path in profile_paths:
+        profile = read_json(path)
+        errors = list(validators[schema_id].iter_errors(profile))
+        require(not errors, f"Source profile {path.name} rejected: {errors[0].message if errors else ''}")
+        semantic_errors = validate_profile_cross_fields(profile)
+        require(not semantic_errors, f"Source profile {path.name} violates profile invariants: {semantic_errors[0] if semantic_errors else ''}")
+    counts["source_profile_schema_cases_checked"] = 4 + len(profile_paths)
+    counts["source_profile_files_checked"] = len(profile_paths)
+    counts["source_profile_cross_field_rules_checked"] = 2 + len(profile_paths)
+
+
+def validate_profile_cross_fields(profile):
+    """Runtime-equivalent semantic checks for profile registry invariants."""
+    errors = []
+    owner_by_alias = {}
+    for field, aliases in profile.get("field_aliases", {}).items():
+        for alias in aliases:
+            previous = owner_by_alias.get(alias)
+            if previous is not None and previous != field:
+                errors.append(f"duplicate field alias: {alias} ({previous}, {field})")
+            owner_by_alias[alias] = field
+    seen_roles = set()
+    for role in profile.get("file_roles", []):
+        role_id = role.get("role_id")
+        if role_id in seen_roles:
+            errors.append(f"duplicate role_id: {role_id}")
+        seen_roles.add(role_id)
+    if profile.get("output_contract_id") != "two_tables_v1":
+        errors.append("output_contract_id must be two_tables_v1")
+    return errors
+
+
 def validate_hashes(manifest, counts):
     paths = set()
     for bundle in manifest["prompt_bundles"].values():
@@ -409,6 +509,7 @@ def main():
     counts["schemas_metaschema_checked"] = len(schemas)
     counts["schema_references_resolved_offline"] = ref_count
     validate_collections(documents, counts)
+    validate_source_profiles(documents, validators, counts)
     cases = []
     for case in documents[CONTRACTS / "task-state-cases.json"]["schema_validation_cases"]:
         schema_id = documents[CONTRACTS / case["schema"]]["$id"]

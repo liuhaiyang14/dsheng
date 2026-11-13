@@ -7,7 +7,7 @@
 //! 显式 0、负数与两位小数金额（XML 数值字面量）、`合计` 行、`待补` 行。
 //! 全部数值为合成值；真实业务文件绝不入库。
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -144,6 +144,7 @@ fn accounting_sheet() -> String {
                 T("J4", "预实差异额"),
                 T("K4", "实绩达成预定比"),
                 T("L4", "实绩达成年度计划比"),
+                T("M4", "期间"),
             ],
         ),
         (5, vec![T("A5", "【先行指标（未来经营信号）】")]),
@@ -171,6 +172,7 @@ fn accounting_sheet() -> String {
                 N("E11", "200000"),
                 N("F11", "150000"),
                 N("H11", "65432.1"),
+                T("M11", "2026-10-01"),
             ],
         ),
         (
@@ -188,6 +190,7 @@ fn accounting_sheet() -> String {
                 N("J12", "-76543.22"),
                 N("K12", "0.6172839"),
                 N("L12", "0.3429355"),
+                T("M12", "2026-10-01"),
             ],
         ),
         (13, vec![T("A13", "【费用部分（合成）】")]),
@@ -195,13 +198,14 @@ fn accounting_sheet() -> String {
             19,
             vec![
                 T("A19", "B1"),
-                T("B19", "费用合计（含人工费）"),
+                T("B19", "经营费用合计"),
                 T("C19", "B1=B2+B3+B4+B5+B6+B20"),
                 T("D19", "—"),
                 Blank("E19"),
                 Blank("F19"),
                 T("G19", "—"),
                 N("H19", "45678.9"),
+                T("M19", "2026-10-01"),
             ],
         ),
         (
@@ -216,6 +220,7 @@ fn accounting_sheet() -> String {
                 T("G20", "—"),
                 N("H20", "18000"),
                 N("J20", "-2000"),
+                T("M20", "2026-10-01"),
             ],
         ),
         (
@@ -229,6 +234,7 @@ fn accounting_sheet() -> String {
                 N("F21", "30000"),
                 N("G21", "0.12"),
                 N("H21", "-4321.37"),
+                T("M21", "2026-10-01"),
             ],
         ),
         (26, vec![T("A26", "【单位时间附加值部分】")]),
@@ -243,6 +249,7 @@ fn accounting_sheet() -> String {
                 N("F27", "100"),
                 T("G27", "—"),
                 N("H27", "-6.71"),
+                T("M27", "2026-10-01"),
             ],
         ),
         (
@@ -283,6 +290,7 @@ fn accounting_sheet() -> String {
                 N("H36", "0"),
                 N("J36", "-50000"),
                 N("K36", "0"),
+                T("M36", "2026-10-01"),
             ],
         ),
         (
@@ -296,6 +304,7 @@ fn accounting_sheet() -> String {
                 Blank("F37"),
                 T("G37", "—"),
                 N("H37", "76543.21"),
+                T("M37", "2026-10-01"),
             ],
         ),
         (
@@ -310,6 +319,7 @@ fn accounting_sheet() -> String {
                 T("G38", "—"),
                 Blank("H38"),
                 Blank("J38"),
+                T("M38", "2026-10-01"),
             ],
         ),
         (
@@ -325,7 +335,7 @@ fn accounting_sheet() -> String {
     )
 }
 
-const FILE_LABEL: &str = "合成核算表.xlsx";
+const FILE_LABEL: &str = "合成原始source.xlsx";
 
 struct Env {
     dir: PathBuf,
@@ -337,7 +347,7 @@ struct Env {
 impl Env {
     /// workspace（month 策略）+ 合成指标（别名覆盖真实行名形态）+ 合成核算表。
     fn new(tag: &str) -> Self {
-        Self::with_files(tag, &[(FILE_LABEL, vec![("核算表", accounting_sheet())])])
+        Self::with_files(tag, &[(FILE_LABEL, vec![("source", accounting_sheet())])])
     }
 
     /// 同上，但扫描目录中的文件/sheet 由调用方给定。
@@ -448,7 +458,7 @@ impl Env {
             (
                 "operating_expense",
                 "经营费用",
-                "费用合计（含人工费）",
+                "经营费用合计",
                 money,
                 "down",
                 "explicit_target_only",
@@ -570,10 +580,13 @@ fn decimal_rows_with_formula_text_in_source_column_are_observed() {
         actual(data, "settlement_income").as_deref(),
         Some("-4321.37")
     );
-    assert_eq!(
-        actual(data, "value_added_per_hour").as_deref(),
-        Some("-6.71")
-    );
+    // 单位时间附加值需要企业确认有效工时与公式；来源同名直取不能绕过待确认门禁。
+    assert_eq!(actual(data, "value_added_per_hour"), None);
+    assert!(metric(data, "value_added_per_hour").unwrap()["pending_reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reason| reason == "configuration_required"));
     // C 列写“直接取数”的小数行同理（根因是数值字面量，不是 C 列）
     assert_eq!(actual(data, "payments_amount").as_deref(), Some("76543.21"));
     // `合计` 行是合法范围观察（§4.2），不因关键词或 C 列公式文本被排除
@@ -590,7 +603,32 @@ fn decimal_rows_with_formula_text_in_source_column_are_observed() {
         .iter()
         .filter_map(Value::as_str)
         .collect();
-    assert_eq!(evidence, vec![format!("cell:{FILE_LABEL}:核算表:H12")]);
+    assert_eq!(evidence, vec![format!("cell:{FILE_LABEL}:source:H12")]);
+    std::fs::remove_dir_all(&env.dir).ok();
+}
+
+#[test]
+fn invalid_period_is_not_assigned_to_current_analysis_window() {
+    use C::*;
+    let source = sheet_xml(
+        &[
+            (1, vec![T("A1", "指标"), T("B1", "期间"), T("C1", "实际值")]),
+            (2, vec![T("A2", "总销售额"), T("B2", "不是日期"), N("C2", "99")]),
+        ],
+        &[],
+    );
+    let env = Env::with_files(
+        "hard-invalid-period",
+        &[("raw-source.xlsx", vec![("source", source)])],
+    );
+    let (out, code) = env.analyze(None);
+    assert_eq!(code, 0, "{out}");
+    assert_eq!(actual(&out["data"], "sales_net"), None);
+    assert!(metric(&out["data"], "sales_net").unwrap()["pending_reasons"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|reason| reason == "actual_missing"));
     std::fs::remove_dir_all(&env.dir).ok();
 }
 
@@ -638,7 +676,7 @@ fn blank_cells_are_missing_and_explicit_zero_or_negative_kept() {
         )
         .unwrap();
     let snapshot: Value = serde_json::from_str(&normalized).unwrap();
-    assert!(metric(&snapshot, "invoice_amount").is_none());
+    assert_eq!(actual(&snapshot, "invoice_amount"), None);
     std::fs::remove_dir_all(&env.dir).ok();
 }
 
@@ -716,7 +754,7 @@ fn empty_as_zero_requires_explicit_confirmation_and_snapshots_coverage() {
         .collect();
     assert_eq!(
         filled,
-        vec![format!("cell:{FILE_LABEL}:核算表:H38")],
+        vec![format!("cell:{FILE_LABEL}:source:H38")],
         "补 0 证据坐标留档（可审计）"
     );
 
@@ -862,7 +900,7 @@ fn contract_orientation_trend_sheet_observed_by_period_columns() {
         &[("合成推移表.xlsx", vec![("推移表", trend_sheet())])],
     );
     let scan = env.scan.to_string_lossy().to_string();
-    // 适配器命中 trend（scan note 记录角色）
+    // 生成结果 sheet 名属于输出层，扫描时必须拒绝回灌。
     let (out, code) = run(&[
         "scan",
         "--db",
@@ -878,7 +916,7 @@ fn contract_orientation_trend_sheet_observed_by_period_columns() {
         out["data"]["files"][0]["note"]
             .as_str()
             .unwrap()
-            .contains("推移表:trend"),
+            .contains("推移表:generated_output_input_not_allowed"),
         "scan note: {}",
         out["data"]["files"][0]["note"]
     );
@@ -901,17 +939,7 @@ fn contract_orientation_trend_sheet_observed_by_period_columns() {
     ]);
     assert_eq!(code, 0, "{out}");
     let data = &out["data"];
-    assert_eq!(actual(data, "sales_net").as_deref(), Some("333.5"));
-    let series = data["series"].as_array().unwrap();
-    let sales_series = series
-        .iter()
-        .find(|s| s["metric_key"] == "sales_net")
-        .unwrap();
-    assert_eq!(
-        sales_series["buckets"],
-        json!(["2026-09-01/2026-09-30", "2026-10-31/2026-10-31"])
-    );
-    assert_eq!(sales_series["actual"], json!(["111", "222.5"]));
+    assert_eq!(actual(data, "sales_net"), None);
     std::fs::remove_dir_all(&env.dir).ok();
 }
 
@@ -925,7 +953,7 @@ fn transposed_trend_hits_trend_and_observes_periods_as_rows() {
         )],
     );
     let scan = env.scan.to_string_lossy().to_string();
-    // 转置锚点命中 trend（note 显示 trend 而非 generic_table）
+    // 转置推移表属于生成结果，不能作为 source 输入。
     let (out, code) = run(&[
         "scan",
         "--db",
@@ -941,7 +969,7 @@ fn transposed_trend_hits_trend_and_observes_periods_as_rows() {
         out["data"]["files"][0]["note"]
             .as_str()
             .unwrap()
-            .contains("推移表:trend"),
+            .contains("推移表:generated_output_input_not_allowed"),
         "scan note: {}",
         out["data"]["files"][0]["note"]
     );
@@ -963,82 +991,7 @@ fn transposed_trend_hits_trend_and_observes_periods_as_rows() {
     ]);
     assert_eq!(code, 0, "{out}");
     let data = &out["data"];
-    // 窗口内只有 2026-10 月行；累计行（2026-01-01/2026-10-31）不与月行相加
-    assert_eq!(actual(data, "sales_net").as_deref(), Some("50"));
-    assert_eq!(
-        actual(data, "settlement_income").as_deref(),
-        Some("-6.5"),
-        "负数原样"
-    );
-    assert_eq!(actual(data, "labor_cost").as_deref(), Some("9"));
-    assert_eq!(
-        actual(data, "value_added_per_hour").as_deref(),
-        Some("0"),
-        "显式 0 保留（真 0 不是缺失）"
-    );
-    // 序列：期间行→桶；累计行是独立范围桶（BTreeMap 键序）；说明行不是数据
-    let series = data["series"].as_array().unwrap();
-    let sales = series
-        .iter()
-        .find(|s| s["metric_key"] == "sales_net")
-        .unwrap();
-    assert_eq!(
-        sales["buckets"],
-        json!([
-            "2025-07-01/2025-07-31",
-            "2025-08-01/2025-08-31",
-            "2026-01-01/2026-10-31",
-            "2026-09-01/2026-09-30",
-            "2026-10-01/2026-10-31",
-        ])
-    );
-    assert_eq!(sales["actual"], json!(["20", "30", "270", "40", "50"]));
-    // `—` 占位与空格=missing：对应桶不出值（不猜 0）
-    let vah = series
-        .iter()
-        .find(|s| s["metric_key"] == "value_added_per_hour")
-        .unwrap();
-    assert_eq!(
-        vah["buckets"],
-        json!([
-            "2025-07-01/2025-07-31",
-            "2025-08-01/2025-08-31",
-            "2026-10-01/2026-10-31",
-        ])
-    );
-    assert_eq!(vah["actual"], json!(["1.5", "2.5", "0"]));
-    // 证据坐标按转置数据格定位（行×指标列：B2..B5 月行、B6 累计行）
-    let sales_metric = metric(data, "sales_net").unwrap();
-    let evidence: Vec<&str> = sales_metric["mom"]["evidence_ids"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(Value::as_str)
-        .collect();
-    let label = "cell:合成转置推移表.xlsx:推移表";
-    assert_eq!(
-        evidence,
-        vec![format!("{label}:B4"), format!("{label}:B5")],
-        "环比只引用当前10月及基期9月"
-    );
-    let yoy: Vec<&str> = sales_metric["yoy"]["evidence_ids"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(Value::as_str)
-        .collect();
-    assert_eq!(
-        yoy,
-        vec![format!("{label}:B5")],
-        "缺失去年10月时不混入去年7/8月或累计值"
-    );
-    for unrelated in ["B2", "B3", "B6"] {
-        assert!(!evidence
-            .iter()
-            .chain(yoy.iter())
-            .any(|id| id.ends_with(unrelated)));
-    }
-    std::fs::remove_dir_all(&env.dir).ok();
+    assert_eq!(actual(data, "sales_net"), None);
 }
 
 #[test]
@@ -1076,7 +1029,7 @@ fn transposed_trend_with_non_metric_column_falls_back_to_generic_table() {
         out["data"]["files"][0]["note"]
             .as_str()
             .unwrap()
-            .contains("推移表:generic_table"),
+            .contains("推移表:generated_output_input_not_allowed"),
         "非指标列 → 整表回退：{}",
         out["data"]["files"][0]["note"]
     );
@@ -1097,7 +1050,7 @@ fn transposed_trend_with_non_metric_column_falls_back_to_generic_table() {
         "--json",
     ]);
     assert_eq!(code, 0, "{out}");
-    assert!(out["data"]["metrics"].as_array().unwrap().is_empty());
+    assert_eq!(actual(&out["data"], "sales_net"), None);
     std::fs::remove_dir_all(&env.dir).ok();
 }
 
@@ -1117,8 +1070,8 @@ fn transposed_trend_and_accounting_same_metric_same_period_candidates() {
     assert_eq!(code, 0, "{out}");
     assert_eq!(
         actual(&out["data"], "sales_net").as_deref(),
-        Some("123456.78"),
-        "同值候选去重，不与核算表观察相加成 246913.56"
+        None,
+        "生成结果 sheet 被拒绝后不能形成 source 观察"
     );
     std::fs::remove_dir_all(&env.dir).ok();
 
@@ -1139,29 +1092,6 @@ fn transposed_trend_and_accounting_same_metric_same_period_candidates() {
         "冲突未解决时经营值 null"
     );
     let conn = rusqlite::Connection::open(&env.db).unwrap();
-    let (period, cands_raw): (String, String) = conn
-        .query_row(
-            "SELECT period_from || '/' || period_to, candidate_values_json
-             FROM source_conflicts",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
-    assert_eq!(period, "2026-10-01/2026-10-31");
-    let cands: Value = serde_json::from_str(&cands_raw).unwrap();
-    let cands = cands.as_array().unwrap();
-    assert_eq!(cands.len(), 2, "双方候选均保留");
-    let mut evidence: Vec<&str> = cands
-        .iter()
-        .map(|c| c["evidence_id"].as_str().unwrap())
-        .collect();
-    evidence.sort_unstable();
-    assert_eq!(
-        evidence,
-        vec![
-            "cell:合成核算表.xlsx:核算表:H12",
-            "cell:合成转置推移表.xlsx:推移表:B4",
-        ]
-    );
+    assert_eq!(conn.query_row("SELECT COUNT(*) FROM source_conflicts", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
     std::fs::remove_dir_all(&env.dir).ok();
 }

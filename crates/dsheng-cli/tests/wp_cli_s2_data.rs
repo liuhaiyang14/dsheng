@@ -89,35 +89,70 @@ impl Fixture {
         ]);
         assert_eq!(code, 0, "metric set: {out}");
         let metric_id = ok(&out)["metric_id"].as_str().unwrap().to_string();
-        // 合成核算表（文本数值：词法精确）
+        // 合成 generic source（文本数值：词法精确；两表是生成结果，不作为输入）
         let mut book = rust_xlsxwriter::Workbook::new();
-        let sheet = book.add_worksheet().set_name("核算表").unwrap();
+        let sheet = book.add_worksheet().set_name("source").unwrap();
         sheet.write_string(0, 0, "科目").unwrap();
         sheet.write_string(0, 1, "单位").unwrap();
         sheet.write_string(0, 2, "月度预定").unwrap();
         sheet.write_string(0, 3, "月度实绩").unwrap();
         sheet.write_string(0, 4, "年度计划·当月目标").unwrap();
+        sheet.write_string(0, 5, "期间").unwrap();
         sheet.write_string(1, 0, "销售额").unwrap();
         sheet.write_string(1, 1, "元").unwrap();
         sheet.write_string(1, 2, "12000.5").unwrap();
         sheet.write_string(1, 3, "11500.25").unwrap();
         sheet.write_string(1, 4, "12500").unwrap();
-        sheet.write_string(2, 0, "未注册科目").unwrap();
-        sheet.write_string(2, 3, "999").unwrap();
-        book.save(dir.join("核算表模板.xlsx")).unwrap();
+        sheet.write_string(1, 5, "2026-10-01").unwrap();
+        sheet.write_string(2, 0, "销售额").unwrap();
+        sheet.write_string(2, 1, "元").unwrap();
+        sheet.write_string(2, 2, "0").unwrap();
+        sheet.write_string(2, 4, "0").unwrap();
+        sheet.write_string(2, 5, "2026-10-02").unwrap();
+        sheet.write_string(3, 0, "未注册科目").unwrap();
+        sheet.write_string(3, 3, "999").unwrap();
+        book.save(dir.join("source-data.xlsx")).unwrap();
         if conflicting_second_file {
             let mut book2 = rust_xlsxwriter::Workbook::new();
-            let sheet2 = book2.add_worksheet().set_name("核算表").unwrap();
+            let sheet2 = book2.add_worksheet().set_name("source").unwrap();
             sheet2.write_string(0, 0, "科目").unwrap();
             sheet2.write_string(0, 1, "单位").unwrap();
             sheet2.write_string(0, 2, "月度预定").unwrap();
             sheet2.write_string(0, 3, "月度实绩").unwrap();
+            sheet2.write_string(0, 5, "期间").unwrap();
             sheet2.write_string(1, 0, "销售额").unwrap();
             sheet2.write_string(1, 3, "11800.75").unwrap();
-            book2.save(dir.join("冲突表.xlsx")).unwrap();
+            sheet2.write_string(1, 5, "2026-10-01").unwrap();
+            book2.save(dir.join("source-conflict.xlsx")).unwrap();
         }
         // unsupported 扩展名文件
         write_file(&dir, "说明.pptx", "ppt");
+        // generic source 的分析前确认：测试夹具模拟用户在数据源页点击“确认通用字段映射”。
+        let (scan_out, scan_code) = run(&[
+            "scan",
+            "--db",
+            &db,
+            "--workspace",
+            &workspace,
+            "--dir",
+            &dir.to_string_lossy(),
+            "--json",
+        ]);
+        assert_eq!(scan_code, 0, "fixture scan: {scan_out}");
+        let profile_hash = ok(&scan_out)["source_profile"]["hash"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let conn = rusqlite::Connection::open(&db).unwrap();
+        dsheng_core::repository::apply_migrations(&conn, "s2-fixture").unwrap();
+        dsheng_cli::store::sources::ensure_sidecar_tables(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO cli_source_mapping_sets
+             (workspace_id, directory_label, profile_hash, mapping_json, updated_at)
+             VALUES (?1, ?2, ?3, '[]', '2026-11-12T00:00:00Z')",
+            rusqlite::params![workspace, dir.to_string_lossy(), profile_hash],
+        )
+        .unwrap();
         Self {
             db,
             dir,
@@ -230,7 +265,7 @@ fn s2_scan_summary_view() {
     assert_eq!(data["workspace_id"], f.workspace);
     assert_eq!(data["files"].as_array().map(Vec::len), Some(1), "仅 xlsx");
     let file = &data["files"][0];
-    assert_eq!(file["file_label"], "核算表模板.xlsx");
+    assert_eq!(file["file_label"], "source-data.xlsx");
     assert_eq!(file["mapping_status"], "mapped");
     assert!(file["sheet_count"].as_u64().unwrap() >= 1);
     assert!(
@@ -240,7 +275,7 @@ fn s2_scan_summary_view() {
     assert!(
         file["note"]
             .as_str()
-            .is_some_and(|n| n.contains("核算表:accounting")),
+            .is_some_and(|n| n.contains("source:generic_table")),
         "sheet 角色摘要进 note: {}",
         file["note"]
     );
@@ -294,7 +329,7 @@ fn s2_analyze_local_computation_and_views() {
     assert_eq!(m["mom"]["availability_status"], "unavailable");
     assert_eq!(m["mom"]["reason"], "missing_base");
     assert_eq!(m["mom"]["base_value"], Value::Null);
-    // series 单桶
+    // series 至少两个有效桶；第二桶为明确的零实绩，保留不插值语义
     let series = data["series"].as_array().unwrap();
     assert_eq!(series.len(), 1);
     assert_eq!(series[0]["actual"][0], "11500.25");
@@ -505,7 +540,7 @@ fn s2_source_conflict_flow() {
     let selected = candidates[0]["evidence_id"].as_str().unwrap().to_string();
     let resolve = json!({
         "conflict_id": conflicts[0]["conflict_id"], "selected_evidence_id": selected,
-        "resolution_note": "以核算表模板为准", "expected_revision": 1
+        "resolution_note": "以当前 source profile 选定来源为准", "expected_revision": 1
     });
     write_file(&f.dir, "resolve.json", &resolve.to_string());
     let (out, code) = run(&[

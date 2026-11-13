@@ -93,8 +93,10 @@ pub fn scan(
     state: tauri::State<'_, DesktopEnv>,
     workspace_id: String,
     directory_label: String,
+    source_profile: Option<String>,
+    generic: Option<bool>,
 ) -> Value {
-    core::data::scan(&state, workspace_id, directory_label)
+    core::data::scan_with_profile(&state, workspace_id, directory_label, source_profile, generic.unwrap_or(false))
 }
 
 #[tauri::command(async)]
@@ -109,6 +111,18 @@ pub fn mapping_show(
 #[tauri::command(async)]
 pub fn analyze(state: tauri::State<'_, DesktopEnv>, input: Value) -> Value {
     core::data::analyze(&state, input)
+}
+
+#[tauri::command(async)]
+pub fn export_tables(
+    state: tauri::State<'_, DesktopEnv>,
+    workspace_id: String,
+    run_id: String,
+    revision: Option<u32>,
+    kind: String,
+    out_path: String,
+) -> Value {
+    core::data::export_tables(&state, workspace_id, run_id, revision, kind, out_path)
 }
 
 // ---- 诊断 ----
@@ -319,8 +333,25 @@ pub fn history_show(
 }
 
 #[tauri::command(async)]
-pub fn template_download(state: tauri::State<'_, DesktopEnv>, out_path: String) -> Value {
-    core::data::template_download(&state, out_path)
+pub fn template_download(
+    state: tauri::State<'_, DesktopEnv>,
+    out_path: String,
+    package: Option<String>,
+    profile: Option<String>,
+    contract: Option<String>,
+) -> Value {
+    core::data::template_download(&state, out_path, package, profile, contract)
+}
+
+#[tauri::command(async)]
+pub fn source_mapping_set(
+    state: tauri::State<'_, DesktopEnv>,
+    workspace_id: String,
+    directory_label: String,
+    profile_hash: String,
+    mappings: Value,
+) -> Value {
+    core::data::source_mapping_set(&state, workspace_id, directory_label, profile_hash, mappings)
 }
 
 #[tauri::command(async)]

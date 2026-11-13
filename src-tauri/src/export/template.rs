@@ -1,8 +1,7 @@
-//! 模板包 import-template-v1.zip（§5）：三份空白 XLSX＋字段说明 Markdown。
+//! 模板包（§5）：source profile 输入 XLSX 或固定 two_tables_v1 输出 XLSX＋字段说明 Markdown。
 //!
 //! 无样例金额/客户/人员；元数据键位固定、值空；列名按 §5 表；推移表空期间列
-//! 为“期间1（填写ISO期间）”等；任务 sheet 用“本期/下期”前缀名（导入器接受
-//! 无日期前缀同一后缀）。
+//! 为“期间1（填写ISO期间）”等。任务单属于分析结果附加导出，不是 source 输入。
 
 use super::cells::{write_headers, write_text};
 use super::workbook::{
@@ -16,11 +15,14 @@ use super::{
 use rust_xlsxwriter::Workbook;
 use std::io::Write;
 
+/// 旧包名仅供历史导出兼容；当前 UI/CLI 不再把它当 source 输入。
 pub const TEMPLATE_ZIP_NAME: &str = "import-template-v1.zip";
 pub const TEMPLATE_ACCOUNTING: &str = "核算表模板.xlsx";
 pub const TEMPLATE_TREND: &str = "推移表模板.xlsx";
 pub const TEMPLATE_TASK: &str = "任务单模板.xlsx";
 pub const TEMPLATE_FIELDS_MD: &str = "字段说明.md";
+pub const OUTPUT_TEMPLATE_ZIP_NAME: &str = "two-tables-output-v1.zip";
+pub const SOURCE_TEMPLATE_ZIP_NAME: &str = "source-profile-template-v1.zip";
 
 /// 推移表空期间列（§5：未填不能导成真实期间）。
 pub fn blank_trend_headers(period_columns: usize) -> Vec<String> {
@@ -96,12 +98,12 @@ fn blank_task() -> ExportResult<Vec<u8>> {
         .map_err(|e| ExportError(e.to_string()))
 }
 
-/// 字段说明（§4.2 别名表摘要＋§5 元数据位置＋技术列说明；无样例业务数据）。
+/// 字段说明（source profile 的别名表摘要＋元数据位置＋技术列说明；无样例业务数据）。
 pub fn fields_markdown() -> String {
     let mut s = String::new();
-    s.push_str("# dsheng 导入模板字段说明（import-template-v1）\n\n");
+    s.push_str("# dsheng 原始 source 模板字段说明（source-profile-template-v1）\n\n");
     s.push_str(
-        "## 元数据（三份工作簿每个 sheet 第 1–4 行；第 5 行空；第 6 行列名；第 7 行起数据）\n\n",
+        "## 元数据（每个 source sheet 第 1–4 行；第 5 行空；第 6 行列名；第 7 行起数据）\n\n",
     );
     s.push_str("| 单元格 | 键 | 说明 |\n| --- | --- | --- |\n");
     for (cell, key, note) in [
@@ -175,6 +177,133 @@ pub fn fields_markdown() -> String {
     );
     s.push_str("- 指标行名按注册指标的 label/aliases exact 匹配；未注册行需用户确认。\n");
     s
+}
+
+/// 构建固定 two_tables_v1 输出模板（仅核算表/推移表输出，不作为输入）。
+pub fn build_two_tables_v1_zip() -> ExportResult<Vec<u8>> {
+    let mut buffer = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut buffer);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, bytes) in [
+            (TEMPLATE_ACCOUNTING, blank_accounting()?),
+            (TEMPLATE_TREND, blank_trend()?),
+        ] {
+            zip.start_file(name, options)
+                .map_err(|e| ExportError(format!("zip 条目失败: {e}")))?;
+            zip.write_all(&bytes)
+                .map_err(|e| ExportError(format!("zip 写入失败: {e}")))?;
+        }
+        zip.finish()
+            .map_err(|e| ExportError(format!("zip 完成失败: {e}")))?;
+    }
+    Ok(buffer.into_inner())
+}
+
+/// 构建 profile 来源模板。来源模板只包含 generic source sheet，不包含
+/// 核算表/推移表/差异分析/图表等生成结果工作表。
+pub fn build_source_profile_zip(profile_id: &str) -> ExportResult<Vec<u8>> {
+    let (files, sheet_name, headers) = profile_template(profile_id);
+    let fields = format!(
+        "# source profile template\n\n- profile_id: `{profile_id}`\n- output_contract_id: `two_tables_v1`\n- files: {}\n\n列：{}\n",
+        files.join("、"),
+        headers.join("、")
+    );
+    let mut buffer = std::io::Cursor::new(Vec::new());
+    {
+        let mut zip = zip::ZipWriter::new(&mut buffer);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for file_name in files {
+            let mut book = Workbook::new();
+            let ws = book.add_worksheet();
+            ws.set_name(&sheet_name)
+                .map_err(|e| ExportError(e.to_string()))?;
+            write_blank_metadata(ws)?;
+            write_headers(ws, HEADER_ROW, &headers.iter().map(String::as_str).collect::<Vec<_>>())?;
+            let workbook = book
+                .save_to_buffer()
+                .map_err(|e| ExportError(e.to_string()))?;
+            zip.start_file(file_name, options)
+                .map_err(|e| ExportError(format!("zip 条目失败: {e}")))?;
+            zip.write_all(&workbook)
+                .map_err(|e| ExportError(format!("zip 写入失败: {e}")))?;
+        }
+        zip.start_file(TEMPLATE_FIELDS_MD, options)
+            .map_err(|e| ExportError(format!("zip 条目失败: {e}")))?;
+        zip.write_all(&fields.into_bytes())
+            .map_err(|e| ExportError(format!("zip 写入失败: {e}")))?;
+        zip.finish()
+            .map_err(|e| ExportError(format!("zip 完成失败: {e}")))?;
+    }
+    Ok(buffer.into_inner())
+}
+
+/// 返回 source profile 模板包的实际文件清单，供 CLI/UI 结果摘要使用。
+pub fn source_profile_template_files(profile_id: &str) -> Vec<String> {
+    let (files, _, _) = profile_template(profile_id);
+    files.into_iter().chain(std::iter::once(TEMPLATE_FIELDS_MD.to_string())).collect()
+}
+
+fn profile_template(profile_id: &str) -> (Vec<String>, String, Vec<String>) {
+    let builtin = match profile_id {
+        "manufacturing_demo" | "manufacturing_erp_v1" => Some(include_str!("../../../contracts/v1/source-profiles/manufacturing_demo.json")),
+        "service_demo" => Some(include_str!("../../../contracts/v1/source-profiles/service_demo.json")),
+        "xsd_trade_v1" => Some(include_str!("../../../contracts/v1/source-profiles/xsd_trade_v1.json")),
+        _ => None,
+    };
+    if let Some(bytes) = builtin {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(bytes) {
+            if let Some(template) = value.get("template") {
+                let files = template
+                    .get("files")
+                    .and_then(|v| v.as_array())
+                    .map(|xs| xs.iter().filter_map(|v| v.as_str()).map(str::to_string).collect::<Vec<_>>())
+                    .filter(|xs| !xs.is_empty())
+                    .unwrap_or_else(|| vec!["source-template.xlsx".into()]);
+                let sheet = template.get("sheet_name").and_then(|v| v.as_str()).unwrap_or("source").to_string();
+                let headers = template
+                    .get("columns")
+                    .and_then(|v| v.as_array())
+                    .map(|xs| xs.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>())
+                    .filter(|xs| xs.len() >= 2)
+                    .unwrap_or_else(|| vec!["期间".into(), "指标".into(), "单位".into(), "计划值".into(), "实际值".into(), "数据来源".into()]);
+                return (files, sheet, headers);
+            }
+        }
+    }
+    let path = std::path::Path::new(profile_id);
+    if let Ok(bytes) = std::fs::read(path) {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) {
+            let template = value.get("template");
+            let files = template
+                .and_then(|v| v.get("files"))
+                .and_then(|v| v.as_array())
+                .map(|xs| {
+                    xs.iter()
+                        .filter_map(|v| v.as_str())
+                        .filter_map(|v| std::path::Path::new(v).file_name().map(|n| n.to_string_lossy().to_string()))
+                        .filter(|v| !v.is_empty())
+                        .collect::<Vec<_>>()
+                })
+                .filter(|xs| !xs.is_empty())
+                .unwrap_or_else(|| vec!["source-template.xlsx".into()]);
+            let sheet = template
+                .and_then(|v| v.get("sheet_name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("source")
+                .to_string();
+            let headers = template
+                .and_then(|v| v.get("columns"))
+                .and_then(|v| v.as_array())
+                .map(|xs| xs.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>())
+                .filter(|xs| xs.len() >= 2)
+                .unwrap_or_else(|| vec!["期间".into(), "指标".into(), "单位".into(), "计划值".into(), "实际值".into(), "数据来源".into()]);
+            return (files, sheet, headers);
+        }
+    }
+    (vec!["source-template.xlsx".into()], "source".into(), vec!["期间".into(), "指标".into(), "单位".into(), "计划值".into(), "实际值".into(), "数据来源".into()])
 }
 
 /// 构建模板 ZIP 字节。

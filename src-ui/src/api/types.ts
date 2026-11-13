@@ -792,6 +792,8 @@ export interface ScanSummaryView {
   available_periods?: { from: IsoDate; to: IsoDate; grain: Cadence }[];
   /** 可分析期间绑定的周期策略，设置变更后必须重新扫描。 */
   available_period_policy_id?: string;
+  /** 本次扫描绑定的 source profile；两表生成结果不作为输入。 */
+  source_profile?: { profile_id: string; version: number; hash: string; mode: string; profile_ref?: string };
   pending_inputs: string[];
 }
 
@@ -834,6 +836,9 @@ export interface MetricRowView {
   actual_value: DecimalString | null;
   /** actual - target；缺任一操作数为 null。 */
   delta: DecimalString | null;
+  /** 核心根据关键输入完整性返回；缺失值不会被当作 0。 */
+  status?: 'ready' | 'pending';
+  pending_reasons?: string[];
   mom: ComparisonView | null;
   yoy: ComparisonView | null;
   /**
@@ -853,6 +858,8 @@ export interface AnalysisRunView {
   metrics: MetricRowView[];
   /** 每指标桶序列；缺桶为 null（断线不插值）。值为 DecimalString。 */
   series: MetricSeriesView[];
+  two_tables_ready?: boolean;
+  source_profile?: { profile_id: string; version: number; hash: string; mode: string; profile_ref?: string | null; config?: unknown } | null;
 }
 
 export interface MetricSeriesView {
@@ -1012,6 +1019,7 @@ export interface HistoryDetailView {
   metrics: MetricRowView[];
   /** 图表序列（缺桶 null）；只读快照。 */
   series: MetricSeriesView[];
+  two_tables_ready?: boolean;
   grain: Cadence;
   period: DateRange;
   tasks: {

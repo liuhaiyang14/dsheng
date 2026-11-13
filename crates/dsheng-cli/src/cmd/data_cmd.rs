@@ -12,11 +12,14 @@ use dsheng_core::contracts::cli::CliErrorCode;
 pub fn scan(
     workspace: Option<String>,
     dir: String,
+    source_profile: Option<String>,
+    generic: bool,
     db: Option<&String>,
 ) -> CliResult<serde_json::Value> {
     let mut conn = ctx::open_db(db)?;
     let ws = ctx::resolve_workspace(&conn, workspace.as_ref())?;
-    sources_store::scan_summary(&mut conn, ws.workspace_id, &dir)
+    let profile = sources_store::resolve_source_profile(source_profile.as_deref(), generic)?;
+    sources_store::scan_summary_with_profile(&mut conn, ws.workspace_id, &dir, &profile)
 }
 
 pub fn mapping(action: cli::MappingAction, db: Option<&String>) -> CliResult<serde_json::Value> {
@@ -143,6 +146,8 @@ pub fn analyze(
     policy: Option<String>,
     recalculate: bool,
     input_json: Option<String>,
+    source_profile: Option<String>,
+    generic: bool,
     db: Option<&String>,
 ) -> CliResult<serde_json::Value> {
     let mut conn = ctx::open_db(db)?;
@@ -165,7 +170,8 @@ pub fn analyze(
         cli::AnalyzeGrain::Month => Some("month".into()),
         cli::AnalyzeGrain::Quarter => Some("quarter".into()),
     };
-    analysis_store::run_analyze(
+    let profile = sources_store::resolve_source_profile(source_profile.as_deref(), generic)?;
+    analysis_store::run_analyze_with_profile(
         &mut conn,
         ws.workspace_id,
         &dir,
@@ -176,6 +182,7 @@ pub fn analyze(
         policy,
         recalculate,
         extra,
+        profile,
     )
 }
 

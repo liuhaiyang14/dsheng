@@ -29,7 +29,12 @@ pub fn dispatch_with_progress(
     match command {
         cli::Command::Workspace { action } => settings_cmd::workspace(action, db),
         cli::Command::Provider { action } => settings_cmd::provider(action, db),
-        cli::Command::Scan { workspace, dir } => data_cmd::scan(workspace, dir, db),
+        cli::Command::Scan {
+            workspace,
+            dir,
+            source_profile,
+            generic,
+        } => data_cmd::scan(workspace, dir, source_profile, generic, db),
         cli::Command::Mapping { action } => data_cmd::mapping(action, db),
         cli::Command::ManualInput { action } => data_cmd::manual_input(action, db),
         cli::Command::Metric { action } => data_cmd::metric(action, db),
@@ -43,6 +48,8 @@ pub fn dispatch_with_progress(
             policy,
             recalculate,
             input_json,
+            source_profile,
+            generic,
         } => data_cmd::analyze(
             workspace,
             dir,
@@ -52,6 +59,8 @@ pub fn dispatch_with_progress(
             policy,
             recalculate,
             input_json,
+            source_profile,
+            generic,
             db,
         ),
         cli::Command::Analysis { action } => data_cmd::analysis(action, db),

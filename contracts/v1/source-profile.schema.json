@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dsheng-source-profile-v1",
+  "title": "dsheng source adapter profile v1",
+  "description": "企业类型输入适配器合同。profile 负责 source 文件到规范化观察的映射；它不能改变 two_tables_v1 的输出合同，也不能包含可执行代码或任意公式。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "version",
+    "enterprise_type",
+    "display_name",
+    "source_template_version",
+    "template",
+    "output_contract_id",
+    "file_roles",
+    "field_aliases",
+    "row_rules",
+    "normalization",
+    "dedupe"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "version": { "type": "integer", "minimum": 1 },
+    "enterprise_type": { "type": "string", "minLength": 1 },
+    "display_name": { "type": "string", "minLength": 1 },
+    "source_template_version": { "type": "integer", "minimum": 1 },
+    "template": { "$ref": "#/$defs/template" },
+    "output_contract_id": { "const": "two_tables_v1" },
+    "file_roles": {
+      "type": "array",
+      "minItems": 1,
+      "description": "role_id 在 profile 内必须唯一；唯一性由离线 validator 和运行时 profile registry 复核。",
+      "items": { "$ref": "#/$defs/fileRole" }
+    },
+    "field_aliases": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "每个 alias 只允许绑定一个规范字段；跨字段唯一性由离线 validator 和运行时 profile registry 复核。",
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": { "type": "string", "minLength": 1 }
+      }
+    },
+    "row_rules": { "$ref": "#/$defs/rowRules" },
+    "normalization": { "$ref": "#/$defs/normalization" },
+    "dedupe": { "$ref": "#/$defs/dedupe" },
+    "record_mappings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/recordMapping" }
+    },
+    "notes": { "type": "string" }
+  },
+  "$defs": {
+    "fileRole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role_id", "required", "file_matchers", "sheet_matchers", "field_map"],
+      "properties": {
+        "role_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{0,63}$"
+        },
+        "required": { "type": "boolean" },
+        "file_matchers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "sheet_matchers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "field_map": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "rowRules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["header_rows_max", "detail_key_fields", "date_field", "amount_fields"],
+      "properties": {
+        "header_rows_max": { "type": "integer", "minimum": 1, "maximum": 20 },
+        "detail_key_fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "date_field": { "type": "string", "minLength": 1 },
+        "amount_fields": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "normalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "tax_basis", "timezone", "status_map"],
+      "properties": {
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "tax_basis": {
+          "enum": ["inclusive", "exclusive", "not_applicable", "confirm_at_runtime"]
+        },
+        "timezone": { "type": "string", "minLength": 1 },
+        "status_map": {
+          "type": "object",
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "dedupe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["same_content", "different_content", "detail_and_total"],
+      "properties": {
+        "same_content": { "enum": ["dedupe", "conflict"] },
+        "different_content": { "enum": ["conflict", "latest_revision", "manual_review"] },
+        "detail_and_total": { "enum": ["select_authoritative", "manual_review", "reject"] }
+      }
+    },
+    "record_mappings": {
+      "type": "array",
+      "description": "可选的业务明细适配器。每条映射只声明来源字段到规范指标的取数关系；计算仍由本地引擎完成。",
+      "items": { "$ref": "#/$defs/recordMapping" }
+    },
+    "template": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files", "sheet_name", "columns"],
+      "properties": {
+        "files": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "sheet_name": { "type": "string", "minLength": 1 },
+        "columns": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "recordMapping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mapping_id", "file_matchers", "sheet_matchers", "metric_key", "value_fields", "date_fields"],
+      "properties": {
+        "mapping_id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "file_matchers": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "sheet_matchers": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "metric_key": { "type": "string", "minLength": 1 },
+        "value_fields": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "date_fields": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+        "status_field": { "type": "string" },
+        "accepted_statuses": { "type": "array", "items": { "type": "string" } },
+        "requires_confirmation": { "type": "boolean" },
+        "period_kind": { "enum": ["date", "year_month"] },
+        "scope_field": { "type": "string" }
+      }
+    }
+  }
+}

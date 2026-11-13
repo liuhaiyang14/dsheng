@@ -723,6 +723,7 @@ pub fn build_task_payload(
         run_id,
     )
     .map_err(CliError::from)?;
+    crate::store::sources::require_two_tables_materialized(conn, workspace_id, run_id, revision)?;
     let mut selected_report = optional_report
         .map(|selection| {
             let report_id = selection["report_id"].as_str().ok_or_else(|| {
@@ -1346,6 +1347,7 @@ fn constrain_period_cells<'a>(
     sheet: &str,
     comparisons: &std::collections::BTreeMap<String, Vec<DateRange>>,
     current_source: bool,
+    explicit_anchors: &[(usize, usize)],
 ) -> CellPeriods {
     let transposed = layout.get("transposed");
     let period_col = layout["period_col"].as_u64().map(|c| c as usize);
@@ -1383,7 +1385,9 @@ fn constrain_period_cells<'a>(
     if !dated_layout {
         if window.from == window.to || !current_source {
             // 无日期汇总不能声称属于某一天，旧日度分析须重新导入日期明确的来源。
-            picked.clear();
+            picked.retain(|row, cells| {
+                cells.iter().any(|cell| explicit_anchors.contains(&(*row, cell.col_no)))
+            });
             return CellPeriods::new();
         }
         return picked
@@ -1424,6 +1428,11 @@ fn constrain_period_cells<'a>(
                 .or_else(|| col_periods.get(&cell.col_no))
                 .copied()
             else {
+                // 用户明确提供的 evidence anchor 即使没有期间列也必须保留，
+                // 否则 payload 会静默丢失用户指定的证据。
+                if explicit_anchors.contains(&(*row, cell.col_no)) {
+                    selected.entry(*row).or_default().push(cell);
+                }
                 continue;
             };
             let a1 = format!(
@@ -1506,15 +1515,18 @@ fn revision_source_scope(
             params![workspace_id.to_string(), id, rev],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
-        .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => source_scope_unavailable(),
-            other => CliError::from(other),
+        .map_err(|e| {
+            match e {
+                rusqlite::Error::QueryReturnedNoRows => source_scope_unavailable(),
+                other => CliError::from(other),
+            }
         })
     };
     let (current_sources, base_refs) = read_snapshot(run_id, revision)?;
     let mut snapshots = vec![current_sources];
-    let bases: Vec<BaseRevision> =
-        serde_json::from_str(&base_refs).map_err(|_| source_scope_unavailable())?;
+    let bases: Vec<BaseRevision> = serde_json::from_str(&base_refs).map_err(|_| {
+        source_scope_unavailable()
+    })?;
     for base in bases.into_iter().filter(|_| include_bases) {
         snapshots.push(read_snapshot(&base.run_id, base.revision_no)?.0);
     }
@@ -1527,7 +1539,9 @@ fn revision_source_scope(
     )?;
     for snapshot in snapshots {
         let selections: Vec<dsheng_core::analysis::fingerprint::SourceSelection> =
-            serde_json::from_str(&snapshot).map_err(|_| source_scope_unavailable())?;
+            serde_json::from_str(&snapshot).map_err(|_| {
+                source_scope_unavailable()
+            })?;
         // [] 是合法的纯手工输入分析；保持空来源白名单，绝不扩大到整个工作区。
         for selection in selections {
             if selection.content_hash.is_empty()
@@ -1914,6 +1928,7 @@ pub fn trimmed_source_selection(
                 sheet,
                 &comparison_anchors,
                 current_source_scope.contains(&(source.source_id.clone(), sheet.clone())),
+                &sheet_anchors,
             );
             if picked.is_empty() {
                 continue;
@@ -2454,6 +2469,15 @@ pub fn create_preview(
     prompt_version: &str,
     schema_version: &str,
 ) -> CliResult<Value> {
+    if operation == GenerationOperation::TaskGenerate {
+        let revision = material.analysis_revision_no;
+        crate::store::sources::require_two_tables_materialized(
+            conn,
+            workspace_id,
+            &material.run_id.to_string(),
+            revision,
+        )?;
+    }
     ensure_current_report_binding(conn, workspace_id, material)?;
     if !provider.key_present {
         return Err(CliError::new(

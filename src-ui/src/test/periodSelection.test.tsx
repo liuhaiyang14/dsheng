@@ -98,6 +98,8 @@ it('无结果时先扫描，再到经营分析显式运行，使用真实目录�
   fireEvent.change(screen.getByTestId('manual-path-input'), { target: { value: '/tmp/business-source' } });
   fireEvent.click(screen.getByTestId('manual-path-scan'));
   await waitFor(() => expect(screen.getByTestId('source-scan-status')).toHaveTextContent('已扫描'));
+  fireEvent.click(screen.getByTestId('confirm-source-mapping-button'));
+  await waitFor(() => expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull());
   navigate('经营分析');
   expect(screen.queryByLabelText('分析开始日期')).toBeNull();
   expect(screen.queryByLabelText('分析结束日期')).toBeNull();
@@ -106,7 +108,7 @@ it('无结果时先扫描，再到经营分析显式运行，使用真实目录�
   expect(analyzeSpy).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
   await waitFor(() => expect(screen.getByTestId('current-period-label')).toHaveTextContent('2026-10-05 至 2026-10-11'));
-  expect(analyzeSpy).toHaveBeenCalledWith({ workspace_id: WS_DEMO_ID, directory_label: '/tmp/business-source', from: '2026-10-05', to: '2026-10-11', grain: 'week' });
+  expect(analyzeSpy).toHaveBeenCalledWith({ workspace_id: WS_DEMO_ID, directory_label: '/tmp/business-source', from: '2026-10-05', to: '2026-10-11', grain: 'week', generic: true, source_profile: undefined });
   expect(screen.getByTestId('saved-period-select')).toHaveValue(generatedRun);
   expect(await screen.findByTestId('metric-table')).toBeVisible();
 });
@@ -136,6 +138,16 @@ async function openLocalAnalysis(client: FixtureClient) {
   if (summary) fireEvent.click(summary);
   fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
   await waitFor(() => expect(screen.getByLabelText('分析期间')).toBeEnabled());
+  // generic_table candidates are intentionally gated until the user confirms
+  // the directory/profile mapping; mirror that explicit product action here.
+  navigate('数据源');
+  const mappingButton = screen.queryByTestId('confirm-source-mapping-button');
+  if (mappingButton) {
+    fireEvent.click(screen.getByTestId('confirm-source-mapping-button'));
+    await waitFor(() => expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull());
+  }
+  navigate('经营分析');
+  await waitFor(() => expect(screen.getByLabelText('分析期间')).toBeEnabled());
 }
 
 it('只导入月初几天时，月度下拉仍提交该月自然区间，首次分析直接运行', async () => {
@@ -156,7 +168,7 @@ it('只导入月初几天时，月度下拉仍提交该月自然区间，首次�
   expect(screen.queryByTestId('analysis-overwrite-confirmation')).toBeNull();
   await waitFor(() => expect(analyze).toHaveBeenCalledOnce());
   expect(analyze).toHaveBeenCalledWith({ workspace_id: WS_DEMO_ID, directory_label: '/tmp/local-analysis-source',
-    from: '2026-10-01', to: '2026-10-31', grain: 'month' });
+    from: '2026-10-01', to: '2026-10-31', grain: 'month', generic: true, source_profile: undefined });
 });
 
 it('可用期间包含当前查看月份时默认保留该月，选择新月份不会自动分析', async () => {

@@ -19,7 +19,7 @@ fn source(conn: &Connection, f: &Fixture) -> (String, String) {
 }
 
 fn selection(source_id: &str, hash: &str) -> Value {
-    json!([{"source_id": source_id, "content_hash": hash, "sheet": "核算表", "range": "A1:E2"}])
+    json!([{"source_id": source_id, "content_hash": hash, "sheet": "source", "range": "A1:E2"}])
 }
 
 fn set_scope(conn: &Connection, run: &str, scope: &Value, bases: &Value) {
@@ -109,7 +109,7 @@ fn old_revision_with_blank_source_id_excludes_new_file_versions_and_other_sheets
         f.workspace,
         &f.run_id,
         1,
-        &["cell:核算表模板.xlsx:其他期间:D2".to_string()],
+        &["cell:source-data.xlsx:其他期间:D2".to_string()],
     )
     .unwrap();
     assert_eq!(selected.manifest.len(), 1);
@@ -119,7 +119,7 @@ fn old_revision_with_blank_source_id_excludes_new_file_versions_and_other_sheets
     assert!(selected
         .records
         .iter()
-        .all(|r| r.source_id.to_string() != new_id && r.sheet.as_deref() == Some("核算表")));
+        .all(|r| r.source_id.to_string() != new_id && r.sheet.as_deref() == Some("source")));
     assert_eq!(selected.scope_rows.len(), 1);
     assert_eq!(selected.scope_rows[0]["content_hash"], json!(old_hash));
 }

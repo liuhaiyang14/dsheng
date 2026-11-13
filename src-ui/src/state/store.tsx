@@ -36,6 +36,7 @@ import { currentPeriodPolicy, periodIdentity, savedPeriods } from './periods';
 export type ScreenId =
   | 'source'
   | 'analysis'
+  | 'tables'
   | 'diagnosis'
   | 'task'
   | 'history'
@@ -45,6 +46,7 @@ export type ScreenId =
 export const SCREEN_LABELS: Record<ScreenId, string> = {
   source: '数据源',
   analysis: '经营分析',
+  tables: '两表展示/下载',
   diagnosis: '经营问题诊断',
   task: '任务单',
   history: '历史查询',
@@ -328,7 +330,16 @@ export function AppProvider({
     setError(null);
     setLoading(true);
     try {
-      const run = await client.analyze({ workspace_id: workspaceId, directory_label: directory, ...period });
+      const scannedProfile = dataRef.current[workspaceId]?.scan?.source_profile;
+      const run = await client.analyze({
+        workspace_id: workspaceId,
+        directory_label: directory,
+        ...period,
+        source_profile: scannedProfile?.mode === 'profile'
+          ? (scannedProfile.profile_ref ?? scannedProfile.profile_id)
+          : undefined,
+        generic: !scannedProfile || scannedProfile.mode === 'generic',
+      });
       if (epoch !== requestEpoch.current || activeWorkspaceRef.current !== workspaceId) return;
       const loaded = await loadWorkspaceData(client, workspaceId, { runId: run.run_id }, dataRef.current[workspaceId]?.scan);
       if (epoch === requestEpoch.current && activeWorkspaceRef.current === workspaceId) applyLoaded(workspaceId, loaded);

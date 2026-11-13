@@ -160,11 +160,41 @@ export class TauriClient implements DshengClient {
   }
 
   // ---- 数据源（dsheng scan / mapping show） ----
-  scan(workspaceId: string, directoryLabel: string): Promise<ScanSummaryView> {
-    return this.invoke('scan', { workspaceId, directoryLabel });
+  scan(workspaceId: string, directoryLabel: string, sourceProfile?: string, generic = false): Promise<ScanSummaryView> {
+    return this.invoke('scan', {
+      workspaceId,
+      directoryLabel,
+      sourceProfile: sourceProfile ?? null,
+      generic,
+    });
   }
-  templateDownload(outPath: string): Promise<ExportResult> {
-    return this.invoke('template_download', { outPath });
+  templateDownload(
+    outPath: string,
+    packageName: 'source' | 'output' = 'source',
+    profile?: string,
+    contract?: string,
+  ): Promise<ExportResult> {
+    return this.invoke('template_download', {
+      outPath,
+      package: packageName,
+      profile: profile ?? null,
+      contract: contract ?? null,
+    });
+  }
+  exportTables(input: {
+    workspaceId: string;
+    runId: string;
+    revision?: number;
+    kind: 'accounting' | 'trend' | 'bundle';
+    outPath: string;
+  }): Promise<ExportResult> {
+    return this.invoke<ExportResult>('export_tables', {
+      workspaceId: input.workspaceId,
+      runId: input.runId,
+      revision: input.revision ?? null,
+      kind: input.kind,
+      outPath: input.outPath,
+    });
   }
   metricRegisterDefaults(workspaceId: string): Promise<{ registered: number; skipped_already_present: string[]; failed: unknown[] }> {
     return this.invoke('metric_register_defaults', { workspaceId });
@@ -173,6 +203,14 @@ export class TauriClient implements DshengClient {
     return this
       .invoke<{ mappings: FieldMappingRow[] }>('mapping_show', { workspaceId, runId })
       .then((d) => d.mappings);
+  }
+  sourceMappingSet(workspaceId: string, directoryLabel: string, profileHash: string, mappings: unknown[] = []): Promise<{ confirmed: boolean }> {
+    return this.invoke<{ confirmed: boolean }>('source_mapping_set', {
+      workspaceId,
+      directoryLabel,
+      profileHash,
+      mappings,
+    });
   }
 
   // ---- 经营分析（dsheng analyze；本地计算，无 Provider） ----

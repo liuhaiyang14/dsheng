@@ -2,6 +2,7 @@
 #[path = "../../crates/dsheng-cli/tests/fixture/mod.rs"]
 mod fixture;
 use dsheng_app::contracts::{core::data, env::DesktopEnv};
+use dsheng_cli::store::sources;
 use fixture::Fixture;
 use serde_json::json;
 
@@ -10,8 +11,8 @@ fn desktop_scan_adds_real_period_choices_without_inventing_blank_days() {
     let f = Fixture::new("desktop-period-choices");
     let dir = tempfile::tempdir().unwrap();
     let mut book = rust_xlsxwriter::Workbook::new();
-    let sheet = book.add_worksheet().set_name("核算表").unwrap();
-    for (col, value) in ["科目", "日期", "本期实绩"].iter().enumerate() {
+    let sheet = book.add_worksheet().set_name("source").unwrap();
+    for (col, value) in ["指标", "期间", "实际值"].iter().enumerate() {
         sheet.write_string(0, col as u16, *value).unwrap();
     }
     sheet.write_string(1, 0, "销售额").unwrap();
@@ -69,8 +70,8 @@ fn desktop_uses_current_calendar_for_historical_date_without_rewriting_old_run()
     )
     .unwrap();
     let mut book = rust_xlsxwriter::Workbook::new();
-    let sheet = book.add_worksheet().set_name("核算表").unwrap();
-    for (col, value) in ["科目", "日期", "本期实绩"].iter().enumerate() {
+    let sheet = book.add_worksheet().set_name("source").unwrap();
+    for (col, value) in ["指标", "期间", "实际值"].iter().enumerate() {
         sheet.write_string(0, col as u16, *value).unwrap();
     }
     sheet.write_string(1, 0, "销售额").unwrap();
@@ -89,6 +90,14 @@ fn desktop_uses_current_calendar_for_historical_date_without_rewriting_old_run()
         scan["data"]["available_periods"],
         json!([{"from":"2026-09-27","to":"2026-10-03","grain":"week"}])
     );
+    sources::source_mapping_set(
+        &conn,
+        f.workspace,
+        &dir.path().to_string_lossy(),
+        scan["data"]["source_profile"]["hash"].as_str().unwrap(),
+        vec![],
+    )
+    .unwrap();
     let result = data::analyze(
         &env,
         json!({"workspace_id":f.workspace,"directory_label":dir.path().to_string_lossy(),"from":"2026-09-27","to":"2026-10-03","grain":"week"}),

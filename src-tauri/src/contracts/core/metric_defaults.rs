@@ -221,7 +221,7 @@ const DEFAULTS: &str = r#"[
    "订单毛利",
    "毛利额"
   ],
-  "semantic_type": "flow",
+  "semantic_type": "configured_derived",
   "unit_signature": {
    "dimension": "money",
    "base_unit": "元",
@@ -231,6 +231,31 @@ const DEFAULTS: &str = r#"[
   "direction": "up",
   "target_constraint_scope": "explicit_target_only",
   "revenue_semantics": false,
+  "aggregation": "configured_recompute",
+  "formula": {"op":"sub","args":[{"op":"ref","metric_key":"sales_net"},{"op":"ref","metric_key":"order_cost"}]},
+  "required_inputs": ["sales_net", "order_cost"],
+  "comparison_policy": {
+   "positive_base": "relative_change",
+   "zero_or_negative_base": "absolute_only"
+  }
+ },
+ {
+  "metric_key": "operating_expense",
+  "label": "经营费用",
+  "label_aliases": [
+   "经营费用",
+   "经营费用合计"
+  ],
+  "semantic_type": "flow",
+  "unit_signature": {
+   "dimension": "money",
+   "base_unit": "元",
+   "currency": "CNY",
+   "tax_basis": "exclusive"
+  },
+  "direction": "down",
+  "target_constraint_scope": "explicit_target_only",
+  "revenue_semantics": false,
   "aggregation": "sum_disjoint",
   "formula": null,
   "required_inputs": [],
@@ -238,6 +263,34 @@ const DEFAULTS: &str = r#"[
    "positive_base": "relative_change",
    "zero_or_negative_base": "absolute_only"
   }
+ },
+ {
+  "metric_key": "value_added",
+  "label": "附加值（扣人工前）",
+  "label_aliases": ["附加值", "附加值（扣人工前）", "结算收益（附加价值）"],
+  "semantic_type": "configured_derived",
+  "unit_signature": {"dimension":"money","base_unit":"元","currency":"CNY","tax_basis":"exclusive"},
+  "direction": "up",
+  "target_constraint_scope": "explicit_target_only",
+  "revenue_semantics": false,
+  "aggregation": "configured_recompute",
+  "formula": {"op":"sub","args":[{"op":"ref","metric_key":"order_gross_profit"},{"op":"ref","metric_key":"operating_expense"}]},
+  "required_inputs": ["order_gross_profit", "operating_expense"],
+  "comparison_policy": {"positive_base":"relative_change","zero_or_negative_base":"absolute_only"}
+ },
+ {
+  "metric_key": "operating_income",
+  "label": "经营收益（扣人工后）",
+  "label_aliases": ["经营收益", "经营收益（扣人工后）", "经营收益（税前）"],
+  "semantic_type": "configured_derived",
+  "unit_signature": {"dimension":"money","base_unit":"元","currency":"CNY","tax_basis":"exclusive"},
+  "direction": "up",
+  "target_constraint_scope": "explicit_target_only",
+  "revenue_semantics": false,
+  "aggregation": "configured_recompute",
+  "formula": {"op":"sub","args":[{"op":"ref","metric_key":"value_added"},{"op":"ref","metric_key":"labor_cost"}]},
+  "required_inputs": ["value_added", "labor_cost"],
+  "comparison_policy": {"positive_base":"relative_change","zero_or_negative_base":"absolute_only"}
  },
  {
   "metric_key": "order_gross_margin",
@@ -257,32 +310,6 @@ const DEFAULTS: &str = r#"[
   "target_constraint_scope": "explicit_target_only",
   "revenue_semantics": false,
   "aggregation": "ratio_of_aggregated_inputs",
-  "formula": null,
-  "required_inputs": [],
-  "comparison_policy": {
-   "positive_base": "relative_change",
-   "zero_or_negative_base": "absolute_only"
-  }
- },
- {
-  "metric_key": "operating_expense",
-  "label": "经营费用",
-  "label_aliases": [
-   "经营费用",
-   "经营费用合计",
-   "费用合计（含人工费）"
-  ],
-  "semantic_type": "flow",
-  "unit_signature": {
-   "dimension": "money",
-   "base_unit": "元",
-   "currency": "CNY",
-   "tax_basis": "exclusive"
-  },
-  "direction": "down",
-  "target_constraint_scope": "explicit_target_only",
-  "revenue_semantics": false,
-  "aggregation": "sum_disjoint",
   "formula": null,
   "required_inputs": [],
   "comparison_policy": {

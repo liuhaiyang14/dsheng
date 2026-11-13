@@ -54,7 +54,7 @@ fn check_layout(kind: &str) {
         ),
     };
     conn.execute(
-        "UPDATE cli_source_sheet_layouts SET layout_json=?2 WHERE source_id=?1 AND sheet='核算表'",
+        "UPDATE cli_source_sheet_layouts SET layout_json=?2 WHERE source_id=?1 AND sheet='source'",
         params![sid, layout.to_string()],
     )
     .unwrap();
@@ -65,7 +65,7 @@ fn check_layout(kind: &str) {
     .unwrap();
     for (row, cells) in rows.iter().enumerate() {
         for (col, value) in cells.iter().enumerate() {
-            conn.execute("INSERT INTO cli_source_cells(workspace_id,source_id,sheet,row_no,col_no,raw_text,cell_kind,value_state,typed_value,formula,merged_range) VALUES(?1,?2,'核算表',?3,?4,?5,'text','valid',?5,NULL,NULL)",params![f.workspace.to_string(),sid,row+1,col,value]).unwrap();
+            conn.execute("INSERT INTO cli_source_cells(workspace_id,source_id,sheet,row_no,col_no,raw_text,cell_kind,value_state,typed_value,formula,merged_range) VALUES(?1,?2,'source',?3,?4,?5,'text','valid',?5,NULL,NULL)",params![f.workspace.to_string(),sid,row+1,col,value]).unwrap();
         }
     }
     let raw: String = conn
@@ -80,7 +80,7 @@ fn check_layout(kind: &str) {
     normalized["grain"] = json!("day");
     let ids: Vec<String> = [current, outside, base]
         .iter()
-        .map(|a1| format!("cell:{label}:核算表:{a1}"))
+        .map(|a1| format!("cell:{label}:source:{a1}"))
         .collect();
     for metric in normalized["metrics"].as_array_mut().unwrap() {
         metric["actual_value"] = json!("22");

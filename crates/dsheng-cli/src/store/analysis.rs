@@ -7,7 +7,11 @@
 //! （normalized_metrics_json / comparisons_json；形状即 read-views 字段名）。
 
 use crate::error::{CliError, CliResult};
-use crate::store::sources::{scan_directory, ScannedFile};
+use crate::store::sources::{
+    mapping_draft_for_period, register_sources_with_profile,
+    FieldMappingEntry,
+    ScannedFile, SourceProfileBinding,
+};
 use chrono::NaiveDate;
 use dsheng_core::analysis::fingerprint::{
     AnalysisRevisionInput, BaseRef, ManualInputSnapshot, MetricDefSnapshot, SourceSelection,
@@ -18,11 +22,11 @@ use dsheng_core::contracts::decimal::to_canonical_string;
 use dsheng_core::contracts::domain::Granularity;
 use dsheng_core::contracts::domain::{Cadence, DateRange, MeasureRole};
 use dsheng_core::import::fileio::CellValue;
-use dsheng_core::import::headers::parse_period_header;
+use dsheng_core::import::headers::{parse_period_header, HeaderBlock};
 use rusqlite::{params, Connection};
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 
 /// 观察记录（规范化中间态；evidence 定位单元格/手工输入）。
@@ -157,6 +161,7 @@ struct MetricDefRow {
     label: String,
     label_aliases: Vec<String>,
     semantic_type: String,
+    formula: Option<dsheng_core::contracts::metrics::FormulaNode>,
     direction: String,
     target_constraint_scope: String,
     revenue_semantics: bool,
@@ -168,7 +173,7 @@ fn load_metric_defs(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<Metr
     let mut stmt = conn.prepare(
         "SELECT m.stable_metric_id, m.metric_key, m.version, m.semantic_hash, m.label,
                 m.label_aliases_json, m.direction, m.target_constraint_scope, m.revenue_semantics,
-                m.unit_signature_json, m.semantic_type
+                m.unit_signature_json, m.semantic_type, m.formula_json
          FROM metric_definitions m
          WHERE m.workspace_id = ?1 AND m.version =
                (SELECT MAX(version) FROM metric_definitions m2
@@ -188,6 +193,7 @@ fn load_metric_defs(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<Metr
             revenue_semantics: r.get::<_, i64>(8)? == 1,
             unit_json: r.get(9)?,
             semantic_type: r.get(10)?,
+            formula: r.get::<_, Option<String>>(11)?.and_then(|raw| serde_json::from_str(&raw).ok()),
             scope: "全公司".into(),
         })
     })?;
@@ -389,6 +395,448 @@ type Extracted = (
     Vec<String>,
 );
 
+fn mapping_column_index(raw: &str) -> Option<usize> {
+    let text = raw.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if let Ok(n) = text.parse::<usize>() {
+        return n.checked_sub(1);
+    }
+    let mut col = 0usize;
+    for ch in text.chars() {
+        if !ch.is_ascii_alphabetic() {
+            return None;
+        }
+        col = col * 26 + (ch.to_ascii_uppercase() as usize - 'A' as usize + 1);
+    }
+    col.checked_sub(1)
+}
+
+fn generic_header_signature(
+    sheet: &dsheng_core::import::fileio::SheetData,
+    header: Option<&HeaderBlock>,
+) -> String {
+    let (start, count) = header
+        .map(|h| (h.row.saturating_sub(1), h.row_count))
+        .unwrap_or((0, 1));
+    let mut parts = Vec::new();
+    for row in sheet.rows.iter().skip(start).take(count) {
+        parts.push(
+            row.iter()
+                .map(|c| c.raw_text())
+                .collect::<Vec<_>>()
+                .join("\u{1f}"),
+        );
+    }
+    let raw = parts.join("\u{1e}");
+    let mut hasher = sha2::Sha256::new();
+    use sha2::Digest;
+    hasher.update(raw.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+fn mapping_targets_for_sheet(
+    entries: &[FieldMappingEntry],
+    file: &ScannedFile,
+    sheet: &crate::store::sources::ScannedSheet,
+    data: &dsheng_core::import::fileio::SheetData,
+) -> Vec<(usize, String, String)> {
+    let signature = generic_header_signature(data, sheet.header.as_ref());
+    entries
+        .iter()
+        .filter_map(|entry| {
+            let source_match = entry
+                .source_id
+                .as_deref()
+                .or(entry.source.as_deref())
+                .map(|s| s == file.file_label)
+                .unwrap_or(true);
+            let sheet_match = entry
+                .sheet
+                .as_deref()
+                .map(|s| Some(s) == sheet.sheet.as_deref())
+                .unwrap_or(true);
+            if !source_match || !sheet_match {
+                return None;
+            }
+            if let Some(expected) = entry.header_signature.as_deref() {
+                let expected = expected.trim();
+                if !expected.is_empty() && expected != signature {
+                    return None;
+                }
+            }
+            let col = entry
+                .column
+                .as_deref()
+                .or(Some(entry.recognized.as_str()))
+                .and_then(mapping_column_index)?;
+            let role = entry
+                .target_role
+                .as_deref()
+                .unwrap_or(&entry.tool_field)
+                .trim()
+                .to_string();
+            if role.is_empty() {
+                return None;
+            }
+            Some((col, role, entry.source_label.clone()))
+        })
+        .collect()
+}
+
+/// 按 source profile 的业务明细映射抽取实际值。业务导出文件通常没有
+/// “科目/实际值”这种规范表头，而是一个文件对应一个或多个指标；映射只描述
+/// 文件/工作表/日期/金额列，数值聚合仍由本地 Decimal 引擎完成。
+fn extract_profile_records(
+    profile: &SourceProfileBinding,
+    file: &ScannedFile,
+    sheet: &crate::store::sources::ScannedSheet,
+    data: &dsheng_core::import::fileio::SheetData,
+    defs: &[MetricDefRow],
+    _window: DateRange,
+    scope: &str,
+    obs: &mut Vec<Obs>,
+    pending_reasons: &mut BTreeMap<String, Vec<String>>,
+    mapping_rows: &mut Vec<Value>,
+) {
+    let Some(config) = profile.config.as_ref() else { return };
+    let Some(mappings) = config.get("record_mappings").and_then(Value::as_array) else { return };
+    let file_lower = file.file_label.to_lowercase();
+    let sheet_lower = sheet.sheet.as_deref().unwrap_or_default().to_lowercase();
+    for mapping in mappings {
+        let file_match = mapping.get("file_matchers").and_then(Value::as_array)
+            .map(|xs| xs.is_empty() || xs.iter().filter_map(Value::as_str).any(|m| file_lower.contains(&m.to_lowercase())))
+            .unwrap_or(false);
+        let sheet_match = mapping.get("sheet_matchers").and_then(Value::as_array)
+            .map(|xs| xs.is_empty() || xs.iter().filter_map(Value::as_str).any(|m| sheet_lower.contains(&m.to_lowercase())))
+            .unwrap_or(false);
+        if !file_match || !sheet_match { continue; }
+        let Some(metric_key) = mapping.get("metric_key").and_then(Value::as_str) else { continue; };
+        let Some(def) = defs.iter().find(|d| d.metric_key == metric_key) else { continue; };
+        let value_fields: Vec<String> = mapping.get("value_fields").and_then(Value::as_array)
+            .map(|xs| xs.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+        let date_fields: Vec<String> = mapping.get("date_fields").and_then(Value::as_array)
+            .map(|xs| xs.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+        let detail_key_fields: Vec<String> = config
+            .get("row_rules")
+            .and_then(|rules| rules.get("detail_key_fields"))
+            .and_then(Value::as_array)
+            .map(|xs| xs.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .unwrap_or_default();
+        let same_content_dedupe = config
+            .get("dedupe")
+            .and_then(|dedupe| dedupe.get("same_content"))
+            .and_then(Value::as_str)
+            == Some("dedupe");
+        if value_fields.is_empty() || date_fields.is_empty() { continue; }
+        let max_header = config.get("row_rules").and_then(|r| r.get("header_rows_max")).and_then(Value::as_u64).unwrap_or(20) as usize;
+        let norm = |v: &str| dsheng_core::import::headers::normalize_header(v);
+        let mut header_row = None;
+        let mut field_cols = BTreeMap::<String, usize>::new();
+        for (ri, row) in data.rows.iter().take(max_header).enumerate() {
+            let mut found = BTreeMap::new();
+            for (ci, cell) in row.iter().enumerate() {
+                let raw = norm(&cell.raw_text());
+                for field in value_fields.iter().chain(date_fields.iter()).chain(detail_key_fields.iter()) {
+                    if raw == norm(field) { found.insert(field.clone(), ci); }
+                }
+                if let Some(status) = mapping.get("status_field").and_then(Value::as_str) {
+                    if raw == norm(status) { found.insert(status.to_string(), ci); }
+                }
+                if let Some(scope_field) = mapping.get("scope_field").and_then(Value::as_str) {
+                    if raw == norm(scope_field) { found.insert(scope_field.to_string(), ci); }
+                }
+            }
+            if found.len() >= 2 { header_row = Some(ri); field_cols = found; break; }
+        }
+        let Some(header_row) = header_row else { continue; };
+        let date_kind = mapping.get("period_kind").and_then(Value::as_str).unwrap_or("date");
+        let status_col = mapping.get("status_field").and_then(Value::as_str).and_then(|f| field_cols.get(f)).copied();
+        let accepted: Vec<String> = mapping.get("accepted_statuses").and_then(Value::as_array)
+            .map(|xs| xs.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+        let requires_confirmation = mapping.get("requires_confirmation").and_then(Value::as_bool) == Some(true);
+        let scope_col = mapping.get("scope_field").and_then(Value::as_str).and_then(|f| field_cols.get(f)).copied();
+        let mut count = 0usize;
+        let mut seen_detail_content = BTreeMap::<String, String>::new();
+        for (row_idx, row) in data.rows.iter().enumerate().skip(header_row + 1) {
+            if let Some(col) = status_col {
+                let status = row.get(col).map(|c| c.raw_text()).unwrap_or_default();
+                if !accepted.is_empty() {
+                    if status.trim().is_empty() {
+                        pending_reasons.entry(metric_key.to_string()).or_default().push("status_missing_or_unconfirmed".into());
+                        continue;
+                    }
+                    if !accepted.iter().any(|v| v == status.trim()) {
+                        pending_reasons.entry(metric_key.to_string()).or_default().push("status_invalid_or_unconfirmed".into());
+                        continue;
+                    }
+                }
+            }
+            let value = value_fields.iter().filter_map(|field| field_cols.get(field).and_then(|c| row.get(*c)).and_then(|c| cell_value(Some(c)))).next();
+            let Some(value) = value else { continue; };
+            let Some(period) = (if date_kind == "year_month" {
+                let year = date_fields.first().and_then(|f| field_cols.get(f)).and_then(|c| row.get(*c)).and_then(|c| c.raw_text().trim().parse::<i32>().ok());
+                let month = date_fields.get(1).and_then(|f| field_cols.get(f)).and_then(|c| row.get(*c)).and_then(|c| c.raw_text().trim().parse::<u32>().ok());
+                year.zip(month).and_then(|(y,m)| chrono::NaiveDate::from_ymd_opt(y,m,1)).map(|d| DateRange { from: d, to: d })
+            } else {
+                date_fields.iter().filter_map(|f| field_cols.get(f).and_then(|c| row.get(*c)).and_then(|c| profile_observation_period(&c.raw_text()))).next()
+            }) else {
+                pending_reasons.entry(metric_key.to_string()).or_default().push("period_missing_or_invalid".into());
+                continue;
+            };
+            let evidence_id = format!("cell:{}:{}:{}{}", file.file_label, sheet.sheet.clone().unwrap_or_default(), dsheng_core::import::headers::column_letter(value_fields.iter().find_map(|f| field_cols.get(f)).copied().unwrap_or(0)), row_idx + 1);
+            let detail_key = detail_key_fields
+                .iter()
+                .filter_map(|field| field_cols.get(field).and_then(|col| row.get(*col)).map(|cell| cell.raw_text().trim().to_string()))
+                .collect::<Vec<_>>()
+                .join("\u{1f}");
+            let content_key = format!(
+                "{}|{}|{}",
+                value_fields
+                    .iter()
+                    .filter_map(|field| field_cols.get(field).and_then(|col| row.get(*col)).map(|cell| cell.raw_text().trim().to_string()))
+                    .collect::<Vec<_>>()
+                    .join("\u{1f}"),
+                date_fields
+                    .iter()
+                    .filter_map(|field| field_cols.get(field).and_then(|col| row.get(*col)).map(|cell| cell.raw_text().trim().to_string()))
+                    .collect::<Vec<_>>()
+                    .join("\u{1f}"),
+                status_col
+                    .and_then(|col| row.get(col))
+                    .map(|cell| cell.raw_text().trim().to_string())
+                    .unwrap_or_default(),
+            );
+            if !detail_key.is_empty() {
+                if same_content_dedupe
+                    && seen_detail_content
+                        .get(&detail_key)
+                        .is_some_and(|previous| previous == &content_key)
+                {
+                    continue;
+                }
+                seen_detail_content
+                    .entry(detail_key.clone())
+                    .or_insert(content_key);
+            }
+            if requires_confirmation {
+                // 费用分类/人工处理尚未确认时，保留映射证据但隔离金额，
+                // 防止待确认费用进入附加值和经营收益公式。
+                pending_reasons.entry(metric_key.to_string()).or_default().push("classification_confirmation_required".into());
+                mapping_rows.push(json!({"mapping_id": mapping.get("mapping_id"), "metric_key": metric_key, "source_id": file.file_label, "sheet": sheet.sheet, "evidence_id": evidence_id}));
+                continue;
+            }
+            let base_scope = scope_col.and_then(|c| row.get(c)).map(|c| c.raw_text()).filter(|v| !v.trim().is_empty()).unwrap_or_else(|| scope.to_string());
+            // 同一业务明细映射下的多行是可加总的明细，不应被通用
+            // “同键不同值→冲突”规则误判为重复来源；把映射/行号纳入内部
+            // scope，仍保留原 scope 文本作为前缀供审计查看。
+            let row_scope = format!(
+                "{}|{}|{}",
+                base_scope,
+                mapping.get("mapping_id").and_then(Value::as_str).unwrap_or("record"),
+                if detail_key.is_empty() { row_idx.to_string() } else { detail_key },
+            );
+            obs.push(Obs { metric_id: def.metric_id.clone(), unit: unit_display(&def.unit_json), role: MeasureRole::Actual, value, period, evidence_id: evidence_id.clone(), source_label: file.file_label.clone(), scope: row_scope, cumulative: false });
+            mapping_rows.push(json!({"mapping_id": mapping.get("mapping_id"), "metric_key": metric_key, "source_id": file.file_label, "sheet": sheet.sheet, "evidence_id": evidence_id}));
+            count += 1;
+        }
+        if requires_confirmation {
+            pending_reasons.entry(metric_key.to_string()).or_default().push("classification_confirmation_required".into());
+        }
+        if count == 0 {
+            pending_reasons.entry(metric_key.to_string()).or_default().push("source_value_missing".into());
+        }
+    }
+}
+
+fn profile_observation_period(raw: &str) -> Option<DateRange> {
+    observation_period(raw).or_else(|| {
+        let date = raw.trim().split([' ', 'T']).next()?;
+        NaiveDate::parse_from_str(date, "%Y-%m-%d").ok().map(|d| DateRange { from: d, to: d })
+    })
+}
+
+/// 提取 generic_table 的已确认手工映射。每个映射都保留 source/sheet/column/
+/// header signature/target role，并在表头变化时失效，不会静默把新列当旧列。
+fn extract_generic_sheet(
+    file: &ScannedFile,
+    sheet: &crate::store::sources::ScannedSheet,
+    data: &dsheng_core::import::fileio::SheetData,
+    mappings: &[(usize, String, String)],
+    defs: &[MetricDefRow],
+    window: DateRange,
+    _grain: Granularity,
+    scope: &str,
+    coverage: &CoverageDecision,
+    profile: &SourceProfileBinding,
+    obs: &mut Vec<Obs>,
+    zero_filled: &mut Vec<String>,
+    pending_reasons: &mut BTreeMap<String, Vec<String>>,
+) {
+    let header_row = sheet.header.as_ref().map(|h| h.row).unwrap_or(1);
+    let header_count = sheet.header.as_ref().map(|h| h.row_count).unwrap_or(1);
+    let label_col = mappings
+        .iter()
+        .find(|(_, role, _)| matches!(role.as_str(), "metric_label" | "metric_id" | "label"))
+        .map(|(c, _, _)| *c);
+    let Some(label_col) = label_col else {
+        return;
+    };
+    let key_cols: Vec<usize> = profile
+        .config
+        .as_ref()
+        .and_then(|config| config.get("row_rules"))
+        .and_then(|rules| rules.get("detail_key_fields"))
+        .and_then(Value::as_array)
+        .map(|fields| {
+            fields
+                .iter()
+                .filter_map(Value::as_str)
+                .filter_map(|field| mappings.iter().find(|(_, role, _)| role == field).map(|(col, _, _)| *col))
+                .collect()
+        })
+        .unwrap_or_default();
+    let dedupe_same_content = profile
+        .config
+        .as_ref()
+        .and_then(|config| config.get("dedupe"))
+        .and_then(|dedupe| dedupe.get("same_content"))
+        .and_then(Value::as_str)
+        == Some("dedupe");
+    let mut seen_detail_keys = std::collections::BTreeSet::new();
+    let period_col = mappings
+        .iter()
+        .find(|(_, role, _)| {
+            role == "period"
+                || role == "date"
+                || profile
+                    .config
+                    .as_ref()
+                    .and_then(|config| config.get("row_rules"))
+                    .and_then(|rules| rules.get("date_field"))
+                    .and_then(Value::as_str)
+                    == Some(role.as_str())
+        })
+        .map(|(c, _, _)| *c);
+    let amount_fields: Vec<String> = profile
+        .config
+        .as_ref()
+        .and_then(|config| config.get("row_rules"))
+        .and_then(|rules| rules.get("amount_fields"))
+        .and_then(Value::as_array)
+        .map(|fields| fields.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .unwrap_or_default();
+    let status_col = mappings
+        .iter()
+        .find(|(_, role, _)| role == "status" || role == "task_status")
+        .map(|(col, _, _)| *col);
+    let status_map = profile
+        .config
+        .as_ref()
+        .and_then(|config| config.get("normalization"))
+        .and_then(|normalization| normalization.get("status_map"))
+        .and_then(Value::as_object);
+    for (row_idx, row) in data.rows.iter().enumerate().skip(header_row) {
+        let label = row.get(label_col).map(|c| c.raw_text()).unwrap_or_default();
+        let Some(def) = match_metric(defs, &label) else {
+            continue;
+        };
+        if let (Some(status_col), Some(status_map)) = (status_col, status_map) {
+            let raw_status = row.get(status_col).map(|cell| cell.raw_text()).unwrap_or_default();
+            let Some(normalized_status) = status_map.get(raw_status.trim()).and_then(Value::as_str) else {
+                pending_reasons.entry(def.metric_key.clone()).or_default().push("status_missing_or_unconfirmed".into());
+                continue;
+            };
+            if normalized_status != "valid" {
+                pending_reasons.entry(def.metric_key.clone()).or_default().push("status_invalid_or_unconfirmed".into());
+                continue;
+            }
+        }
+        if dedupe_same_content && !key_cols.is_empty() {
+            let key = key_cols
+                .iter()
+                .map(|col| row.get(*col).map(|cell| cell.raw_text()).unwrap_or_default())
+                .collect::<Vec<_>>()
+                .join("\u{1f}");
+            if !key.trim_matches('\u{1f}').is_empty() && !seen_detail_keys.insert(key) {
+                continue;
+            }
+        }
+        let period = if let Some(period_col) = period_col {
+            let Some(period) = row
+                .get(period_col)
+                .and_then(|c| observation_period(&c.raw_text()))
+            else {
+                // 无日期或非法日期不能猜作当前分析窗口；该行不形成观察，
+                // 后续指标状态会保留 actual_missing/pending。
+                continue;
+            };
+            period
+        } else {
+            // 没有期间列时，未提供可验证的日期映射，不能把数字绑定到
+            // 当前窗口（尤其不能把月度汇总拆成日/周观察）。
+            continue;
+        };
+        for (col, role, _) in mappings.iter().filter(|(_, role, _)| {
+            matches!(role.as_str(), "actual" | "planned" | "plan" | "annual_month_plan")
+                || amount_fields.iter().any(|field| field == role)
+        }) {
+            let measure_role = match role.as_str() {
+                "planned" | "plan" => MeasureRole::Plan,
+                "annual_month_plan" => MeasureRole::AnnualMonthPlan,
+                _ => MeasureRole::Actual,
+            };
+            let period = if period_col.is_none() {
+                let header_text = data
+                    .rows
+                    .iter()
+                    .skip(header_row.saturating_sub(1))
+                    .take(header_count)
+                    .find_map(|r| r.get(*col).filter(|c| !c.raw_text().trim().is_empty()))
+                    .map(|c| c.raw_text());
+                let Some(period) = header_text.and_then(|t| parse_period_header(&t, None)) else {
+                    continue;
+                };
+                period
+            } else {
+                period
+            };
+            let evidence_id = format!(
+                "cell:{}:{}:{}{}",
+                file.file_label,
+                sheet.sheet.clone().unwrap_or_default(),
+                dsheng_core::import::headers::column_letter(*col),
+                row_idx + 1
+            );
+            let cell = row.get(*col);
+            let (value, source_label) = match cell_value(cell) {
+                Some(v) => (v, file.file_label.clone()),
+                None if zero_fill_applies(coverage, measure_role, def, cell, period, window) => {
+                    zero_filled.push(evidence_id.clone());
+                    (Decimal::ZERO, zero_fill_label(&file.file_label, coverage))
+                }
+                None => continue,
+            };
+            obs.push(Obs {
+                metric_id: def.metric_id.clone(),
+                unit: unit_display(&def.unit_json),
+                role: measure_role,
+                value,
+                period,
+                evidence_id,
+                source_label,
+                scope: scope.to_string(),
+                cumulative: false,
+            });
+        }
+    }
+}
+
 /// 提取观察（核算表/推移表/手工输入）＋冲突草稿（同键不同值）。
 #[allow(clippy::too_many_arguments)]
 fn extract_observations(
@@ -401,14 +849,98 @@ fn extract_observations(
     period_key: &str,
     scope: &str,
     coverage: &CoverageDecision,
-) -> CliResult<Extracted> {
+    mapping_entries: &[FieldMappingEntry],
+    profile: &SourceProfileBinding,
+) -> CliResult<(Extracted, BTreeMap<String, Vec<String>>)> {
     let mut obs: Vec<Obs> = Vec::new();
     let mut pending_metrics: Vec<String> = Vec::new();
     let mut mapping_rows: Vec<Value> = Vec::new();
     let mut sources: Vec<SourceSelection> = Vec::new();
     let mut zero_filled: Vec<String> = Vec::new();
+    let mut pending_reasons: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    // 保留用户确认的完整定位信息，mapping 变化会纳入 analysis fingerprint。
+    for entry in mapping_entries {
+        mapping_rows.push(serde_json::to_value(entry).unwrap_or_else(|_| json!({})));
+    }
     for file in files {
         for (sheet_data, sheet) in file.sheets.iter() {
+            if sheet.role == "generated_output_input_not_allowed" {
+                // 核算表/推移表/差异分析/图表是输出层，绝不回灌观察。
+                continue;
+            }
+            // 生成结果在任何 profile 映射之前就被拒绝；否则一个 profile
+            // 恰好匹配“核算表/推移表”字段时会绕过扫描层的禁止回灌规则。
+            extract_profile_records(profile, file, sheet, sheet_data, defs, window, scope, &mut obs, &mut pending_reasons, &mut mapping_rows);
+            if sheet.role == "generic_table" {
+                if profile.mode == "profile" && sheet.profile_role_id.is_none() {
+                    // 已选择企业 profile 时，未命中任何 file/sheet role 的表只保留
+                    // 在扫描证据中，不得混入 normalized observations。
+                    continue;
+                }
+                let mut mapped =
+                    mapping_targets_for_sheet(mapping_entries, file, sheet, sheet_data);
+                // profile/generic source with a recognized header can use the stable
+                // standard field names directly. Explicit manual mapping still wins
+                // and is required when the header is unknown or ambiguous.
+                if mapped.is_empty() {
+                    if let Some(header) = sheet.header.as_ref() {
+                        mapped = header
+                            .columns
+                            .iter()
+                            .map(|(column, field)| {
+                                (*column, (*field).to_string(), (*field).to_string())
+                            })
+                            .collect();
+                        let header_signature = generic_header_signature(sheet_data, Some(header));
+                        for (column, role, source_label) in &mapped {
+                            mapping_rows.push(json!({
+                                "tool_field": role,
+                                "source_label": source_label,
+                                "recognized": dsheng_core::import::headers::column_letter(*column),
+                                "usage": role,
+                                "source_id": file.file_label,
+                                "source": file.file_label,
+                                "sheet": sheet.sheet,
+                                "column": dsheng_core::import::headers::column_letter(*column),
+                                "header_signature": header_signature,
+                                "target_role": role,
+                            }));
+                        }
+                    }
+                }
+                if !mapped.is_empty() {
+                    extract_generic_sheet(
+                        file,
+                        sheet,
+                        sheet_data,
+                        &mapped,
+                        defs,
+                        window,
+                        grain,
+                        scope,
+                        coverage,
+                        profile,
+                        &mut obs,
+                        &mut zero_filled,
+                        &mut pending_reasons,
+                    );
+                    let width = sheet_data.rows.iter().map(|r| r.len()).max().unwrap_or(1);
+                    sources.push(SourceSelection {
+                        source_id: file.file_label.clone(),
+                        sheet: sheet.sheet.clone(),
+                        range: format!(
+                            "A1:{}{}",
+                            dsheng_core::import::headers::column_letter(width.saturating_sub(1)),
+                            sheet_data.rows.len()
+                        ),
+                        content_hash: file.content_hash.clone(),
+                        source_profile_id: profile.profile_id.clone(),
+                        source_profile_version: profile.version,
+                        source_profile_hash: profile.hash.clone(),
+                    });
+                }
+                continue;
+            }
             if !matches!(sheet.role, "accounting" | "trend") {
                 continue;
             }
@@ -429,6 +961,9 @@ fn extract_observations(
                         dsheng_core::import::headers::column_letter(width)
                     ),
                     content_hash: file.content_hash.clone(),
+                    source_profile_id: profile.profile_id.clone(),
+                    source_profile_version: profile.version,
+                    source_profile_hash: profile.hash.clone(),
                 });
                 let header_texts = sheet_data.rows.get(layout.header_row - 1);
                 for (col, _) in &layout.metric_columns {
@@ -440,6 +975,12 @@ fn extract_observations(
                             .unwrap_or_default(),
                         "recognized": dsheng_core::import::headers::column_letter(*col),
                         "usage": "转置推移表指标列（单位后缀剥离后按目录精确匹配）",
+                        "source_id": file.file_label,
+                        "source": file.file_label,
+                        "sheet": sheet.sheet,
+                        "column": dsheng_core::import::headers::column_letter(*col),
+                        "header_signature": generic_header_signature(sheet_data, None),
+                        "target_role": "metric_label",
                     }));
                 }
                 // 每个 (期间, 指标列) 一个 actual 观察；空=missing；真 0/负数保留
@@ -515,6 +1056,9 @@ fn extract_observations(
                     )
                 ),
                 content_hash: file.content_hash.clone(),
+                source_profile_id: profile.profile_id.clone(),
+                source_profile_version: profile.version,
+                source_profile_hash: profile.hash.clone(),
             });
             let col_of = |field: &str| {
                 header
@@ -569,6 +1113,12 @@ fn extract_observations(
                         .unwrap_or_default(),
                     "recognized": dsheng_core::import::headers::column_letter(col),
                     "usage": format!("{}列（{}）", dsheng_core::import::headers::column_letter(col), field),
+                    "source_id": file.file_label,
+                    "source": file.file_label,
+                    "sheet": sheet.sheet,
+                    "column": dsheng_core::import::headers::column_letter(col),
+                    "header_signature": generic_header_signature(sheet_data, Some(header)),
+                    "target_role": field,
                 }));
                 for (row_idx, row) in sheet_data.rows.iter().enumerate().skip(header.row) {
                     let Some(label) = row.get(label_col).map(|c| c.raw_text()) else {
@@ -595,11 +1145,10 @@ fn extract_observations(
                         trend_period_cols.iter().find(|(c, _)| *c == col)
                     {
                         *period
-                    } else if grain == Granularity::Day {
-                        // 无日期核算汇总不能伪装成所选当日的实绩/预定。
-                        continue;
                     } else {
-                        window
+                        // 没有可验证期间列或期间表头时，不能把月/周/季
+                        // 汇总猜成当前分析窗口；原始值保留在 snapshot。
+                        continue;
                     };
                     let evidence_id = format!(
                         "cell:{}:{}:{}{}",
@@ -746,6 +1295,20 @@ fn extract_observations(
     }
     let mut final_obs = Vec::new();
     let mut conflicts = Vec::new();
+    let different_content_policy = profile
+        .config
+        .as_ref()
+        .and_then(|config| config.get("dedupe"))
+        .and_then(|dedupe| dedupe.get("different_content"))
+        .and_then(Value::as_str)
+        .unwrap_or("manual_review");
+    let detail_total_policy = profile
+        .config
+        .as_ref()
+        .and_then(|config| config.get("dedupe"))
+        .and_then(|dedupe| dedupe.get("detail_and_total"))
+        .and_then(Value::as_str)
+        .unwrap_or("manual_review");
     for (_, group) in merged {
         let distinct: Vec<Decimal> = {
             let mut v: Vec<Decimal> = group.iter().map(|o| o.value).collect();
@@ -753,8 +1316,23 @@ fn extract_observations(
             v.dedup();
             v
         };
-        if distinct.len() <= 1 {
+        if distinct.len() <= 1 && !(group.len() > 1 && detail_total_policy == "reject") {
             final_obs.push(group.into_iter().next().expect("非空组"));
+        } else if distinct.len() > 1
+            && (different_content_policy == "latest_revision"
+                || detail_total_policy == "select_authoritative")
+        {
+            // profile 明确声明 latest_revision 时，按稳定来源标签/证据排序选最后一条；
+            // 这样选择仍可复现，且不会把“自动覆盖”写死在两表公式中。
+            let mut ordered = group;
+            ordered.sort_by(|a, b| {
+                a.source_label
+                    .cmp(&b.source_label)
+                    .then_with(|| a.evidence_id.cmp(&b.evidence_id))
+            });
+            if let Some(latest) = ordered.pop() {
+                final_obs.push(latest);
+            }
         } else {
             conflicts.push(ConflictDraft {
                 metric_id: group[0].metric_id.clone(),
@@ -770,12 +1348,8 @@ fn extract_observations(
         }
     }
     Ok((
-        final_obs,
-        conflicts,
-        sources,
-        mapping_rows,
-        pending_metrics.len(),
-        zero_filled,
+        (final_obs, conflicts, sources, mapping_rows, pending_metrics.len(), zero_filled),
+        pending_reasons,
     ))
 }
 
@@ -813,6 +1387,50 @@ fn flow_sum_window(obs: &[&Obs]) -> Option<Decimal> {
     }
     let values: Vec<Decimal> = obs.iter().map(|o| o.value).collect();
     dsheng_core::analysis::engine::flow_sum(&values, true).ok()
+}
+
+fn evaluate_metric_formula(
+    key: &str,
+    defs: &[MetricDefRow],
+    direct: &BTreeMap<String, Option<Decimal>>,
+    memo: &mut BTreeMap<String, Option<Decimal>>,
+    visiting: &mut BTreeSet<String>,
+) -> Option<Decimal> {
+    if let Some(value) = memo.get(key) { return *value; }
+    if !visiting.insert(key.to_string()) { return None; }
+    let value = if let Some(def) = defs.iter().find(|d| d.metric_key == key) {
+        if let Some(formula) = &def.formula {
+            fn eval_node(
+                node: &dsheng_core::contracts::metrics::FormulaNode,
+                defs: &[MetricDefRow], direct: &BTreeMap<String, Option<Decimal>>,
+                memo: &mut BTreeMap<String, Option<Decimal>>, visiting: &mut BTreeSet<String>,
+            ) -> Option<Decimal> {
+                use dsheng_core::contracts::metrics::FormulaNode;
+                match node {
+                    FormulaNode::Ref { metric_key } => evaluate_metric_formula(metric_key, defs, direct, memo, visiting),
+                    FormulaNode::Const { value } => rust_decimal::Decimal::from_str_exact(value).ok(),
+                    FormulaNode::Add { args } => Some(eval_node(&args[0], defs, direct, memo, visiting)? + eval_node(&args[1], defs, direct, memo, visiting)?),
+                    FormulaNode::Sub { args } => Some(eval_node(&args[0], defs, direct, memo, visiting)? - eval_node(&args[1], defs, direct, memo, visiting)?),
+                    FormulaNode::Mul { args } => Some(eval_node(&args[0], defs, direct, memo, visiting)? * eval_node(&args[1], defs, direct, memo, visiting)?),
+                    FormulaNode::Div { args } => dsheng_core::analysis::engine::positive_div(eval_node(&args[0], defs, direct, memo, visiting)?, eval_node(&args[1], defs, direct, memo, visiting)?).ok(),
+                }
+            }
+            eval_node(formula, defs, direct, memo, visiting)
+        } else {
+            direct.get(key).copied().flatten()
+        }
+    } else { None };
+    visiting.remove(key);
+    memo.insert(key.to_string(), value);
+    value
+}
+
+fn profile_requires_confirmation(profile: &SourceProfileBinding, metric_key: &str) -> bool {
+    profile.config.as_ref()
+        .and_then(|c| c.get("record_mappings"))
+        .and_then(Value::as_array)
+        .map(|xs| xs.iter().any(|m| m.get("metric_key").and_then(Value::as_str) == Some(metric_key) && m.get("requires_confirmation").and_then(Value::as_bool) == Some(true)))
+        .unwrap_or(false)
 }
 
 fn comparison_view(
@@ -920,8 +1538,37 @@ pub fn run_analyze(
     grain_auto: bool,
     grain_explicit: Option<String>,
     policy_explicit: Option<String>,
+    recalculate: bool,
+    extra: Option<AnalyzeExtraInput>,
+) -> CliResult<Value> {
+    run_analyze_with_profile(
+        conn,
+        workspace_id,
+        dir,
+        from,
+        to,
+        grain_auto,
+        grain_explicit,
+        policy_explicit,
+        recalculate,
+        extra,
+        SourceProfileBinding::generic_implicit(),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_analyze_with_profile(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    dir: &str,
+    from: &str,
+    to: &str,
+    grain_auto: bool,
+    grain_explicit: Option<String>,
+    policy_explicit: Option<String>,
     _recalculate: bool,
     extra: Option<AnalyzeExtraInput>,
+    profile: SourceProfileBinding,
 ) -> CliResult<Value> {
     let f = parse_date(from, "--from")?;
     let t = parse_date(to, "--to")?;
@@ -982,8 +1629,14 @@ pub fn run_analyze(
     // 扫描（注册来源）＋观察提取；指标名全集供转置推移表锚点匹配（§4.3 增量）
     crate::store::sources::ensure_sidecar_tables(conn)?;
     let metric_names = crate::store::sources::metric_label_names(conn, workspace_id)?;
-    let (files, _pending_files) = scan_directory(dir, &metric_names)?;
-    let registered = crate::store::sources::register_sources(conn, workspace_id, &files)?;
+    let aliases = crate::store::sources::profile_aliases_for_binding(&profile);
+    let (files, pending_files) = crate::store::sources::scan_directory_with_profile_config(
+        dir,
+        &metric_names,
+        aliases.as_ref(),
+        Some(&profile),
+    )?;
+    let registered = register_sources_with_profile(conn, workspace_id, &files, &profile)?;
     // 扫描快照落旁表（非空格＋布局）：生成载荷按相关行/列裁剪的确定性输入
     crate::store::sources::persist_source_snapshot(conn, workspace_id, &registered, &files)?;
     let defs = load_metric_defs(conn, workspace_id)?;
@@ -993,7 +1646,32 @@ pub fn run_analyze(
         window,
         &scope,
     );
-    let (obs, conflicts, mut sources, mapping_rows, pending_count, zero_filled) =
+    let generic_mapping_required = profile.mode == "generic"
+        && files.iter().any(|file| {
+            file.sheets.iter().any(|(_, sheet)| {
+                sheet.role == "generic_table" && sheet.header.is_some() && sheet.blocked_reason.is_none()
+            })
+        });
+    let confirmed_source_mapping = crate::store::sources::source_mapping_confirmed(
+        conn,
+        workspace_id,
+        dir,
+        &profile.hash,
+    )?;
+    if generic_mapping_required && confirmed_source_mapping.is_none() {
+        return Err(CliError::new(
+            CliErrorCode::DataValidationFailed,
+            "通用 source 的字段映射尚未确认；请先在数据源页面确认映射后再分析",
+        ));
+    }
+    let mapping_entries = if let Some(entries) = confirmed_source_mapping {
+        entries
+    } else {
+        mapping_draft_for_period(conn, workspace_id, &period_key)?
+            .map(|(_, entries)| entries)
+            .unwrap_or_default()
+    };
+    let ((mut obs, mut conflicts, mut sources, mapping_rows, mut pending_count, zero_filled), mut pending_reasons) =
         extract_observations(
             conn,
             workspace_id,
@@ -1004,7 +1682,40 @@ pub fn run_analyze(
             &period_key,
             &scope,
             &coverage,
+            &mapping_entries,
+            &profile,
         )?;
+    let tax_basis_pending = profile
+        .config
+        .as_ref()
+        .and_then(|config| config.get("normalization"))
+        .and_then(|normalization| normalization.get("tax_basis"))
+        .and_then(Value::as_str)
+        == Some("confirm_at_runtime");
+    if tax_basis_pending {
+        // 税口径尚未由企业确认时，原始记录仍保留在 source snapshot，但
+        // 未确认金额不得进入 valid observations、派生公式或两表数值。
+        obs.clear();
+        conflicts.clear();
+        for def in &defs {
+            pending_reasons
+                .entry(def.metric_key.clone())
+                .or_default()
+                .push("configuration_required_tax_basis".into());
+        }
+        pending_count += 1;
+    }
+    if !pending_files.is_empty() {
+        for pending in &pending_files {
+            for def in &defs {
+                pending_reasons
+                    .entry(def.metric_key.clone())
+                    .or_default()
+                    .push(pending.clone());
+            }
+        }
+        pending_count += pending_files.len();
+    }
     // 来源范围绑定本次实际扫描的目录，而不只绑定命中核算/推移适配器的 sheet。
     // generic CSV 等仍可能为生成提供相关行；空 sheet 没有持久化单元格，不入选。
     for file in &files {
@@ -1016,6 +1727,9 @@ pub fn run_analyze(
                 CliError::new(CliErrorCode::DataValidationFailed, "扫描来源未完成注册")
             })?;
         for (sheet_data, sheet) in &file.sheets {
+            if sheet.blocked_reason.is_some() {
+                continue;
+            }
             if sources
                 .iter()
                 .any(|s| s.source_id == file.file_label && s.sheet == sheet.sheet)
@@ -1046,6 +1760,9 @@ pub fn run_analyze(
                     sheet_data.rows.len()
                 ),
                 content_hash: file.content_hash.clone(),
+                source_profile_id: profile.profile_id.clone(),
+                source_profile_version: profile.version,
+                source_profile_hash: profile.hash.clone(),
             });
         }
     }
@@ -1067,16 +1784,49 @@ pub fn run_analyze(
     let mut series_rows = Vec::new();
     let mut comparisons_obj = serde_json::Map::new();
     let mut base_refs_used: Vec<BaseRef> = Vec::new();
+    let direct_actuals: BTreeMap<String, Option<Decimal>> = defs.iter().map(|def| {
+        let values = obs_in(&obs, &def.metric_id, MeasureRole::Actual, window);
+        let value = flow_sum_window(&values);
+        let value = if profile_requires_confirmation(&profile, &def.metric_key) { None } else { value };
+        (def.metric_key.clone(), value)
+    }).collect();
+    let mut formula_actuals = BTreeMap::new();
+    // 目录将单位时间附加值定义为需确认的派生指标；没有企业确认的
+    // formula/有效工时输入时，不能把来源中同名的一列当成最终结果。
+    let configuration_required = |def: &MetricDefRow| {
+        def.metric_key == "value_added_per_hour"
+            && def.formula.is_none()
+    };
+    let mut series_period_keys: BTreeSet<String> = obs
+        .iter()
+        .filter(|o| o.period.from >= window.from && o.period.to <= window.to)
+        .map(|o| o.period.to_period_string())
+        .collect();
+    if series_period_keys.is_empty() {
+        series_period_keys.insert(window.to_period_string());
+    }
     for def in &defs {
         let relevant: Vec<&Obs> = obs
             .iter()
-            .filter(|o| o.metric_id == def.metric_id)
+            .filter(|o| {
+                o.metric_id == def.metric_id
+                    && o.period.from >= window.from
+                    && o.period.to <= window.to
+            })
             .collect();
+        // 固定两表必须保留指标行；没有观察时呈现 null/待补状态，
+        // 不能通过省略该行把“关键指标缺失”伪装成已完成。
         if relevant.is_empty() {
-            continue;
+            pending_count += 1;
         }
         let actual_observations = obs_in(&obs, &def.metric_id, MeasureRole::Actual, window);
-        let actual = flow_sum_window(&actual_observations);
+        let actual = if configuration_required(def) {
+            None
+        } else if def.formula.is_some() {
+            evaluate_metric_formula(&def.metric_key, &defs, &direct_actuals, &mut formula_actuals, &mut BTreeSet::new())
+        } else {
+            flow_sum_window(&actual_observations)
+        };
         let mut evidence_ids: Vec<String> = actual_observations
             .iter()
             .map(|o| o.evidence_id.clone())
@@ -1188,6 +1938,25 @@ pub fn run_analyze(
                 }
             }
         }
+        let mut pending_for_metric = pending_reasons.get(&def.metric_key).cloned().unwrap_or_default();
+        if configuration_required(def) {
+            pending_for_metric.push("configuration_required".into());
+        }
+        if actual.is_none() { pending_for_metric.push("actual_missing".into()); }
+        let observed_period_keys: BTreeSet<String> = relevant
+            .iter()
+            .map(|o| o.period.to_period_string())
+            .collect();
+        if !series_period_keys
+            .iter()
+            .all(|key| observed_period_keys.contains(key))
+        {
+            pending_for_metric.push("period_bucket_missing".into());
+        }
+        if target.is_none() { pending_for_metric.push("target_missing".into()); }
+        pending_for_metric.sort();
+        pending_for_metric.dedup();
+        if !pending_for_metric.is_empty() { pending_count += 1; }
         metrics_rows.push(json!({
             "metric_id": def.metric_id,
             "metric_key": def.metric_key,
@@ -1197,6 +1966,8 @@ pub fn run_analyze(
             "target_value": target.map(to_canonical_string),
             "actual_value": actual.map(to_canonical_string),
             "delta": delta.map(to_canonical_string),
+            "status": if pending_for_metric.is_empty() { "ready" } else { "pending" },
+            "pending_reasons": pending_for_metric,
             "mom": mom,
             "yoy": yoy,
         }));
@@ -1221,7 +1992,17 @@ pub fn run_analyze(
                 MeasureRole::AnnualMonthPlan => {}
             }
         }
-        if !buckets.is_empty() {
+        // 期间桶按所有 source 指定的窗口内期间对齐；某个指标没有该桶时
+        // 保留 null，确保“缺失≠0”且推移表不会把断点隐藏掉。
+        for key in &series_period_keys {
+            buckets.entry(key.clone()).or_insert((None, None));
+        }
+        if def.formula.is_some() && buckets.values().all(|(a, _)| a.is_none()) {
+            if let Some(value) = actual {
+                buckets.insert(window.to_period_string(), (Some(value), None));
+            }
+        }
+        if !buckets.is_empty() || relevant.is_empty() {
             series_rows.push(json!({
                 "metric_key": def.metric_key,
                 "metric_label": def.label,
@@ -1242,6 +2023,14 @@ pub fn run_analyze(
         "series": series_rows,
         "pending_inputs": pending_count,
         "scope": scope,
+        "source_profile": {
+            "profile_id": profile.profile_id,
+            "version": profile.version,
+            "hash": profile.hash,
+            "mode": profile.mode,
+            "profile_ref": profile.profile_ref,
+            "config": profile.config,
+        },
     });
     let comparisons = Value::Object(comparisons_obj);
 
@@ -1268,10 +2057,14 @@ pub fn run_analyze(
             )
             .collect()
     };
+    let mapping_value = json!(mapping_rows);
+    let mapping_version = dsheng_core::analysis::fingerprint::sha256_hex(
+        &dsheng_core::analysis::fingerprint::canonical_json(&mapping_value),
+    );
     let input = AnalysisRevisionInput {
         sources,
-        mapping_version: "auto-v1".to_string(),
-        mappings: json!(mapping_rows),
+        mapping_version,
+        mappings: mapping_value,
         metric_definitions: defs
             .iter()
             .map(|d| MetricDefSnapshot {
@@ -1279,6 +2072,8 @@ pub fn run_analyze(
                 version: d.version as u32,
                 scope: d.scope.clone(),
                 semantic_hash: d.semantic_hash.clone(),
+                semantic_type: Some(d.semantic_type.clone()),
+                unit_signature: serde_json::from_str(&d.unit_json).ok(),
             })
             .collect(),
         manual_inputs: manual_snapshots,
@@ -1289,6 +2084,14 @@ pub fn run_analyze(
             "month_start_day": month_start,
             "fiscal_year_start_month": fiscal,
             "timezone_id": tz,
+            "source_profile": {
+                "profile_id": profile.profile_id,
+                "version": profile.version,
+                "hash": profile.hash,
+                "mode": profile.mode,
+                "profile_ref": profile.profile_ref,
+                "config": profile.config,
+            },
             // §2 coverage 快照（默认 unknown/empty_days_are_zero=false：缺失≠0）
             "coverage": coverage.snapshot(window, grain, &zero_filled),
         }),
@@ -1310,6 +2113,11 @@ pub fn run_analyze(
         chrono::Utc::now(),
     )
     .map_err(CliError::from)?;
+    // mapping 草稿已被本次 revision 消费；后续 mapping show 读取不可变快照。
+    conn.execute(
+        "DELETE FROM cli_mapping_drafts WHERE run_id = ?1",
+        params![upsert.run_id],
+    )?;
     // 冲突落库（run 建立后）
     for draft in conflicts {
         conn.execute(
@@ -1345,6 +2153,12 @@ pub fn run_analyze(
         .map_err(CliError::from)?;
     }
     let run_id = upsert.run_id.clone();
+    crate::store::sources::mark_two_tables_materialized(
+        conn,
+        workspace_id,
+        &run_id,
+        upsert.revision_no,
+    )?;
     analysis_run_view(conn, workspace_id, &run_id, upsert.revision_no)
 }
 
@@ -1435,23 +2249,34 @@ pub fn analysis_run_view(
     run_id: &str,
     revision: u32,
 ) -> CliResult<Value> {
-    let (current, fingerprint) = dsheng_core::repository::analysis_runs::current_revision(
+    let (current, _) = dsheng_core::repository::analysis_runs::current_revision(
         conn,
         &workspace_id.to_string(),
         run_id,
     )
     .map_err(CliError::from)?;
-    let normalized_raw: String = conn
+    let (normalized_raw, fingerprint): (String, String) = conn
         .query_row(
-            "SELECT normalized_metrics_json FROM run_revisions WHERE run_id = ?1 AND revision_no = ?2",
+            "SELECT normalized_metrics_json, analysis_input_fingerprint
+             FROM run_revisions WHERE run_id = ?1 AND revision_no = ?2",
             params![run_id, revision as i64],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .map_err(|_| {
             CliError::new(CliErrorCode::DataValidationFailed, "revision 不存在")
         })?;
     let normalized: Value = serde_json::from_str(&normalized_raw)
         .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "normalized 快照损坏"))?;
+    let two_tables_ready: bool = conn
+        .query_row(
+            "SELECT accounting_ready = 1 AND trend_ready = 1
+             FROM cli_two_tables_materializations
+             WHERE workspace_id = ?1 AND run_id = ?2 AND revision_no = ?3
+                   AND contract_id = 'two_tables_v1'",
+            params![workspace_id.to_string(), run_id, revision as i64],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
     let period = normalized
         .get("period")
         .cloned()
@@ -1466,6 +2291,8 @@ pub fn analysis_run_view(
         "metrics": normalized.get("metrics").cloned().unwrap_or(json!([])),
         "series": normalized.get("series").cloned().unwrap_or(json!([])),
         "pending_inputs": normalized.get("pending_inputs").cloned().unwrap_or(json!(0)),
+        "two_tables_ready": two_tables_ready,
+        "source_profile": normalized.get("source_profile").cloned().unwrap_or(json!(null)),
     }))
 }
 
@@ -1597,6 +2424,16 @@ pub fn history_detail(
         .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "revision 不存在"))?;
     let normalized: Value = serde_json::from_str(&normalized_raw)
         .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "normalized 快照损坏"))?;
+    let two_tables_ready: bool = conn
+        .query_row(
+            "SELECT accounting_ready = 1 AND trend_ready = 1
+             FROM cli_two_tables_materializations
+             WHERE workspace_id = ?1 AND run_id = ?2 AND revision_no = ?3
+                   AND contract_id = 'two_tables_v1'",
+            params![workspace_id.to_string(), run_id, revision as i64],
+            |row| row.get(0),
+        )
+        .unwrap_or(false);
     // 任务快照（该 revision 最新一版）
     let snapshot: Option<(i64, String)> = conn
         .query_row(
@@ -1638,6 +2475,8 @@ pub fn history_detail(
         "grain": normalized.get("grain").cloned().unwrap_or(json!("month")),
         "period": normalized.get("period").cloned().unwrap_or(json!({"from": null, "to": null})),
         "tasks": tasks,
+        "two_tables_ready": two_tables_ready,
+        "source_profile": normalized.get("source_profile").cloned().unwrap_or(json!(null)),
     }))
 }
 

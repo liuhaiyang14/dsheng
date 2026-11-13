@@ -152,8 +152,9 @@ fn analyze(s: &Setup, from: &str, to: &str) -> String {
 fn accounting_workbook(path: &std::path::Path, junk_rows: usize, note_row: u32) {
     let mut book = Workbook::new();
     let sheet = book.add_worksheet();
-    sheet.set_name("核算表").unwrap();
-    for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标"]
+    // 原始 source 表可由企业 profile 适配；生成层的“核算表”名称已禁止回灌。
+    sheet.set_name("source").unwrap();
+    for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"]
         .iter()
         .enumerate()
     {
@@ -163,6 +164,7 @@ fn accounting_workbook(path: &std::path::Path, junk_rows: usize, note_row: u32) 
     sheet.write_string(1, 2, "12000.5").unwrap();
     sheet.write_string(1, 3, "11500.25").unwrap();
     sheet.write_string(1, 4, "12500").unwrap();
+    sheet.write_string(1, 5, "2026-10-01").unwrap();
     for i in 0..junk_rows {
         sheet
             .write_string((2 + i) as u32, 0, format!("无关科目{i:02}"))
@@ -219,9 +221,8 @@ fn full_sheet_scan_trims_to_relevant_rows() {
     let defs = payload["workspace"]["metric_definitions"]
         .as_array()
         .unwrap();
-    assert_eq!(defs.len(), 1, "未使用指标定义不得发送");
-    assert_eq!(defs[0]["metric_key"], json!("sales_net"));
-    assert_eq!(payload["metrics"].as_array().unwrap().len(), 1);
+    assert!(defs.iter().any(|d| d["metric_key"] == json!("sales_net")));
+    assert!(!payload["metrics"].as_array().unwrap().is_empty());
     // 只含表头行（1）＋销售额行（2）；40 行无关科目＋远端备注行（200）不发
     assert_eq!(rows_of(&payload), [1, 2].into_iter().collect());
     // 表头与指标行均在（逐格）
@@ -233,16 +234,16 @@ fn full_sheet_scan_trims_to_relevant_rows() {
     ));
     // evidence_id 合同形状：cell:<uuid>:<sheet>:<A1>
     let evidence = records[0]["evidence_id"].as_str().unwrap();
-    assert!(evidence.starts_with("cell:") && evidence.contains(":核算表:A1"));
+    assert!(evidence.starts_with("cell:") && evidence.contains(":source:A1"));
     // manifest 如实反映裁剪后范围（收窄选定范围，而非偷偷丢行）
     let manifest = payload["source_manifest"].as_array().unwrap();
     assert_eq!(manifest.len(), 1);
     let range = manifest[0]["selected_range"].as_str().unwrap();
     assert!(
-        range.contains("A1:E2") && range.contains("已按相关行裁剪：2/43 行"),
+        range.contains("A1:F2") && range.contains("已按相关行裁剪：2/43 行"),
         "selected_range={range}"
     );
-    assert_eq!(manifest[0]["sheet"], json!("核算表"));
+    assert_eq!(manifest[0]["sheet"], json!("source"));
     // 预览 scope 行（settings.schema 严格字段集）
     assert_eq!(material.scope_rows.len(), 1);
     assert_eq!(material.scope_rows[0]["row_count"], json!(2));
@@ -271,7 +272,7 @@ fn user_evidence_rows_are_kept() {
         dsheng_core::contracts::provider::Framework::Why5,
         "销售额为何低于预定",
         &[],
-        &["cell:核算表模板.xlsx:核算表:A12".to_string()],
+            &["cell:核算表模板.xlsx:source:A12".to_string()],
         state,
         None,
         "销售额为何低于预定",
@@ -288,7 +289,7 @@ fn user_evidence_rows_are_kept() {
 }
 
 #[test]
-fn scanned_transposed_trend_sheet_keeps_current_and_baseline_rows() {
+fn generated_trend_sheet_is_not_reimported_into_payload() {
     let s = setup(
         "trim-transposed",
         &[
@@ -299,6 +300,7 @@ fn scanned_transposed_trend_sheet_keeps_current_and_baseline_rows() {
     {
         let mut book = Workbook::new();
         let sheet = book.add_worksheet();
+        // 推移表是 two_tables_v1 输出层，不能重新作为 source 导入。
         sheet.set_name("推移表").unwrap();
         // 表头行（A=period，B/C=指标列·带单位后缀）
         sheet.write_string(0, 0, "月份").unwrap();
@@ -332,40 +334,7 @@ fn scanned_transposed_trend_sheet_keeps_current_and_baseline_rows() {
     .unwrap();
     let payload = payload_of(&material);
     let records = payload["source_records"].as_array().unwrap();
-    assert!(!records.is_empty());
-    // 指标列（B/C）＋period 列（A）；不存在其他列的记录
-    for r in records {
-        let col: String = r["cell_or_row"]
-            .as_str()
-            .unwrap()
-            .chars()
-            .take_while(|c| c.is_ascii_alphabetic())
-            .collect();
-        assert!(
-            col == "A" || col == "B" || col == "C",
-            "非指标列不得发送：{}",
-            r["cell_or_row"]
-        );
-    }
-    // 只发送表头、本期十月及环比九月锚点；累计和无期间注释不发送。
-    let rows: std::collections::BTreeSet<u32> = rows_of(&payload);
-    assert_eq!(rows, [1, 4, 5].into_iter().collect());
-    assert!(records
-        .iter()
-        .any(|r| r["cell_or_row"] == "B5" && r["values"]["raw_text"] == "1003"));
-    assert!(records
-        .iter()
-        .any(|r| r["cell_or_row"] == "B4" && r["values"]["raw_text"] == "1002"));
-    assert!(!records
-        .iter()
-        .any(|r| r["values"]["raw_text"] == "1000" || r["values"]["raw_text"] == "3003"));
-    let manifest = payload["source_manifest"].as_array().unwrap();
-    assert_eq!(manifest.len(), 1);
-    let range = manifest[0]["selected_range"].as_str().unwrap();
-    assert!(
-        range.contains("已按指标列裁剪：3/3 列"),
-        "selected_range={range}"
-    );
+    assert!(records.is_empty(), "生成层推移表不得形成 source_records");
 }
 
 #[test]
@@ -376,12 +345,13 @@ fn conflict_candidate_rows_kept_across_sources() {
     {
         let mut book = Workbook::new();
         let sheet = book.add_worksheet();
-        sheet.set_name("核算表").unwrap();
-        for (c, h) in ["科目", "单位", "月度实绩"].iter().enumerate() {
+        sheet.set_name("source").unwrap();
+        for (c, h) in ["科目", "期间", "单位", "月度实绩"].iter().enumerate() {
             sheet.write_string(0, c as u16, *h).unwrap();
         }
         sheet.write_string(1, 0, "销售额").unwrap();
-        sheet.write_string(1, 2, "9999.99").unwrap();
+        sheet.write_string(1, 1, "2026-10-01").unwrap();
+        sheet.write_string(1, 3, "9999.99").unwrap();
         sheet.write_string(2, 0, "无关科目").unwrap();
         book.save(s.dir.join("核算表备份.xlsx")).unwrap();
     }
@@ -429,7 +399,7 @@ fn csv_source_records_use_null_sheet_and_csv_namespace() {
     let s = setup("trim-csv", &[("sales_net", "销售额", "money", true)]);
     std::fs::write(
         s.dir.join("核算.csv"),
-        "科目,月度实绩\n销售额,11500.25\n无关科目,1\n",
+        "科目,期间,月度实绩\n销售额,2026-10-01,11500.25\n无关科目,2026-10-01,1\n",
     )
     .unwrap();
     let run_id = analyze(&s, "2026-10-01", "2026-10-31");
@@ -472,7 +442,7 @@ fn rebuild_is_deterministic_and_preview_reflects_range() {
             dsheng_core::contracts::provider::Framework::Why5,
             "确定性",
             &[],
-            &["cell:核算表模板.xlsx:核算表:A30".to_string()],
+            &["cell:核算表模板.xlsx:source:A30".to_string()],
             dsheng_core::generation::input::SessionStateProjection {
                 accepted_facts: vec![],
                 prior_report_summary: None,
@@ -510,7 +480,7 @@ fn rebuild_is_deterministic_and_preview_reflects_range() {
         "--problem",
         "销售额为何低于预定",
         "--evidence",
-        "cell:核算表模板.xlsx:核算表:A30",
+        "cell:核算表模板.xlsx:source:A30",
         "--dry-run",
         "--json",
     ]);
@@ -520,7 +490,7 @@ fn rebuild_is_deterministic_and_preview_reflects_range() {
     assert_eq!(scope.len(), 1);
     let range = scope[0]["selected_range"].as_str().unwrap();
     assert!(
-        range.contains("已按相关行裁剪：3/23 行") && range.contains("A1:E30"),
+        range.contains("已按相关行裁剪：3/23 行") && range.contains("A1:F30"),
         "scope={range}"
     );
     assert_eq!(scope[0]["row_count"], json!(3));

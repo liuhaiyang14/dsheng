@@ -19,8 +19,8 @@ fn set_grain(conn: &Connection, f: &Fixture, grain: &str) {
 
 fn daily_file(dir: &Path) {
     let mut book = Workbook::new();
-    let sheet = book.add_worksheet().set_name("核算表").unwrap();
-    for (col, value) in ["科目", "日期", "本期实绩"].iter().enumerate() {
+    let sheet = book.add_worksheet().set_name("source").unwrap();
+    for (col, value) in ["指标", "期间", "实际值"].iter().enumerate() {
         sheet.write_string(0, col as u16, *value).unwrap();
     }
     for (row, (date, value)) in [
@@ -141,12 +141,16 @@ fn monthly_and_undated_values_never_become_daily_values_or_daily_choices() {
     let dir = tempfile::tempdir().unwrap();
     daily_file(dir.path());
     // 无日期核算汇总不得绑定到所选的任何一天。
-    std::fs::copy(
-        f.dir.join("核算表模板.xlsx"),
-        dir.path().join("无日期汇总.xlsx"),
-    )
-    .unwrap();
+    let mut undated = Workbook::new();
+    let undated_sheet = undated.add_worksheet().set_name("source").unwrap();
+    for (col, value) in ["科目", "单位", "月度实绩"].iter().enumerate() {
+        undated_sheet.write_string(0, col as u16, *value).unwrap();
+    }
+    undated_sheet.write_string(1, 0, "销售额").unwrap();
+    undated_sheet.write_string(1, 2, "11500.25").unwrap();
+    undated.save(dir.path().join("无日期汇总.xlsx")).unwrap();
     let mut book = Workbook::new();
+    // 推移表是 two_tables_v1 输出，扫描时应被拒绝，不能贡献可选期间。
     let sheet = book.add_worksheet().set_name("推移表").unwrap();
     for (col, value) in ["科目", "单位", "2026-10", "2026-12"].iter().enumerate() {
         sheet.write_string(0, col as u16, *value).unwrap();
@@ -162,9 +166,24 @@ fn monthly_and_undated_values_never_become_daily_values_or_daily_choices() {
     assert_eq!(
         scan["available_periods"].as_array().unwrap().len(),
         3,
-        "月总值不能展开31个日选项"
+        "生成推移表和无日期汇总均不能额外贡献日选项"
     );
-    let day = analyze(&mut conn, &f, dir.path(), "2026-10-01", "2026-10-01", "day");
+    // 分析输入只选原始每日 source；同目录中的无日期汇总和生成推移表
+    // 仍可被扫描，但不能混入本次 revision。
+    let daily_only = tempfile::tempdir().unwrap();
+    std::fs::copy(
+        dir.path().join("每日.xlsx"),
+        daily_only.path().join("每日.xlsx"),
+    )
+    .unwrap();
+    let day = analyze(
+        &mut conn,
+        &f,
+        daily_only.path(),
+        "2026-10-01",
+        "2026-10-01",
+        "day",
+    );
     assert_eq!(
         sales(&day)["actual_value"],
         "1",
@@ -198,13 +217,7 @@ fn transposed_months_keep_actual_zero_and_skip_blank_or_cumulative_rows() {
     let mut conn = Connection::open(&f.db).unwrap();
     let scan = sources::scan_summary_desktop(&mut conn, f.workspace, &dir.path().to_string_lossy())
         .unwrap();
-    assert_eq!(
-        scan["available_periods"],
-        json!([
-            {"from":"2026-10-01","to":"2026-10-31","grain":"month"},
-            {"from":"2026-12-01","to":"2026-12-31","grain":"month"}
-        ])
-    );
+    assert_eq!(scan["available_periods"], json!([]));
     set_grain(&conn, &f, "day");
     let scan = sources::scan_summary_desktop(&mut conn, f.workspace, &dir.path().to_string_lossy())
         .unwrap();

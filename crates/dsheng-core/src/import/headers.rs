@@ -265,7 +265,7 @@ pub struct HeaderBlock {
     pub row: usize,
     pub row_count: usize,
     /// (列下标 0 基, 规范字段)。
-    pub columns: Vec<(usize, &'static str)>,
+    pub columns: Vec<(usize, String)>,
     /// 命中核心字段数。
     pub core_score: usize,
 }
@@ -300,7 +300,7 @@ pub fn find_header_blocks(sheet_rows: &[Vec<String>]) -> Vec<HeaderBlock> {
                         continue;
                     }
                     if let Some(field) = map_header(text) {
-                        columns.push((col, field));
+                        columns.push((col, field.to_string()));
                     }
                     break;
                 }
