@@ -195,7 +195,9 @@ BAD="$( (cd "$STAGE" && find . -type f) | grep -E "$FORBIDDEN_RE" || true)"
 MIG_COUNT="$(ls "$STAGE/migrations"/*.sql | wc -l | tr -d ' ')"
 [ "$MIG_COUNT" = "$CLI_SCHEMA" ] || die "migration 数 $MIG_COUNT ≠ schema 版本 $CLI_SCHEMA"
 
-(cd "$DIST_DIR/stage" && ditto -c -k --keepParent "dsheng_${VERSION}_macos_${ARCH}_portable" "$PORTABLE_ZIP") \
+# 使用 zip -X 清除 macOS 扩展属性，避免 ditto 把 AppleDouble（._*）元数据
+# 写进交付包。包内只保留应用、CLI、migration 和说明文件。
+(cd "$DIST_DIR/stage" && zip -q -X -r "$PORTABLE_ZIP" "dsheng_${VERSION}_macos_${ARCH}_portable") \
   || die "打包 portable zip 失败"
 log "  便携 zip：$PORTABLE_ZIP"
 
