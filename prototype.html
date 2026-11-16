@@ -311,7 +311,7 @@
             <div class="panel"><div class="panel-head"><span class="panel-title">本地目录</span><span class="panel-note"><span class="status-dot"></span>已扫描 · 只读</span></div><div class="dropzone"><div><div class="folder">⌂</div><p>经营复盘 / 2026 年 10 月</p><small>核算周期：日度 · 数据覆盖：2026-10-01 至 2026-10-28</small></div></div><div class="path">示例路径：~/Documents/经营复盘/示例制造企业/2026-10</div></div>
             <div class="panel"><div class="panel-head"><span class="panel-title">已识别文件</span><span class="panel-note" id="sourceFileNote">当前输入模板 · 4 类来源</span></div><div class="file-list" id="sourceFileList"></div></div>
           </div>
-          <div class="notice pending-review-guide" id="pendingReviewGuide"><b>需要确认字段</b><div class="pending-review-content"><p id="pendingReviewSummary">当前有文件需要确认业务字段；原始数据已保留，待补项不会按 0 参与计算。</p><details class="pending-review-files"><summary>查看待确认文件</summary><ul id="pendingReviewFiles"></ul></details></div><div class="pending-review-actions"><button class="primary" id="openFieldReview">逐项确认字段</button></div><div class="field-review-panel" id="fieldReviewPanel" hidden><div class="field-review-head"><div><strong>逐项确认字段</strong><p>为每个待确认文件选择业务角色；不确定的文件可以保留“待补”。保存后会重新扫描并更新字段状态。</p></div><span class="panel-note" id="fieldReviewCount"></span></div><div class="field-review-list" id="fieldReviewList"></div><div class="field-review-actions"><button class="outline" id="closeFieldReview">稍后处理</button><button class="primary" id="saveFieldReview">保存确认并重新扫描</button></div></div></div>
+          <div class="notice pending-review-guide" id="pendingReviewGuide"><b>需要确认文件用途和关键列</b><div class="pending-review-content"><p id="pendingReviewSummary">系统已经按当前输入模板猜测了文件用途，但还没有得到你的确认。你需要确认：这个文件属于哪类业务数据，以及金额、日期等关键列是否选对；待补项不会按 0 参与计算。</p><p class="pending-review-metrics">常用业务用途包括销售、采购、收款、付款、发票、经营费用和人工；常用指标包括销售额、订单成本、入库金额、收付款、开票金额、经营费用、人工费、附加值和经营收益。</p><details class="pending-review-files"><summary>查看待确认文件</summary><ul id="pendingReviewFiles"></ul></details></div><div class="pending-review-actions"><button class="primary" id="openFieldReview">逐项确认文件用途</button></div><div class="field-review-panel" id="fieldReviewPanel" hidden><div class="field-review-head"><div><strong>逐项确认文件用途和关键列</strong><p>请选择文件的业务用途；“关键列字母”可填写金额或日期列，例如 C（金额）或 B（日期）。不确定时选“待补/待确认”。</p></div><span class="panel-note" id="fieldReviewCount"></span></div><div class="field-review-list" id="fieldReviewList"></div><div class="field-review-actions"><button class="outline" id="closeFieldReview">稍后处理</button><button class="primary" id="saveFieldReview">保存确认并重新扫描</button></div></div></div>
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">字段映射</span><span class="panel-note">自动识别 · 可手动修正 · 当前映射已确认</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>工具字段</th><th>来源表 / 字段</th><th>识别结果</th><th>用途</th></tr></thead><tbody>
             <tr><td>销售额</td><td>销售出库 / 出库产品售价总额（含税）</td><td><span class="tag green">金额 · 已匹配</span></td><td>收入实绩</td></tr>
             <tr><td>对应出库成本</td><td>销售出库 / 出库产品成本总额</td><td><span class="tag green">金额 · 已匹配</span></td><td>毛利与附加值</td></tr>
@@ -499,11 +499,11 @@
       missing: ['工时待补', '月度目标待补']
     };
     const fieldReviewOptions = [
-      ['sales_net', '不含税销售额'], ['purchase_signed_amount', '订单成本'],
-      ['purchase_inbound_amount', '入库金额'], ['cash_received', '收款金额'],
-      ['cash_paid', '付款金额'], ['invoice_amount', '开票金额'],
-      ['operating_expense', '经营费用'], ['labor_cost', '人工费'],
-      ['period', '分析期间'], ['metric_label', '指标名称'], ['actual_value', '实际值']
+      ['sales_net', '不含税销售额（用于销售收入）'], ['purchase_signed_amount', '订单成本（用于采购订单成本）'],
+      ['purchase_inbound_amount', '入库金额（用于采购入库）'], ['cash_received', '收款金额（用于回款）'],
+      ['cash_paid', '付款金额（用于付款）'], ['invoice_amount', '开票金额（用于销项发票）'],
+      ['operating_expense', '经营费用（用于费用分类确认）'], ['labor_cost', '人工费（用于工资条）'],
+      ['period', '分析期间（用于日期/期间字段）'], ['metric_label', '指标名称（用于通用表指标列）'], ['actual_value', '实际值（用于通用表数值列）']
     ];
     const inferReviewField = name => {
       const pairs = [[/销售出库|销售订单/, 'sales_net'], [/采购订单/, 'purchase_signed_amount'], [/采购入库|入库/, 'purchase_inbound_amount'], [/收款/, 'cash_received'], [/付款/, 'cash_paid'], [/发票|开票/, 'invoice_amount'], [/费用|报销/, 'operating_expense'], [/工资|薪资/, 'labor_cost']];
@@ -515,12 +515,12 @@
       const panel = document.getElementById('fieldReviewPanel');
       guide.hidden = pending.length === 0;
       panel.hidden = true;
-      document.getElementById('pendingReviewSummary').textContent = `${pending.length} 个文件需要确认业务字段；原始数据已保留，待补项不会按 0 参与计算。`;
+      document.getElementById('pendingReviewSummary').textContent = `系统已猜测 ${pending.length} 个文件的用途，但还需要你确认业务类型和金额、日期等关键列；原始数据已保留，待补项不会按 0 参与计算。`;
       document.getElementById('pendingReviewFiles').innerHTML = pending.map(({ file }) => `<li>${file[0]} · ${file[1]}</li>`).join('');
       document.getElementById('fieldReviewList').innerHTML = pending.map(({ file, index }) => {
         const inferred = inferReviewField(file[0]);
         const options = `<option value="">请选择字段</option>${fieldReviewOptions.map(([value, label]) => `<option value="${value}"${value === inferred ? ' selected' : ''}>${label}</option>`).join('')}`;
-        return `<div class="field-review-row" data-file-index="${index}"><div class="field-review-file"><strong>${file[0]}</strong><span>${file[1]}</span></div><label><span>确认状态</span><select data-review-status><option value="confirmed"${inferred ? ' selected' : ''}>已确认</option><option value="pending"${inferred ? '' : ' selected'}>待补/待确认</option></select></label><label><span>业务字段</span><select data-review-field>${options}</select></label><label><span>列（可选）</span><input data-review-column placeholder="如 C" /></label></div>`;
+        return `<div class="field-review-row" data-file-index="${index}"><div class="field-review-file"><strong>${file[0]}</strong><span>${file[1]}</span></div><label><span>确认状态</span><select data-review-status><option value="confirmed">已确认</option><option value="pending" selected>待补/待确认</option></select></label><label><span>这个文件是什么数据</span><select data-review-field>${options}</select></label><label><span>关键列字母（可选）</span><input data-review-column placeholder="如 C（金额）或 B（日期）" /></label></div>`;
       }).join('');
       document.getElementById('fieldReviewCount').textContent = `已确认 0 / ${pending.length}`;
     };

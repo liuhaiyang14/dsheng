@@ -559,6 +559,8 @@ tr:last-child td { border-bottom: 0; }
 /* 页眉只保留期间切换；分析表单放回经营分析页。 */
 .header-period { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: .875rem; color: var(--muted); }
 .header-period .select { max-width: min(290px, 45vw); min-width: 140px; }
+.period-create-action { border: 1px solid var(--gold); background: var(--gold-wash); color: var(--ink); min-height: 34px; padding: 0 10px; white-space: nowrap; font-size: .8125rem; }
+.period-create-action:hover { border-color: var(--ink); }
 .period-refresh { border: 0; background: transparent; color: var(--muted); font-size: 1.25rem; min-width: 32px; min-height: 36px; padding: 0 5px; }
 .period-refresh:hover { color: var(--ink); }
 .local-analysis { margin-bottom: 20px; font-size: .875rem; }
@@ -587,16 +589,17 @@ tr:last-child td { border-bottom: 0; }
 .source-technical-details[open] > summary { margin-bottom: 10px; }
 .source-intake-panel .manual-path { margin: 0; padding: 0 16px 16px; }
 .source-intake-panel .file-list { max-height: 420px; overflow-y: auto; }
-.pending-review-guide { margin-top: 12px; align-items: flex-start; }
-.pending-review-content { display: grid; gap: 5px; }
+.pending-review-guide { margin-top: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px 18px; align-items: start; padding: 18px; }
+.pending-review-guide > b { grid-column: 1 / -1; font-size: 1rem; color: #624b18; }
+.pending-review-content { grid-column: 1; display: grid; gap: 7px; min-width: 0; }
 .pending-review-content p { margin: 0; }
 .pending-review-metrics { color: #886525; }
 .pending-review-files { margin-top: 2px; }
 .pending-review-files > summary { cursor: pointer; width: fit-content; }
 .pending-review-files ul { margin: 5px 0 0; padding-left: 1.2em; }
-.pending-review-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
+.pending-review-actions { grid-column: 2; display: flex; flex-direction: column; flex: 0 0 auto; flex-wrap: wrap; gap: 8px; align-items: stretch; }
 .pending-review-actions button { white-space: nowrap; }
-.field-review-panel { margin-top: 12px; padding: 14px; background: #fffdfa; border: 1px solid #eadbb9; }
+.field-review-panel { grid-column: 1 / -1; margin-top: 2px; padding: 18px; background: #fffdfa; border: 1px solid #eadbb9; }
 .field-review-head { display: flex; justify-content: space-between; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
 .field-review-head strong { font-size: .95rem; }
 .field-review-head p { margin: 5px 0 0; color: var(--muted); font-size: .8125rem; line-height: 1.6; }
@@ -609,6 +612,9 @@ tr:last-child td { border-bottom: 0; }
 .field-review-row select, .field-review-row input { width: 100%; min-width: 0; border: 1px solid var(--line); padding: 7px 8px; color: var(--ink); background: white; font-size: .8125rem; }
 .field-review-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 @media (max-width: 850px) {
+  .pending-review-guide { grid-template-columns: 1fr; }
+  .pending-review-content, .pending-review-actions { grid-column: 1; }
+  .pending-review-actions { flex-direction: row; align-items: flex-start; }
   .field-review-row { grid-template-columns: 1fr 1fr; }
   .field-review-file { grid-column: 1 / -1; }
 }

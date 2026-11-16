@@ -44,7 +44,7 @@ export function LocalAnalysisForm() {
   const monthStartDay = policy?.policy.month_start_day ?? 1;
   const scanMatchesPolicy = scan?.workspace_id === app.activeWorkspaceId
     && !!policy && scan.available_period_policy_id === policy.period_policy_id;
-  const mappingPending = scan?.source_profile?.mode === 'generic'
+  const mappingPending = (scan?.source_profile?.mode === 'generic' || scan?.source_profile?.mode === 'profile')
     && (scan.files ?? []).some((file) => file.mapping_status === 'pending_review');
   const periods = useMemo(() => {
     const found = new Map<string, AvailablePeriod>();
@@ -132,8 +132,8 @@ export function LocalAnalysisForm() {
       {!app.sourceDirectory ? <p className="period-help">请先导入数据。<button type="button" className="outline" onClick={() => app.setScreen('source')}>前往数据源</button></p>
         : <>
           {scanNeeded ? <p className="period-help">请重新扫描数据，读取当前核算周期的可分析期间。</p>
-            : !periods.length ? <p className="period-help">未识别到可分析的数据，请检查数据源后重新扫描。</p> : null}
-          {mappingPending ? <p className="period-help">未指定模板的字段识别尚未确认，请先到「数据源」点击“确认当前字段识别”。</p> : null}
+            : !periods.length ? <p className="period-help">当前还没有可运行的期间。月度设置只决定如何归集数据，不会在导入时自动保存期间；请先确认文件用途和关键日期列，再点击“重新扫描数据”。</p> : null}
+          {mappingPending ? <p className="period-help">部分原始文件的业务用途尚未确认，请先到「数据源」逐项确认文件用途；不确定的文件可保留“待补”。</p> : null}
           <p className="period-help">数据目录：{app.sourceDirectory}</p>
         </>}
       {scanError ? <p className="notice error" role="alert">{scanError}</p> : null}

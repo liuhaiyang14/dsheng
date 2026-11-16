@@ -1,6 +1,6 @@
 // 测试层次：UI 纯组件/状态测试（FixtureClient 注入，无网络、无 Tauri）。
 // S3 应用壳：七屏导航、企业切换与空档案隔离（用例 34）、未连接核心空状态。
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { AppProvider, useApp } from '../state/store';
@@ -54,6 +54,18 @@ describe('S3 应用壳：导航与屏幕切换', () => {
       void testId;
     }
     expect(screen.getByRole('navigation')).toBeTruthy();
+  });
+
+  it('没有已保存期间时，页眉提供生成期间入口并跳转经营分析', async () => {
+    renderWithFixture();
+    await screen.findByTestId('foot-workspace');
+    fireEvent.change(screen.getByTestId('workspace-select'), {
+      target: { value: '00000000-0000-4000-8000-0000000000b2' },
+    });
+    await waitFor(() => expect(screen.getByTestId('saved-period-select')).toHaveValue(''));
+    expect(screen.getByRole('button', { name: '去经营分析生成期间' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: '去经营分析生成期间' }));
+    expect(screen.getByTestId('crumb-screen')).toHaveTextContent('经营分析');
   });
 });
 

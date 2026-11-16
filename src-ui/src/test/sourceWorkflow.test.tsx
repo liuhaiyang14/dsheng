@@ -19,12 +19,23 @@ async function scan(path: string) {
 }
 it('示例数据默认使用中文模板名称，不把内部 profile 标识展示给用户', async () => {
   const client = new FixtureClient();
+  const rawScan = client.scan.bind(client);
+  vi.spyOn(client, 'scan').mockImplementation(async (...args) => {
+    const result = await rawScan(...args);
+    return { ...result, files: result.files.map((file) => ({
+      ...file,
+      note: `${file.file_label}:generic_table/profile:generic_source(${file.row_count}行)`,
+    })) };
+  });
   await openSource(client);
   expect(screen.getByLabelText('原始数据模板')).toHaveValue('xsd_trade_v1');
   expect(screen.getByText('贸易/制造业单据模板（当前示例）')).toBeVisible();
   await scan('/tmp/example-source');
   expect(screen.getByText(/模板：贸易\/制造业单据模板（当前示例）/)).toBeVisible();
   expect(screen.queryByText(/generic/)).toBeNull();
+  expect(screen.queryByText(/profile:/)).toBeNull();
+  expect(screen.getByTestId('pending-review-guide')).toHaveTextContent('系统已经按当前输入模板猜测了文件用途');
+  expect(screen.getByTestId('pending-review-guide')).toHaveTextContent('金额、日期等关键列');
   expect(screen.getByTestId('open-field-review-button')).toBeVisible();
   expect(screen.queryByTestId('confirm-source-mapping-button')).toBeNull();
 });
@@ -41,6 +52,7 @@ it('待确认文件提供逐项确认入口，保存后调用映射确认并重�
   const fileLabel = '示例费用人工_202610.xlsx';
   const fieldSelect = screen.getByLabelText(`确认字段：${fileLabel}`);
   expect(fieldSelect).toHaveValue('operating_expense');
+  fireEvent.change(screen.getByLabelText(`确认状态：${fileLabel}`), { target: { value: 'confirmed' } });
   fireEvent.change(fieldSelect, { target: { value: 'labor_cost' } });
   fireEvent.change(screen.getByLabelText(`确认列：${fileLabel}`), { target: { value: '金额' } });
   fireEvent.click(screen.getByTestId('save-field-review-button'));
@@ -57,6 +69,15 @@ it('待确认文件提供逐项确认入口，保存后调用映射确认并重�
   await waitFor(() => expect(scanSpy).toHaveBeenCalledTimes(2));
   expect(screen.queryByTestId('field-review-panel')).toBeNull();
   expect(screen.getByTestId('scan-note')).toHaveTextContent('字段确认已保存并重新扫描');
+});
+it('profile 模板仍有待确认文件时，经营分析入口保持禁用并说明原因', async () => {
+  const client = new FixtureClient();
+  await openSource(client);
+  await scan('/tmp/example-source');
+  fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /经营分析/ }));
+  fireEvent.click(screen.getByText('重新分析数据'));
+  await waitFor(() => expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled());
+  expect(screen.getByText('部分原始文件的业务用途尚未确认，请先到「数据源」逐项确认文件用途；不确定的文件可保留“待补”。')).toBeVisible();
 });
 it('保留自定义 profile JSON 路径并按 profile 模式扫描', async () => {
   const client = new FixtureClient();

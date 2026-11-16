@@ -16,6 +16,19 @@ const BUILTIN_SOURCE_PROFILES = new Set(Object.keys(SOURCE_PROFILE_LABELS));
 
 const COMMON_METRIC_LABELS = '不含税销售额、订单成本、订单毛利、订单毛利率、入库金额、收款金额、付款金额、开票金额、经营费用、人工费、附加值（扣人工前）、经营收益（扣人工后）、有效工时、单位时间附加值、回款率和付款率';
 
+const PROFILE_ROLE_LABELS: Record<string, string> = {
+  sales_outbound: '销售出库',
+  sales_order: '销售订单',
+  purchase_inbound: '采购入库',
+  purchase_order: '采购订单',
+  invoices: '销项发票',
+  cash_received: '收款',
+  cash_paid: '付款',
+  expense: '经营费用',
+  salary: '人工/工资',
+  generic_source: '通用经营数据表',
+};
+
 /** 待确认面板展示的业务角色；value 只用于交给核心，不直接展示给用户。 */
 const FIELD_REVIEW_OPTIONS = [
   { value: 'sales_net', label: '不含税销售额', usage: '销售收入' },
@@ -59,9 +72,11 @@ function sourceProfileLabel(profileId?: string | null) {
 function humanizeSourceNote(note: string | null, sheetCount: number) {
   if (!note) return `${sheetCount} 个工作表已读取，等待字段确认`;
   return note
+    .replace(/\/?profile:([a-z0-9_]+)/gi, (_, role: string) => ` · 识别候选：${PROFILE_ROLE_LABELS[role] ?? '业务用途待确认'}`)
     .replace(/generic_table/gi, '未归类业务表')
     .replace(/generic/gi, '未指定模板')
-    .replace(/table/gi, '业务表');
+    .replace(/table/gi, '业务表')
+    .replace(/未归类业务表/g, '尚未确认业务用途');
 }
 
 /** 数据源屏：目录扫描结果与字段映射（只读呈现核心返回）。 */
@@ -201,7 +216,7 @@ export function SourceScreen() {
       return;
     }
     if (profileChoice === 'custom' && !customProfilePath.trim()) {
-      setScanError('请先选择内置模板，或填写自定义 profile JSON 文件路径。');
+      setScanError('请先选择内置模板，或填写自定义输入模板 JSON 文件路径。');
       return;
     }
     setScanBusy(true);
@@ -262,7 +277,9 @@ export function SourceScreen() {
       next[file.file_id] ??= {
         field: inferReviewField(file.file_label),
         column: '',
-        status: inferReviewField(file.file_label) ? 'confirmed' : 'pending',
+        // Filename matching is only a candidate. The user must explicitly
+        // choose “已确认” before the mapping is persisted.
+        status: 'pending',
       };
     }
     setFieldReviewDraft(next);
@@ -374,7 +391,7 @@ export function SourceScreen() {
       return;
     }
     if (profileChoice === 'custom' && !customProfilePath.trim()) {
-      setScanError('请先选择内置模板，或填写自定义 profile JSON 文件路径。');
+      setScanError('请先选择内置模板，或填写自定义输入模板 JSON 文件路径。');
       return;
     }
     let out: string | null = null;
@@ -459,7 +476,7 @@ export function SourceScreen() {
                 aria-label="自定义模板路径"
                 value={customProfilePath}
                 disabled={scanBusy}
-                placeholder="例如：/path/to/profile.json"
+                placeholder="例如：/path/to/template.json"
                 onChange={(event) => setSourceProfile(event.target.value)}
               />
             </label> : null}
@@ -499,13 +516,14 @@ export function SourceScreen() {
         const remainingCount = pendingFiles.length - Math.min(pendingFiles.length, 3);
         return (
         <div className="notice pending-review-guide" data-testid="pending-review-guide">
-          <b>需要确认字段</b>
+          <b>需要确认文件用途和关键列</b>
           <div className="pending-review-content">
             <p>
-              {pendingFiles.length} 个文件中有部分工作表尚未归入常用指标，原始数据已保留。
+              系统已经按当前输入模板猜测了文件用途，但还没有得到你的确认。你需要确认：这个文件属于哪类业务数据，以及金额、日期等关键列是否选对。
+              {` 当前有 ${pendingFiles.length} 个文件待确认。`}
               {previewFiles ? ` 当前包括：${previewFiles}${remainingCount > 0 ? ` 等 ${remainingCount} 个文件` : ''}。` : ''}
             </p>
-            <p className="pending-review-metrics">常用指标包括：{COMMON_METRIC_LABELS}。确认后会重新扫描并生成可分析期间。</p>
+            <p className="pending-review-metrics">可选业务用途包括销售、采购、收款、付款、发票、经营费用和人工。常用指标包括：{COMMON_METRIC_LABELS}。不确定的文件可以保留“待补”，不会按 0 参与计算。</p>
             <details className="pending-review-files">
               <summary>查看待确认文件（{pendingFiles.length}）</summary>
               <ul>{pendingFiles.map((f) => <li key={f.file_id}>{f.file_label} · {f.row_count} 行</li>)}</ul>
@@ -519,7 +537,7 @@ export function SourceScreen() {
               onClick={openFieldReview}
               data-testid="open-field-review-button"
             >
-              逐项确认字段
+              逐项确认文件用途
             </button>
             {scan.source_profile?.mode === 'generic' ? <button
               type="button"
@@ -544,8 +562,8 @@ export function SourceScreen() {
             <div className="field-review-panel" data-testid="field-review-panel">
               <div className="field-review-head">
                 <div>
-                  <strong>逐项确认字段</strong>
-                  <p>为每个待确认文件选择业务角色；不确定的文件可以保留“待补”，不会按 0 参与计算。</p>
+                  <strong>逐项确认文件用途和关键列</strong>
+                  <p>系统只提供识别候选，不会替你决定业务口径。请为每个文件选择它代表的业务数据；如果暂时无法判断，选“待补/待确认”。</p>
                 </div>
                 <span className="panel-note">已确认 {pendingFiles.filter((file) => fieldReviewDraft[file.file_id]?.status === 'confirmed').length} / {pendingFiles.length}</span>
               </div>
@@ -574,7 +592,7 @@ export function SourceScreen() {
                         </select>
                       </label>
                       <label>
-                        <span>业务字段</span>
+                        <span>这个文件是什么数据</span>
                         <select
                           aria-label={`确认字段：${file.file_label}`}
                           value={draft.field}
@@ -585,16 +603,16 @@ export function SourceScreen() {
                           }))}
                         >
                           <option value="">请选择字段</option>
-                          {FIELD_REVIEW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                          {FIELD_REVIEW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}（用于{option.usage}）</option>)}
                         </select>
                       </label>
                       <label>
-                        <span>列（可选）</span>
+                        <span>关键列字母（可选）</span>
                         <input
                           aria-label={`确认列：${file.file_label}`}
                           value={draft.column}
                           disabled={fieldReviewBusy || draft.status === 'pending'}
-                          placeholder="如 C"
+                          placeholder="如 C（金额）或 B（日期）"
                           onChange={(event) => setFieldReviewDraft((prev) => ({
                             ...prev,
                             [file.file_id]: { ...draft, column: event.target.value },

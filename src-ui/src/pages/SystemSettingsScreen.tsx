@@ -133,6 +133,16 @@ export function SystemSettingsScreen() {
         只能看到该企业自己的内容；不同企业的数据不会混在一起。
       </div>
 
+      <div className="notice" data-testid="period-creation-guide">
+        <b>如何生成一个期间？</b>
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0 }}>这里设置“按月、按周还是按日核算”；右上角只列出已经保存的分析结果，不会在导入时自动生成期间。</p>
+          <p style={{ margin: '5px 0 0' }}>导入并确认数据后，到「经营分析」选择可分析的月份，再点击「运行本地分析」。保存成功后，该期间会出现在右上角。</p>
+        </div>
+        <button type="button" className="outline" disabled={!app.activeWorkspaceId || app.loading || app.contextLockReason != null}
+          onClick={() => app.setScreen('analysis')}>去生成期间</button>
+      </div>
+
       {notice ? (
         <div className="notice workspace-empty" data-testid="settings-notice">
           <span>{notice}</span>
@@ -247,7 +257,7 @@ export function SystemSettingsScreen() {
               保存周期设置（建立新版本）
             </button>
             <span className="panel-note" data-testid="policy-version-note">
-              保存将建立新的 period_policy 版本；历史期间不重算、不改写。
+              保存会建立新的核算周期版本；历史期间不重算、不改写。
             </span>
           </div>
         </div>

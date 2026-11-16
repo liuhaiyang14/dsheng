@@ -776,11 +776,9 @@ fn file_mapping_ready(
             return false;
         }
     }
-    file.sheets.iter().any(|(_, sheet)| {
-        sheet.blocked_reason.is_none()
-            && ((sheet.role == "generic_table" && sheet.header.is_some())
-                || (profile.mode == "profile" && sheet.profile_role_id.is_some()))
-    })
+    file.sheets
+        .iter()
+        .any(|(_, sheet)| sheet.blocked_reason.is_none())
 }
 
 /// 读目录下全部支持文件（xlsx/xls/csv；其他扩展名跳过并记 pending）。
@@ -1061,7 +1059,10 @@ pub fn register_sources_with_profile(
         )
         .map_err(CliError::from)?;
         let total_rows: usize = file.sheets.iter().map(|(_, s)| s.rows).sum();
-        let mapped = file.sheets.iter().any(|(_, s)| {
+        // A versioned profile supplies candidates, but the user must still
+        // confirm which business field each file represents. Keep every
+        // profile file pending until scan_summary applies the saved mapping.
+        let mapped = profile.mode != "profile" && file.sheets.iter().any(|(_, s)| {
             matches!(s.role, "accounting" | "trend" | "task_review" | "task_plan")
                 || (profile.mode != "generic"
                     && s.role == "generic_table"
@@ -2308,14 +2309,183 @@ fn observed_source_periods(files: &[ScannedFile]) -> BTreeSet<(NaiveDate, NaiveD
     periods
 }
 
+/// 从企业 source profile 的业务明细映射提取真实发生期间。
+///
+/// 详细业务单据通常没有规范化的“指标/期间/实际值”表头，扫描阶段会把
+/// 它们保留为 generic_table 并记录 profile_role_id。这里复用分析阶段的
+/// record_mappings 规则，按文件/工作表匹配、识别日期与金额列，仅把确有
+/// 数值的行贡献到可选期间。这样月度企业导入后可以在经营分析页看到月份，
+/// 但不会把空表或缺日期的文件猜成某个期间。
+fn observed_profile_periods(
+    files: &[ScannedFile],
+    profile: &SourceProfileBinding,
+) -> BTreeSet<(NaiveDate, NaiveDate)> {
+    let mut periods = BTreeSet::new();
+    let Some(config) = profile.config.as_ref() else {
+        return periods;
+    };
+    let Some(mappings) = config.get("record_mappings").and_then(Value::as_array) else {
+        return periods;
+    };
+    let header_rows_max = config
+        .get("row_rules")
+        .and_then(|rules| rules.get("header_rows_max"))
+        .and_then(Value::as_u64)
+        .unwrap_or(20) as usize;
+    let norm = |value: &str| normalize_header(value);
+    let parse_component = |raw: &str| {
+        raw.trim()
+            .parse::<i32>()
+            .ok()
+            .or_else(|| {
+                let digits: String = raw.chars().filter(|ch| ch.is_ascii_digit()).collect();
+                (!digits.is_empty()).then(|| digits.parse::<i32>().ok()).flatten()
+            })
+    };
+
+    for file in files {
+        let file_lower = file.file_label.to_lowercase();
+        for (data, sheet) in &file.sheets {
+            if sheet.blocked_reason.is_some() {
+                continue;
+            }
+            let sheet_lower = sheet.sheet.as_deref().unwrap_or_default().to_lowercase();
+            for mapping in mappings {
+                let file_match = mapping
+                    .get("file_matchers")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items.is_empty()
+                            || items.iter().filter_map(Value::as_str).any(|matcher| {
+                                file_lower.contains(&matcher.to_lowercase())
+                            })
+                    })
+                    .unwrap_or(false);
+                let sheet_match = mapping
+                    .get("sheet_matchers")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items.is_empty()
+                            || items.iter().filter_map(Value::as_str).any(|matcher| {
+                                sheet_lower.contains(&matcher.to_lowercase())
+                            })
+                    })
+                    .unwrap_or(false);
+                if !file_match || !sheet_match {
+                    continue;
+                }
+                let value_fields: Vec<String> = mapping
+                    .get("value_fields")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let date_fields: Vec<String> = mapping
+                    .get("date_fields")
+                    .and_then(Value::as_array)
+                    .map(|items| {
+                        items
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if value_fields.is_empty() || date_fields.is_empty() {
+                    continue;
+                }
+                let mut header_row = None;
+                let mut field_cols = BTreeMap::<String, usize>::new();
+                for (row_idx, row) in data.rows.iter().take(header_rows_max).enumerate() {
+                    let mut found = BTreeMap::new();
+                    for (column, cell) in row.iter().enumerate() {
+                        let raw = norm(&cell.raw_text());
+                        for field in value_fields.iter().chain(date_fields.iter()) {
+                            if raw == norm(field) {
+                                found.insert(field.clone(), column);
+                            }
+                        }
+                    }
+                    if found.len() >= 2 {
+                        header_row = Some(row_idx);
+                        field_cols = found;
+                        break;
+                    }
+                }
+                let Some(header_row) = header_row else {
+                    continue;
+                };
+                let period_kind = mapping
+                    .get("period_kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("date");
+                for row in data.rows.iter().skip(header_row + 1) {
+                    let has_value = value_fields.iter().any(|field| {
+                        field_cols
+                            .get(field)
+                            .and_then(|column| row.get(*column))
+                            .and_then(|cell| crate::store::analysis::cell_value(Some(cell)))
+                            .is_some()
+                    });
+                    if !has_value {
+                        continue;
+                    }
+                    let period = if period_kind == "year_month" {
+                        let year = date_fields
+                            .first()
+                            .and_then(|field| field_cols.get(field))
+                            .and_then(|column| row.get(*column))
+                            .and_then(|cell| parse_component(&cell.raw_text()));
+                        let month = date_fields
+                            .get(1)
+                            .and_then(|field| field_cols.get(field))
+                            .and_then(|column| row.get(*column))
+                            .and_then(|cell| parse_component(&cell.raw_text()))
+                            .and_then(|value| u32::try_from(value).ok());
+                        year.zip(month)
+                            .and_then(|(year, month)| NaiveDate::from_ymd_opt(year, month, 1))
+                            .map(|date| DateRange {
+                                from: date,
+                                to: date,
+                            })
+                    } else {
+                        date_fields.iter().find_map(|field| {
+                            field_cols
+                                .get(field)
+                                .and_then(|column| row.get(*column))
+                                .and_then(|cell| {
+                                    crate::store::analysis::observation_period(&cell.raw_text())
+                                })
+                        })
+                    };
+                    if let Some(period) = period {
+                        periods.insert((period.from, period.to));
+                    }
+                }
+            }
+        }
+    }
+    periods
+}
+
 fn available_analysis_periods(
     conn: &Connection,
     workspace_id: Uuid,
     files: &[ScannedFile],
+    profile: &SourceProfileBinding,
 ) -> CliResult<(String, Vec<Value>)> {
     let current = current_analysis_calendar(conn, workspace_id)?;
     let mut buckets = BTreeSet::new();
-    for (from, to) in observed_source_periods(files) {
+    let mut observed = observed_source_periods(files);
+    if profile.mode == "profile" {
+        observed.extend(observed_profile_periods(files, profile));
+    }
+    for (from, to) in observed {
         let bucket = analysis_bucket(from, &current.grain, &current.calendar)?;
         // 只能向同一或更粗桶归并。跨桶总值不能拆分、复制到多个桶。
         if from >= bucket.from && to <= bucket.to {
@@ -2506,7 +2676,7 @@ fn scan_summary_internal(
         },
     });
     if desktop_periods {
-        let (policy_id, periods) = available_analysis_periods(conn, workspace_id, &files)?;
+        let (policy_id, periods) = available_analysis_periods(conn, workspace_id, &files, profile)?;
         summary["available_periods"] = json!(periods);
         summary["available_period_policy_id"] = json!(policy_id);
     }
@@ -2655,5 +2825,87 @@ mod tests {
             &entry(None, "source.xlsx"),
             &entry(None, "source.xlsx"),
         ));
+    }
+
+    #[test]
+    fn profile_record_mappings_expose_monthly_periods() {
+        let profile = resolve_source_profile(Some("xsd_trade_v1"), false).unwrap();
+        let file = ScannedFile {
+            file_label: "销售出库_202610.xlsx".into(),
+            content_hash: "period-hash".into(),
+            kind: "xlsx".into(),
+            sheets: vec![(
+                SheetData {
+                    name: "销售出库".into(),
+                    rows: vec![
+                        vec![
+                            CellValue::Text("出库时间".into()),
+                            CellValue::Text("出库产品售价总额(含税)/元".into()),
+                        ],
+                        vec![
+                            CellValue::Text("2026-10-12".into()),
+                            CellValue::Number("1234.50".into()),
+                        ],
+                    ],
+                    merged_ranges: vec![],
+                },
+                ScannedSheet {
+                    sheet: Some("销售出库".into()),
+                    role: "generic_table",
+                    header: None,
+                    match_info: None,
+                    rows: 2,
+                    blocked_reason: None,
+                    profile_role_id: Some("sales_outbound".into()),
+                },
+            )],
+        };
+        let periods = observed_profile_periods(&[file], &profile);
+        assert!(periods.contains(&(
+            NaiveDate::from_ymd_opt(2026, 10, 12).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 10, 12).unwrap(),
+        )));
+    }
+
+    #[test]
+    fn profile_year_month_mapping_exposes_period() {
+        let profile = resolve_source_profile(Some("xsd_trade_v1"), false).unwrap();
+        let file = ScannedFile {
+            file_label: "工资条_202610.xlsx".into(),
+            content_hash: "period-hash-ym".into(),
+            kind: "xlsx".into(),
+            sheets: vec![(
+                SheetData {
+                    name: "工资条".into(),
+                    rows: vec![
+                        vec![
+                            CellValue::Text("薪资归属年份".into()),
+                            CellValue::Text("薪资归属月份".into()),
+                            CellValue::Text("当月实发".into()),
+                        ],
+                        vec![
+                            CellValue::Text("2026".into()),
+                            CellValue::Text("10".into()),
+                            CellValue::Number("8000".into()),
+                        ],
+                    ],
+                    merged_ranges: vec![],
+                },
+                ScannedSheet {
+                    sheet: Some("工资条".into()),
+                    role: "generic_table",
+                    header: None,
+                    match_info: None,
+                    rows: 2,
+                    blocked_reason: None,
+                    profile_role_id: Some("salary".into()),
+                },
+            )],
+        };
+        let periods = observed_profile_periods(&[file], &profile);
+        assert!(periods.contains(&(
+            NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+        )));
     }
 }

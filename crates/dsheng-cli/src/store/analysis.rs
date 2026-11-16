@@ -1658,10 +1658,34 @@ pub fn run_analyze_with_profile(
         dir,
         &profile.hash,
     )?;
-    if generic_mapping_required && confirmed_source_mapping.is_none() {
+    let profile_mapping_pending = if profile.mode == "profile" {
+        files.iter().zip(registered.iter()).any(|(file, view)| {
+            // Unsupported/blocked files already surface their own pending
+            // reason; only files with readable rows require field confirmation.
+            if !file
+                .sheets
+                .iter()
+                .any(|(_, sheet)| sheet.blocked_reason.is_none())
+            {
+                return false;
+            }
+            let Some(entries) = confirmed_source_mapping.as_ref() else {
+                return true;
+            };
+            let source_id = view.get("file_id").and_then(Value::as_str);
+            !entries.iter().any(|entry| {
+                entry.source_id.as_deref() == source_id
+                    || entry.source.as_deref() == Some(file.file_label.as_str())
+                    || entry.source_label == file.file_label
+            })
+        })
+    } else {
+        false
+    };
+    if (generic_mapping_required && confirmed_source_mapping.is_none()) || profile_mapping_pending {
         return Err(CliError::new(
             CliErrorCode::DataValidationFailed,
-            "通用 source 的字段映射尚未确认；请先在数据源页面确认映射后再分析",
+            "输入模板的字段确认尚未完成；请先在数据源页面逐项确认待核对文件后再分析",
         ));
     }
     let mapping_entries = if let Some(entries) = confirmed_source_mapping {

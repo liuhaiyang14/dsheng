@@ -469,7 +469,11 @@ export class FixtureClient implements DshengClient {
 
   async scan(workspaceId: string, directoryLabel: string, sourceProfile?: string, generic = false): Promise<ScanSummaryView> {
     const workspace = this.requireWorkspace(workspaceId);
-    const mappingKey = `${workspaceId}:${directoryLabel}`;
+    // Keep confirmation state scoped to the selected input template.  A user
+    // switching between the generic importer and a named profile must not see
+    // the other template's confirmations as already complete.
+    const profileHash = generic ? 'fixture:generic' : `fixture:${sourceProfile ?? 'manufacturing_erp_v1'}`;
+    const mappingKey = `${workspaceId}:${directoryLabel}:${profileHash}`;
     const confirmedMappings = this.confirmedSourceMappings.get(mappingKey);
     const withMappingState = (summary: ScanSummaryView): ScanSummaryView => ({
       ...summary,
@@ -493,12 +497,12 @@ export class FixtureClient implements DshengClient {
     if (!this.hasData(workspaceId)) {
       const empty = this.scans[workspaceId] ?? this.scans[WS_EMPTY_ID];
       return structuredClone({ ...withMappingState({ ...empty, workspace_id: workspaceId, directory_label: directoryLabel ?? '' }),
-        source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: 'fixture', mode: generic ? 'generic' : 'profile' },
+        source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: profileHash, mode: generic ? 'generic' : 'profile' },
         available_periods: [], available_period_policy_id: workspace.current_period_policy_id });
     }
     const cadence = this.policies.find((policy) => policy.period_policy_id === workspace.current_period_policy_id)?.policy.cadence;
     return structuredClone({ ...withMappingState({ ...this.scans[workspaceId], directory_label: directoryLabel }),
-      source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: 'fixture', mode: generic ? 'generic' : 'profile' },
+      source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: profileHash, mode: generic ? 'generic' : 'profile' },
       available_periods: cadence ? fixtureAvailablePeriods[cadence] : [], available_period_policy_id: workspace.current_period_policy_id });
   }
 
@@ -509,7 +513,7 @@ export class FixtureClient implements DshengClient {
 
   async sourceMappingSet(workspaceId: string, directoryLabel: string, _profileHash: string, _mappings: unknown[] = []) {
     this.requireWorkspace(workspaceId);
-    const key = `${workspaceId}:${directoryLabel}`;
+    const key = `${workspaceId}:${directoryLabel}:${_profileHash}`;
     const previous = this.confirmedSourceMappings.get(key) ?? [];
     const next = [...previous];
     for (const entry of _mappings) {

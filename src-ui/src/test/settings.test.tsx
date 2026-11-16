@@ -99,6 +99,14 @@ describe('S7 Provider 设置', () => {
 });
 
 describe('S7 系统设置', () => {
+  it('周期设置解释生成期间的步骤并提供经营分析入口', async () => {
+    await openScreen('系统设置');
+    expect(screen.getByTestId('period-creation-guide')).toHaveTextContent('右上角只列出已经保存的分析结果');
+    expect(screen.getByTestId('period-creation-guide')).toHaveTextContent('运行本地分析');
+    fireEvent.click(screen.getByRole('button', { name: '去生成期间' }));
+    expect(screen.getByTestId('crumb-screen')).toHaveTextContent('经营分析');
+  });
+
   it('真实策略以9999年结束时仍按档案绑定ID标记当前版本', async () => {
     const client = new FixtureClient();
     const list = client.periodList.bind(client);
@@ -123,7 +131,7 @@ describe('S7 系统设置', () => {
     await screen.findByTestId('foot-workspace');
     (screen.getAllByText('系统设置')[0].closest('button') as HTMLButtonElement).click();
     await screen.findByTestId('save-policy-button');
-    expect(screen.getByTestId('policy-version-note').textContent).toContain('新的 period_policy 版本');
+    expect(screen.getByTestId('policy-version-note').textContent).toContain('新的核算周期版本');
     fireEvent.change(screen.getByTestId('cadence-select'), { target: { value: 'week' } });
     fireEvent.change(screen.getByTestId('effective-from-input'), { target: { value: '2026-11-01' } });
     fireEvent.click(screen.getByTestId('save-policy-button'));
