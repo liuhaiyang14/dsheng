@@ -3,7 +3,7 @@
 状态：脚本与流程可用；当前已在本机（macOS arm64）产出 DMG、便携版和独立
 CLI 三件产物并生成版本清单。Windows/x64 产物需目标机执行（CI 不再运行 Windows 构建）（见文末覆盖状态）。
 
-当前版本 0.2.0 的 macOS arm64 安装包：[下载 DMG](https://github.com/liuhaiyang14/dsheng/releases/download/v0.2.0/dsheng_0.2.0_macos_arm64.dmg)；便携版、CLI 包和 SHA-256 见 [版本清单](manifest-v0.2.0.json)。
+当前版本 0.2.0 的 macOS arm64 测试包位于 `target/release-dist/v0.2.0/`；便携版、CLI 包和 SHA-256 见 [版本清单](manifest-v0.2.0.json)。GitHub Release 尚未发布，公开分发需产品验收后另行授权。
 
 边界（必须遵守）：
 
