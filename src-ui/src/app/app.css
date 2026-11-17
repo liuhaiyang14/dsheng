@@ -659,3 +659,24 @@ tr:last-child td { border-bottom: 0; }
 .panel-footnote { padding: 10px 15px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--line); line-height: 1.5; }
 .panel-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 15px 15px; }
 .status-banner.warning { border-color: #d8bd82; background: #fffaf0; }
+
+/* 文件确认独立占满内容区，业务用途、来源列和税口径逐层呈现。 */
+.source-review-editor { margin: 16px 0; }
+.source-review-editor > .panel-head { align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+.source-review-editor > .panel-head p { margin: 8px 0 0; line-height: 1.7; }
+.source-review-files { padding: 0 20px; }
+.source-review-file { padding: 20px 0; border-bottom: 1px solid var(--line); }
+.source-review-file:last-child { border-bottom: 0; }
+.source-review-title { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+.source-review-title h3 { margin: 0 0 6px; font-size: 1rem; overflow-wrap: anywhere; }
+.source-review-mappings { display: grid; gap: 14px; margin-top: 14px; }
+.source-review-mapping { padding: 14px; background: var(--paper); border: 1px solid var(--line); }
+.source-review-mapping h4 { margin: 0 0 10px; }
+.source-review-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 0; }
+.source-review-columns dt { font-size: .8125rem; color: var(--muted); margin-bottom: 5px; }
+.source-review-columns dd { margin: 0; overflow-wrap: anywhere; }
+.source-review-warning { color: #875e17; line-height: 1.7; }
+.source-review-reference { background: var(--paper); padding: 14px; line-height: 1.8; }
+.source-tax-confirmation { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 8px; }
+.source-review-editor .field-review-actions { padding: 16px 20px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.period-generation-panel { padding: 16px; }

@@ -475,10 +475,19 @@ export class FixtureClient implements DshengClient {
     const profileHash = generic ? 'fixture:generic' : `fixture:${sourceProfile ?? 'manufacturing_erp_v1'}`;
     const mappingKey = `${workspaceId}:${directoryLabel}:${profileHash}`;
     const confirmedMappings = this.confirmedSourceMappings.get(mappingKey);
+    const reviewFiles = (files: ScanSummaryView['files']) => files.map((file, index) => ({
+      ...file,
+      review: generic ? { kind: 'generic' as const, mappings: [] } : file.review ?? {
+        kind: 'records' as const,
+        mappings: [{ metric_key: ['sales_net', 'inbound_amount', 'operating_expense'][index] ?? 'labor_cost',
+          value_fields: ['金额'], date_fields: ['业务日期'], missing_fields: [], source_tax_basis: 'exclusive' as const,
+          requires_confirmation: false, accepted_statuses: [] }],
+      },
+    }));
     const withMappingState = (summary: ScanSummaryView): ScanSummaryView => ({
       ...summary,
       files: confirmedMappings
-        ? summary.files.map((file) => {
+        ? reviewFiles(summary.files).map((file) => {
             // generic 的空数组表示用户确认全部候选；profile 则只确认
             // source_label/source_id 匹配的文件，保留未确认文件的待核对状态。
             const mapped = generic && confirmedMappings.length === 0
@@ -490,19 +499,21 @@ export class FixtureClient implements DshengClient {
                     || record.source === file.file_label
                     || record.source_id === file.file_id;
                 });
-            return mapped ? { ...file, mapping_status: 'mapped' as const } : file;
+            const confirmation = confirmedMappings.find((entry) => !!entry && typeof entry === 'object' &&
+              ((entry as Record<string, unknown>).source_label === file.file_label)) as { target_role?: string; tax_treatments?: Record<string, { basis: 'inclusive' | 'exclusive'; rate_percent?: string }> } | undefined;
+            return mapped ? { ...file, mapping_status: 'mapped' as const, review: { ...file.review, confirmation } } : file;
           })
-        : summary.files,
+        : reviewFiles(summary.files),
     });
     if (!this.hasData(workspaceId)) {
       const empty = this.scans[workspaceId] ?? this.scans[WS_EMPTY_ID];
       return structuredClone({ ...withMappingState({ ...empty, workspace_id: workspaceId, directory_label: directoryLabel ?? '' }),
-        source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: profileHash, mode: generic ? 'generic' : 'profile' },
+        source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: profileHash, mode: generic ? 'generic' : 'profile', ...(sourceProfile?.includes('/') ? { profile_ref: sourceProfile } : {}) },
         available_periods: [], available_period_policy_id: workspace.current_period_policy_id });
     }
     const cadence = this.policies.find((policy) => policy.period_policy_id === workspace.current_period_policy_id)?.policy.cadence;
     return structuredClone({ ...withMappingState({ ...this.scans[workspaceId], directory_label: directoryLabel }),
-      source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: profileHash, mode: generic ? 'generic' : 'profile' },
+      source_profile: { profile_id: generic ? 'generic' : (sourceProfile ?? 'manufacturing_erp_v1'), version: 1, hash: profileHash, mode: generic ? 'generic' : 'profile', ...(sourceProfile?.includes('/') ? { profile_ref: sourceProfile } : {}) },
       available_periods: cadence ? fixtureAvailablePeriods[cadence] : [], available_period_policy_id: workspace.current_period_policy_id });
   }
 

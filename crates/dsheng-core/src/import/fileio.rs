@@ -133,10 +133,28 @@ fn convert_cell(d: Option<&Data>, literal: Option<&str>) -> CellValue {
         Some(Data::Int(i)) => CellValue::Int(*i),
         Some(Data::Float(f)) => number_cell(*f, literal),
         Some(Data::Bool(b)) => CellValue::Bool(*b),
-        Some(Data::DateTime(dt)) => CellValue::Text(dt.to_string()),
+        Some(Data::DateTime(dt)) => excel_datetime_cell(dt),
         Some(Data::Error(e)) => CellValue::Error(format!("{e}")),
         Some(Data::DateTimeIso(s)) => CellValue::Text(s.to_string()),
         Some(Data::DurationIso(s)) => CellValue::Text(s.to_string()),
+    }
+}
+
+/// Calamine's Display emits an Excel serial, not a calendar timestamp. Preserve
+/// the workbook's 1900/1904 epoch while converting typed dates to readable ISO.
+/// A bare time (< one day) is ambiguous once its format has been read, so it
+/// stays invalid as a business date rather than inventing an epoch-day period.
+fn excel_datetime_cell(dt: &calamine::ExcelDateTime) -> CellValue {
+    let serial = dt.as_f64();
+    if !dt.is_datetime() || !serial.is_finite() || !(1.0..2_958_466.0).contains(&serial) {
+        return CellValue::Error("invalid_excel_date".into());
+    }
+    let (year, month, day, hour, minute, second, millis) = dt.to_ymd_hms_milli();
+    let datetime = chrono::NaiveDate::from_ymd_opt(year.into(), month.into(), day.into())
+        .and_then(|date| date.and_hms_milli_opt(hour.into(), minute.into(), second.into(), millis.into()));
+    match datetime {
+        Some(datetime) => CellValue::Text(datetime.format("%Y-%m-%d %H:%M:%S%.3f").to_string()),
+        None => CellValue::Error("invalid_excel_date".into()),
     }
 }
 
@@ -294,5 +312,30 @@ mod tests {
         let p = dir.path().join("deck.pptx");
         std::fs::write(&p, b"xx").unwrap();
         assert_eq!(read_workbook(&p), Err(ImportError::UnsupportedFileKind));
+    }
+
+    #[test]
+    fn typed_excel_dates_preserve_both_epochs_and_timestamp() {
+        use calamine::{ExcelDateTime, ExcelDateTimeType};
+        for (serial, is_1904) in [(45943.5, false), (45943.5 - 1462.0, true)] {
+            let value = Data::DateTime(ExcelDateTime::new(serial, ExcelDateTimeType::DateTime, is_1904));
+            assert_eq!(convert_cell(Some(&value), None), CellValue::Text("2025-10-13 12:00:00.000".into()));
+        }
+    }
+
+    #[test]
+    fn invalid_dates_durations_and_time_only_never_create_calendar_dates() {
+        use calamine::{ExcelDateTime, ExcelDateTimeType};
+        for (serial, kind, is_1904) in [
+            (60.0, ExcelDateTimeType::DateTime, false),
+            (-1.0, ExcelDateTimeType::DateTime, false),
+            (f64::NAN, ExcelDateTimeType::DateTime, false),
+            (0.5, ExcelDateTimeType::DateTime, false),
+            (0.5, ExcelDateTimeType::DateTime, true),
+            (45943.5, ExcelDateTimeType::TimeDelta, false),
+        ] {
+            let value = Data::DateTime(ExcelDateTime::new(serial, kind, is_1904));
+            assert_eq!(convert_cell(Some(&value), None), CellValue::Error("invalid_excel_date".into()));
+        }
     }
 }

@@ -99,6 +99,8 @@ interface AppState {
   screen: ScreenId;
   selectedRun: RunSelection | null;
   sourceDirectory: string | null;
+  sourceInputProfile: string;
+  rememberSourceProfile: (profile: string) => void;
   contextLockReason: string | null;
   setContextLock: (reason: string | null) => void;
   rememberSourceDirectory: (path: string) => void;
@@ -107,6 +109,8 @@ interface AppState {
   error: UiError | null;
   loading: boolean;
   setScreen: (screen: ScreenId) => void;
+  periodCreationRequest: number;
+  openPeriodCreation: () => void;
   /** 创建企业档案（首启向导与顶栏「新建档案」共用；创建后切换为当前档案）。 */
   createWorkspace: (input: {
     name: string;
@@ -144,6 +148,11 @@ function savedSourceDirectory(workspaceId: string): string | null {
   catch { return null; }
 }
 
+function savedSourceProfile(workspaceId: string): string {
+  try { return window.localStorage.getItem(`dsheng.source-profile.${workspaceId}`) || 'xsd_trade_v1'; }
+  catch { return 'xsd_trade_v1'; }
+}
+
 export function AppProvider({
   children,
   runtime,
@@ -159,7 +168,9 @@ export function AppProvider({
   const [dataMap, setDataMap] = useState<Record<string, WorkspaceData>>({});
   const [selectionMap, setSelectionMap] = useState<Record<string, RunSelection | null>>({});
   const [directoryMap, setDirectoryMap] = useState<Record<string, string>>({});
+  const [profileMap, setProfileMap] = useState<Record<string, string>>({});
   const [screen, setScreenState] = useState<ScreenId>('source');
+  const [periodCreationRequest, setPeriodCreationRequest] = useState(0);
   const [contextLockReason, setContextLockReason] = useState<string | null>(null);
   const contextLockRef = useRef<string | null>(null);
   const setContextLock = useCallback((reason: string | null) => {
@@ -168,6 +179,11 @@ export function AppProvider({
   }, []);
   const setScreen = useCallback((next: ScreenId) => {
     if (!contextLockRef.current) setScreenState(next);
+  }, []);
+  const openPeriodCreation = useCallback(() => {
+    if (contextLockRef.current) return;
+    setPeriodCreationRequest((prev) => prev + 1);
+    setScreenState('analysis');
   }, []);
   const [error, setError] = useState<UiError | null>(null);
   const [loading, setLoading] = useState(false);
@@ -314,6 +330,12 @@ export function AppProvider({
     try { window.localStorage.setItem(sourceDirectoryKey(activeWorkspaceId), path); } catch { /* 受限环境仍保留内存状态 */ }
   }, [activeWorkspaceId]);
 
+  const rememberSourceProfile = useCallback((profile: string) => {
+    if (!activeWorkspaceId) return;
+    setProfileMap((prev) => ({ ...prev, [activeWorkspaceId]: profile }));
+    try { window.localStorage.setItem(`dsheng.source-profile.${activeWorkspaceId}`, profile); } catch { /* keep in memory */ }
+  }, [activeWorkspaceId]);
+
   const runLocalAnalysis = useCallback(async (period: { from: string; to: string; grain: Cadence }) => {
     const workspaceId = activeWorkspaceId;
     if (!client || !workspaceId || activeWorkspaceRef.current !== workspaceId || contextLockRef.current) return;
@@ -405,8 +427,10 @@ export function AppProvider({
     data: activeWorkspaceId ? dataMap[activeWorkspaceId] ?? EMPTY_WORKSPACE_DATA : EMPTY_WORKSPACE_DATA,
     selectedRun: activeWorkspaceId ? selectionMap[activeWorkspaceId] ?? null : null,
     sourceDirectory: activeWorkspaceId ? directoryMap[activeWorkspaceId] ?? savedSourceDirectory(activeWorkspaceId) : null,
+    sourceInputProfile: activeWorkspaceId ? profileMap[activeWorkspaceId] ?? savedSourceProfile(activeWorkspaceId) : 'xsd_trade_v1',
+    rememberSourceProfile,
     rememberSourceDirectory, selectRun, runLocalAnalysis, contextLockReason, setContextLock,
-    screen, error, loading, setScreen, createWorkspace, switchWorkspace,
+    screen, error, loading, setScreen, periodCreationRequest, openPeriodCreation, createWorkspace, switchWorkspace,
     refresh: reloadWorkspaceData, clearError: () => setError(null), reloadWorkspaceData,
   };
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

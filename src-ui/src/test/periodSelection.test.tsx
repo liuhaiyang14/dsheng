@@ -9,7 +9,7 @@ import type { HistoryDetailView, HistoryEntryView } from '../api';
 
 const SEPTEMBER = fixtureHistory[1].run_id;
 const directoryKey = `dsheng.source-directory.${WS_DEMO_ID}`;
-beforeEach(() => window.localStorage.removeItem(directoryKey));
+beforeEach(() => { window.localStorage.removeItem(directoryKey); window.localStorage.setItem(`dsheng.source-profile.${WS_DEMO_ID}`, 'generic'); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); window.localStorage.removeItem(directoryKey); });
 
 async function openApp(client = new FixtureClient(), mode: 'fixture' | 'tauri' = 'fixture') {
@@ -93,7 +93,7 @@ it('无结果时先扫描，再到经营分析显式运行，使用真实目录�
     const run = await analyze(input); generatedRun = run.run_id; return run;
   });
   await openApp(client);
-  expect(screen.queryByRole('button', { name: '运行本地分析' })).toBeNull();
+  expect(screen.queryByRole('button', { name: /运行本地分析|生成并保存期间/ })).toBeNull();
   expect(screen.getByTestId('saved-period-select')).toBeDisabled();
   fireEvent.change(screen.getByLabelText('原始数据模板'), { target: { value: 'generic' } });
   fireEvent.change(screen.getByTestId('manual-path-input'), { target: { value: '/tmp/business-source' } });
@@ -107,7 +107,7 @@ it('无结果时先扫描，再到经营分析显式运行，使用真实目录�
   fireEvent.change(screen.getByLabelText('分析期间'), { target: { value: 'week:2026-10-05:2026-10-11' } });
   expect(screen.queryByLabelText('分析聚合粒度')).toBeNull();
   expect(analyzeSpy).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
+  fireEvent.click(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ }));
   await waitFor(() => expect(screen.getByTestId('current-period-label')).toHaveTextContent('2026-10-05 至 2026-10-11'));
   expect(analyzeSpy).toHaveBeenCalledWith({ workspace_id: WS_DEMO_ID, directory_label: '/tmp/business-source', from: '2026-10-05', to: '2026-10-11', grain: 'week', generic: true, source_profile: undefined });
   expect(screen.getByTestId('saved-period-select')).toHaveValue(generatedRun);
@@ -165,7 +165,7 @@ it('只导入月初几天时，月度下拉仍提交该月自然区间，首次�
   expect(screen.queryByLabelText('分析开始日期')).toBeNull();
   expect(screen.queryByLabelText('分析结束日期')).toBeNull();
   expect(analyze).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
+  fireEvent.click(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ }));
   expect(screen.queryByTestId('analysis-overwrite-confirmation')).toBeNull();
   await waitFor(() => expect(analyze).toHaveBeenCalledOnce());
   expect(analyze).toHaveBeenCalledWith({ workspace_id: WS_DEMO_ID, directory_label: '/tmp/local-analysis-source',
@@ -187,26 +187,26 @@ it('可用期间包含当前查看月份时默认保留该月，选择新月份�
   expect(analyze).not.toHaveBeenCalled();
 });
 
-it('已有该月结果时必须确认覆盖，取消不分析，确认后只运行一次', async () => {
+it('已有该月结果时必须确认生成修订版，取消不分析，确认后只运行一次', async () => {
   const client = await monthClient(true);
   const analyze = vi.spyOn(client, 'analyze');
   await openLocalAnalysis(client);
   expect(screen.getByLabelText('分析期间')).toHaveValue('month:2026-10-01:2026-10-31');
-  fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
+  fireEvent.click(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ }));
   const modal = screen.getByRole('dialog', { name: '确认重新分析' });
   expect(modal).toHaveTextContent('重新分析 2026年10月');
-  expect(modal).toHaveTextContent('将覆盖该期间已有分析记录，以本次数据为准');
+  expect(modal).toHaveTextContent('将以本次数据生成新的修订版，旧版本及其结果会完整保留');
   expect(analyze).not.toHaveBeenCalled();
   fireEvent.click(within(modal).getByRole('button', { name: '取消' }));
   expect(screen.queryByTestId('analysis-overwrite-confirmation')).toBeNull();
   expect(analyze).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
-  fireEvent.click(screen.getByRole('button', { name: '覆盖并重新分析' }));
+  fireEvent.click(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ }));
+  fireEvent.click(screen.getByRole('button', { name: '生成新修订版' }));
   await waitFor(() => expect(analyze).toHaveBeenCalledOnce());
   expect(analyze).toHaveBeenCalledWith(expect.objectContaining({ from: '2026-10-01', to: '2026-10-31', grain: 'month' }));
 });
 
-it('自定义月度跨月窗口覆盖同月份记录时，确认展示实际起止日并原样提交', async () => {
+it('自定义月度跨月窗口生成同月份修订版时，确认展示实际起止日并原样提交', async () => {
   const client = await monthClient(true, 31);
   vi.spyOn(client, 'scan').mockResolvedValue({ ...structuredClone(fixtureScan[WS_DEMO_ID]),
     coverage: { from: '2026-10-31', to: '2026-11-05', granularity: 'day' },
@@ -215,21 +215,21 @@ it('自定义月度跨月窗口覆盖同月份记录时，确认展示实际起�
   const analyze = vi.spyOn(client, 'analyze');
   await openLocalAnalysis(client);
   expect(screen.getByLabelText('分析期间')).toHaveValue('month:2026-10-31:2026-11-29');
-  fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
+  fireEvent.click(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ }));
   const modal = screen.getByRole('dialog', { name: '确认重新分析' });
   expect(modal).toHaveTextContent('重新分析 2026年10月');
   expect(modal).toHaveTextContent('分析范围：2026-10-31 至 2026-11-29');
   expect(analyze).not.toHaveBeenCalled();
-  fireEvent.click(within(modal).getByRole('button', { name: '覆盖并重新分析' }));
+  fireEvent.click(within(modal).getByRole('button', { name: '生成新修订版' }));
   await waitFor(() => expect(analyze).toHaveBeenCalledOnce());
   expect(analyze).toHaveBeenCalledWith(expect.objectContaining({ from: '2026-10-31', to: '2026-11-29', grain: 'month' }));
 });
 
-it('覆盖确认打开后切换查看期间会关闭旧确认，不能误分析新目标', async () => {
+it('修订确认打开后切换查看期间会关闭旧确认，不能误分析新目标', async () => {
   const client = await monthClient(true);
   const analyze = vi.spyOn(client, 'analyze');
   await openLocalAnalysis(client);
-  fireEvent.click(screen.getByRole('button', { name: '运行本地分析' }));
+  fireEvent.click(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ }));
   await screen.findByRole('dialog', { name: '确认重新分析' });
   fireEvent.change(screen.getByTestId('saved-period-select'), { target: { value: SEPTEMBER } });
   await waitFor(() => expect(screen.getByTestId('current-period-label')).toHaveTextContent('2026-09-01 至 2026-09-30'));
@@ -251,7 +251,7 @@ it.each(['available_periods', 'available_period_policy_id'] as const)('扫描缺
   await waitFor(() => expect(screen.getByRole('button', { name: '重新扫描数据' })).toBeEnabled());
   expect(screen.getByLabelText('分析期间')).toBeDisabled();
   expect(screen.getByLabelText('分析期间')).toHaveTextContent('暂无可分析期间');
-  expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ })).toBeDisabled();
   expect(analyze).not.toHaveBeenCalled();
 });
 
@@ -266,7 +266,7 @@ it('重启后重新扫描失败显示错误，不从历史范围构造可分析�
   fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('本地目录不可读取');
   expect(screen.getByLabelText('分析期间')).toBeDisabled();
-  expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ })).toBeDisabled();
   expect(analyze).not.toHaveBeenCalled();
 });
 
@@ -283,7 +283,7 @@ it('系统粒度改变后旧扫描选项不能沿用，重新扫描成功才出�
   navigate('经营分析');
   fireEvent.click(screen.getByText('重新分析数据'));
   expect(screen.getByLabelText('分析期间')).toBeDisabled();
-  expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
   await waitFor(() => expect(screen.getByLabelText('分析期间')).toBeEnabled());
   expect(screen.getByLabelText('分析期间')).toHaveValue('month:2026-10-01:2026-10-31');
@@ -301,7 +301,7 @@ it('即使粒度相同，周期策略版本改变也必须重新扫描才可分�
   fireEvent.click(screen.getByRole('button', { name: '刷新所选期间' }));
   await waitFor(() => expect(screen.getByTestId('workspace-select')).toBeEnabled());
   expect(screen.getByLabelText('分析期间')).toBeDisabled();
-  expect(screen.getByRole('button', { name: '运行本地分析' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: /运行本地分析|生成并保存期间/ })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
   await waitFor(() => expect(screen.getByLabelText('分析期间')).toBeEnabled());
   expect(analyze).not.toHaveBeenCalled();
@@ -438,4 +438,32 @@ it('诊断预览只发送当前指标真实证据并去重，缺证据时阻止�
   fireEvent.click(screen.getByTestId('generate-diagnosis-button'));
   expect(await screen.findByTestId('diagnosis-notice')).toHaveTextContent('本期间暂无可用来源证据');
   expect(preview).toHaveBeenCalledTimes(1);
+});
+
+it('页眉生成期间打开明确的生成保存区，税待补不阻断已确认用途的月度保存', async () => {
+  const client = await monthClient();
+  const originalList = client.historyList.bind(client);
+  const originalAnalyze = client.analyze.bind(client);
+  let generated: string | null = null;
+  vi.spyOn(client, 'historyList').mockImplementation(async (ws) => generated ? (await originalList(ws)).filter((entry) => entry.run_id === generated) : []);
+  const analyze = vi.spyOn(client, 'analyze').mockImplementation(async (input) => { const run = await originalAnalyze(input); generated = run.run_id; return run; });
+  const policyId = (await client.workspaceList())[0].current_period_policy_id;
+  vi.spyOn(client, 'scan').mockResolvedValue({ ...structuredClone(fixtureScan[WS_DEMO_ID]),
+    available_periods: [{ from: '2026-10-01', to: '2026-10-31', grain: 'month' }], available_period_policy_id: policyId,
+    source_profile: { mode: 'profile', profile_id: 'xsd_trade_v1', version: 1, hash: 'trade-hash' },
+    files: [{ file_id: 'sales', file_label: '销售出库.xlsx', row_count: 10, sheet_count: 1, mapping_status: 'pending_review', note: null,
+      review: { kind: 'records', mappings: [{ metric_key: 'sales_net', value_fields: ['含税售价'], date_fields: ['业务日期'], missing_fields: [], source_tax_basis: 'inclusive', requires_confirmation: false, accepted_statuses: [] }], confirmation: { target_role: 'profile_mapping', tax_treatments: {} } } }],
+  });
+  window.localStorage.setItem(directoryKey, '/tmp/confirmed-source');
+  window.localStorage.setItem(`dsheng.source-profile.${WS_DEMO_ID}`, 'xsd_trade_v1');
+  await openApp(client);
+  fireEvent.click(screen.getByRole('button', { name: '去经营分析生成期间' }));
+  expect(screen.getByRole('button', { name: '生成并保存期间' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '重新扫描数据' }));
+  await waitFor(() => expect(screen.getByRole('button', { name: '生成并保存期间' })).toBeEnabled());
+  expect(screen.getByLabelText('分析期间')).toHaveValue('month:2026-10-01:2026-10-31');
+  fireEvent.click(screen.getByRole('button', { name: '生成并保存期间' }));
+  await waitFor(() => expect(analyze).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.getByTestId('saved-period-select')).toHaveValue(generated));
+  expect(screen.getByTestId('current-period-label')).toHaveTextContent('2026-10-01 至 2026-10-31');
 });

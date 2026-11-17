@@ -779,6 +779,21 @@ export interface ScanFileInfo {
   sheet_count: number;
   mapping_status: 'mapped' | 'pending_review';
   note: string | null;
+  review?: {
+    kind: 'records' | 'auxiliary' | 'generic';
+    column_overrides?: { role: string; column: string; sheet?: string | null }[];
+    mappings: {
+      metric_key: string;
+      value_fields: string[];
+      date_fields: string[];
+      missing_fields: string[];
+      source_tax_basis: 'inclusive' | 'exclusive' | 'not_applicable' | 'confirm_at_runtime';
+      requires_confirmation: boolean;
+      status_field?: string;
+      accepted_statuses: string[];
+    }[];
+    confirmation?: { target_role?: string; tool_field?: string; column?: string | null; sheet?: string | null; recognized?: string; tax_treatments?: Record<string, { basis: 'inclusive' | 'exclusive'; rate_percent?: string }> };
+  };
 }
 
 export interface ScanSummaryView {

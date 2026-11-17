@@ -673,9 +673,14 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
                 &[
                     "mapping_id", "file_matchers", "sheet_matchers", "metric_key", "value_fields",
                     "date_fields", "status_field", "accepted_statuses", "requires_confirmation",
-                    "period_kind", "scope_field",
+                    "period_kind", "scope_field", "source_tax_basis",
                 ],
             )?;
+            if mapping.get("source_tax_basis").is_some()
+                && !matches!(mapping["source_tax_basis"].as_str(), Some("inclusive" | "exclusive" | "not_applicable" | "confirm_at_runtime"))
+            {
+                return Err(CliError::invalid("source profile record_mapping.source_tax_basis 无效"));
+            }
         }
     }
     Ok(())
@@ -776,9 +781,11 @@ fn file_mapping_ready(
             return false;
         }
     }
-    file.sheets
-        .iter()
-        .any(|(_, sheet)| sheet.blocked_reason.is_none())
+    file.sheets.iter().any(|(_, sheet)| {
+        sheet.blocked_reason.is_none() && (profile.mode != "generic"
+            || mappings.is_some_and(|entries| !entries.is_empty())
+            || sheet.header.is_some())
+    })
 }
 
 /// 读目录下全部支持文件（xlsx/xls/csv；其他扩展名跳过并记 pending）。
@@ -1129,6 +1136,34 @@ pub struct FieldMappingEntry {
     pub header_signature: Option<String>,
     #[serde(default)]
     pub target_role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tax_treatments: Option<BTreeMap<String, super::source_review::TaxTreatment>>,
+}
+
+impl FieldMappingEntry {
+    /// Keep the aliases identical to analysis::mapping_targets_for_sheet.
+    /// A file acknowledgement is not a column override, even if an older
+    /// client happens to include a column alongside its file-level role.
+    pub(super) fn column_override(&self) -> Option<(&str, &str)> {
+        let role = self.target_role.as_deref().unwrap_or(&self.tool_field).trim();
+        if role.is_empty() || matches!(role, "profile_mapping" | "reference_only") {
+            return None;
+        }
+        let column = self.column.as_deref().unwrap_or(&self.recognized).trim();
+        if column.is_empty()
+            || !(column.bytes().all(|byte| byte.is_ascii_alphabetic())
+                || column.parse::<usize>().is_ok_and(|number| number > 0))
+        {
+            return None;
+        }
+        let role = match role {
+            "date" => "period",
+            "metric_id" | "label" => "metric_label",
+            "plan" => "planned",
+            other => other,
+        };
+        Some((role, column))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1177,21 +1212,39 @@ pub fn source_mapping_set(
     if directory_label.trim().is_empty() || profile_hash.trim().is_empty() {
         return Err(CliError::invalid("directory_label/profile_hash 不能为空"));
     }
+    for (index, entry) in mappings.iter().enumerate() {
+        if let Some(treatments) = &entry.tax_treatments {
+            for treatment in treatments.values() { treatment.validate()?; }
+            for previous in mappings[..index].iter().filter(|old| mapping_targets_same_source(old, entry)) {
+                if let Some(saved) = &previous.tax_treatments {
+                    if saved.len() != treatments.len() || !saved.iter().all(|(key, tax)| {
+                        treatments.get(key).is_some_and(|other| tax.equivalent(other))
+                    }) {
+                        return Err(CliError::invalid("同一文件的税口径确认不一致，请统一后保存"));
+                    }
+                }
+            }
+        }
+    }
     ensure_sidecar_tables(conn)?;
-    // Partial confirmation from the UI must not erase files confirmed in an
-    // earlier pass. Entries targeting the same source are replaced; unrelated
-    // entries are retained so the next scan can still report them as mapped.
-    let previous = source_mapping_confirmed(conn, workspace_id, directory_label, profile_hash)?
+    // A column edit replaces only its source/sheet/role. Other corrections
+    // remain active when the one-field desktop editor saves another role.
+    let mut merged = source_mapping_confirmed(conn, workspace_id, directory_label, profile_hash)?
         .unwrap_or_default();
-    let mut merged = previous
-        .into_iter()
-        .filter(|old| {
-            !mappings
-                .iter()
-                .any(|new| mapping_targets_same_source(old, new))
-        })
-        .collect::<Vec<_>>();
-    merged.extend(mappings);
+    for mut entry in mappings {
+        // Taxes belong to the file, not an individual column correction. Omitted
+        // values retain its latest confirmation; an explicit empty map clears it.
+        if entry.tax_treatments.is_none() {
+            entry.tax_treatments = merged.iter().rev()
+                .filter(|old| mapping_targets_same_source(old, &entry))
+                .find_map(|old| old.tax_treatments.clone());
+        }
+        for old in merged.iter_mut().filter(|old| mapping_targets_same_source(old, &entry)) {
+            old.tax_treatments = entry.tax_treatments.clone();
+        }
+        merged.retain(|old| !mapping_replaced_by(old, &entry));
+        merged.push(entry);
+    }
     let mapping_json = serde_json::to_string(&merged).map_err(|e| CliError::invalid(e.to_string()))?;
     conn.execute(
         "INSERT INTO cli_source_mapping_sets
@@ -1219,6 +1272,26 @@ fn mapping_targets_same_source(left: &FieldMappingEntry, right: &FieldMappingEnt
         return left_source == right_source;
     }
     !left.source_label.is_empty() && left.source_label == right.source_label
+}
+
+fn mapping_replaced_by(old: &FieldMappingEntry, new: &FieldMappingEntry) -> bool {
+    if !mapping_targets_same_source(old, new) {
+        return false;
+    }
+    let role = new.target_role.as_deref().unwrap_or(&new.tool_field).trim();
+    if matches!(role, "profile_mapping" | "reference_only") {
+        // Choosing a template or reference-only explicitly resets this file.
+        return true;
+    }
+    match (old.column_override(), new.column_override()) {
+        (Some((old_role, _)), Some((new_role, _))) =>
+            old.sheet == new.sheet && old_role == new_role,
+        // A legacy acknowledgement with no column must not undo corrections.
+        (Some(_), None) => false,
+        // A column edit supersedes the old file acknowledgement, including
+        // reference-only; it now explicitly participates in calculation.
+        (None, _) => true,
+    }
 }
 
 /// 根据期间 key 读取最近一次 mapping 草稿；mapping set 后 analyze 才会消费。
@@ -2206,11 +2279,23 @@ pub fn validate_desktop_analysis_period(
 
 /// 提取真正带实绩的源期间，不把日期最小/最大值之间的空白日补成可用数据。
 /// 月汇总保留为月区间，不能拆成每日；无明确日期、累计行和空值不造选项。
-fn observed_source_periods(files: &[ScannedFile]) -> BTreeSet<(NaiveDate, NaiveDate)> {
+fn observed_source_periods(
+    files: &[ScannedFile],
+    confirmed_mappings: &[FieldMappingEntry],
+    profile: &SourceProfileBinding,
+) -> BTreeSet<(NaiveDate, NaiveDate)> {
     use dsheng_core::import::headers::parse_period_header;
     let mut periods = BTreeSet::new();
     for file in files {
         for (data, sheet) in &file.sheets {
+            // As in extraction, a matching record adapter owns this sheet even
+            // when its amount/date columns are missing or currently blank.
+            if profile.config.as_ref().and_then(|config| config.get("record_mappings"))
+                .and_then(Value::as_array).is_some_and(|mappings| mappings.iter().any(|mapping| {
+                    super::source_review::matches(mapping, &file.file_label, sheet.sheet.as_deref().unwrap_or_default())
+                })) {
+                continue;
+            }
             // 企业 source profile 通常把原始表识别为 generic_table；只要有
             // 可解析表头，就同样参与可选期间计算。生成层 sheet 已在扫描时
             // 标记为 generated_output_input_not_allowed，因此不会被回灌。
@@ -2235,23 +2320,29 @@ fn observed_source_periods(files: &[ScannedFile]) -> BTreeSet<(NaiveDate, NaiveD
                 }
                 continue;
             }
-            let Some(header) = &sheet.header else {
-                continue;
+            let columns = if sheet.role == "generic_table" {
+                super::analysis::effective_generic_columns(confirmed_mappings, file, sheet, data)
+            } else {
+                let Some(header) = &sheet.header else { continue };
+                header.columns.iter().map(|(column, role)| {
+                    (*column, (*role).to_string(), (*role).to_string())
+                }).collect()
             };
             let col_of = |field: &str| {
-                header
-                    .columns
+                columns
                     .iter()
-                    .find(|(_, f)| *f == field)
-                    .map(|(c, _)| *c)
+                    .find(|(_, role, _)| role == field)
+                    .map(|(column, _, _)| *column)
             };
             let Some(label_col) = col_of("metric_label") else {
                 continue;
             };
+            let (header_row, header_count) = sheet.header.as_ref()
+                .map(|header| (header.row, header.row_count)).unwrap_or((1, 1));
             let rows = || {
                 data.rows
                     .iter()
-                    .skip(header.row + header.row_count - 1)
+                    .skip(header_row + header_count - 1)
                     .filter(|row| {
                         row.get(label_col)
                             .is_some_and(|cell| !cell.raw_text().trim().is_empty())
@@ -2278,14 +2369,14 @@ fn observed_source_periods(files: &[ScannedFile]) -> BTreeSet<(NaiveDate, NaiveD
             } else {
                 let width = data.rows.iter().map(Vec::len).max().unwrap_or(0);
                 for col in 0..width {
-                    if header.columns.iter().any(|(mapped, _)| *mapped == col) {
+                    if columns.iter().any(|(mapped, _, _)| *mapped == col) {
                         continue;
                     }
                     let text = data
                         .rows
                         .iter()
-                        .skip(header.row.saturating_sub(1))
-                        .take(header.row_count)
+                        .skip(header_row.saturating_sub(1))
+                        .take(header_count)
                         .find_map(|row| {
                             row.get(col)
                                 .filter(|cell| !cell.raw_text().trim().is_empty())
@@ -2300,178 +2391,6 @@ fn observed_source_periods(files: &[ScannedFile]) -> BTreeSet<(NaiveDate, NaiveD
                             .and_then(|cell| crate::store::analysis::cell_value(Some(cell)))
                             .is_some()
                     }) {
-                        periods.insert((period.from, period.to));
-                    }
-                }
-            }
-        }
-    }
-    periods
-}
-
-/// 从未绑定 source profile 的详细业务表中识别可选期间。
-///
-/// generic 模式不能把当前示例企业的字段或公式当成默认口径，但也不能因为
-/// 业务表没有规范的“指标/期间/实际值”三列表头，就把期间列表留空。这里仅
-/// 使用通用的表头语义（日期/时间/年月）和已确认数值列同行来发现“确有数据”
-/// 的日期桶；它不决定指标归属，也不参与金额计算。用户仍需在映射页面确认
-/// 业务用途和关键列后，分析层才会读取这些明细。
-fn observed_generic_detail_periods(
-    files: &[ScannedFile],
-    mappings: Option<&[FieldMappingEntry]>,
-) -> BTreeSet<(NaiveDate, NaiveDate)> {
-    #[derive(Clone, Copy, PartialEq, Eq)]
-    enum DateColumn {
-        Date,
-        Year,
-        Month,
-    }
-
-    fn date_column_kind(raw: &str) -> Option<DateColumn> {
-        let text = normalize_header(raw).to_ascii_lowercase();
-        if text.is_empty()
-            || [
-                "提交", "更新", "创建", "审批", "当前", "备注", "计划", "预计", "收货确认",
-            ]
-            .iter()
-            .any(|token| text.contains(token))
-        {
-            return None;
-        }
-        if text.contains("年份") || text.contains("year") {
-            return Some(DateColumn::Year);
-        }
-        if text.contains("月份") || text.contains("month") {
-            return Some(DateColumn::Month);
-        }
-        if text.contains("日期")
-            || text.contains("时间")
-            || text.contains("date")
-            || text.contains("time")
-        {
-            return Some(DateColumn::Date);
-        }
-        None
-    }
-
-    fn parse_component(raw: &str) -> Option<i32> {
-        raw.trim().parse::<i32>().ok().or_else(|| {
-            let digits: String = raw.chars().filter(|ch| ch.is_ascii_digit()).collect();
-            (!digits.is_empty()).then(|| digits.parse::<i32>().ok()).flatten()
-        })
-    }
-
-    fn parse_date(raw: &str) -> Option<DateRange> {
-        crate::store::analysis::observation_period(raw).or_else(|| {
-            let date = raw.trim().split([' ', 'T']).next()?;
-            dsheng_core::analysis::periods::parse_calendar_date(date)
-                .ok()
-                .map(|date| DateRange {
-                    from: date,
-                    to: date,
-                })
-        })
-    }
-
-    let Some(mappings) = mappings else {
-        return BTreeSet::new();
-    };
-    // generic 模式的空映射只代表“用户打开过确认面板”，不代表任何列已确认。
-    // 只有带来源列的逐文件映射才能作为“同行存在实绩”的证据。
-    fn column_index(raw: &str) -> Option<usize> {
-        let letters = raw.trim().bytes().take_while(u8::is_ascii_alphabetic);
-        let mut value = 0usize;
-        let mut count = 0usize;
-        for byte in letters {
-            value = value * 26 + (byte.to_ascii_uppercase() - b'A' + 1) as usize;
-            count += 1;
-        }
-        (count > 0).then_some(value - 1)
-    }
-
-    let mut periods = BTreeSet::new();
-    for file in files {
-        let confirmed_value_cols: BTreeSet<usize> = mappings
-            .iter()
-            .filter(|entry| {
-                entry.source_id.as_deref() == Some(file.file_label.as_str())
-                    || entry.source.as_deref() == Some(file.file_label.as_str())
-                    || entry.source_label == file.file_label
-            })
-            .filter_map(|entry| entry.column.as_deref().and_then(column_index))
-            .collect();
-        if confirmed_value_cols.is_empty() {
-            continue;
-        }
-        for (data, sheet) in &file.sheets {
-            if sheet.role != "generic_table" || sheet.blocked_reason.is_some() {
-                continue;
-            }
-            let Some((header_row, date_cols, value_cols)) = data
-                .rows
-                .iter()
-                .take(20)
-                .enumerate()
-                .filter_map(|(row_idx, row)| {
-                    let mut date_cols = Vec::new();
-                    let mut value_cols = Vec::new();
-                    for (col, cell) in row.iter().enumerate() {
-                        if let Some(kind) = date_column_kind(&cell.raw_text()) {
-                            date_cols.push((col, kind));
-                        } else if confirmed_value_cols.contains(&col)
-                            && !normalize_header(&cell.raw_text()).is_empty()
-                        {
-                            value_cols.push(col);
-                        }
-                    }
-                    (!date_cols.is_empty() && !value_cols.is_empty())
-                        .then_some((row_idx, date_cols, value_cols))
-                })
-                .max_by_key(|(_, dates, values)| dates.len() + values.len())
-            else {
-                continue;
-            };
-
-            let year_col = date_cols
-                .iter()
-                .find(|(_, kind)| *kind == DateColumn::Year)
-                .map(|(col, _)| *col);
-            let month_col = date_cols
-                .iter()
-                .find(|(_, kind)| *kind == DateColumn::Month)
-                .map(|(col, _)| *col);
-            let date_only_cols: Vec<usize> = date_cols
-                .iter()
-                .filter(|(_, kind)| *kind == DateColumn::Date)
-                .map(|(col, _)| *col)
-                .collect();
-
-            for row in data.rows.iter().skip(header_row + 1) {
-                // 期间必须与至少一个已确认数值列同一行，避免凭说明行制造期间。
-                if !value_cols.iter().any(|col| {
-                    row.get(*col)
-                        .and_then(|cell| crate::store::analysis::cell_value(Some(cell)))
-                        .is_some()
-                }) {
-                    continue;
-                }
-                if let (Some(year_col), Some(month_col)) = (year_col, month_col) {
-                    let year = row
-                        .get(year_col)
-                        .and_then(|cell| parse_component(&cell.raw_text()));
-                    let month = row
-                        .get(month_col)
-                        .and_then(|cell| parse_component(&cell.raw_text()))
-                        .and_then(|value| u32::try_from(value).ok());
-                    if let Some(date) = year
-                        .zip(month)
-                        .and_then(|(year, month)| NaiveDate::from_ymd_opt(year, month, 1))
-                    {
-                        periods.insert((date, date));
-                    }
-                }
-                for col in &date_only_cols {
-                    if let Some(period) = row.get(*col).and_then(|cell| parse_date(&cell.raw_text())) {
                         periods.insert((period.from, period.to));
                     }
                 }
@@ -2505,15 +2424,7 @@ fn observed_profile_periods(
         .and_then(Value::as_u64)
         .unwrap_or(20) as usize;
     let norm = |value: &str| normalize_header(value);
-    let parse_component = |raw: &str| {
-        raw.trim()
-            .parse::<i32>()
-            .ok()
-            .or_else(|| {
-                let digits: String = raw.chars().filter(|ch| ch.is_ascii_digit()).collect();
-                (!digits.is_empty()).then(|| digits.parse::<i32>().ok()).flatten()
-            })
-    };
+
 
     for file in files {
         let file_lower = file.file_label.to_lowercase();
@@ -2571,6 +2482,9 @@ fn observed_profile_periods(
                 if value_fields.is_empty() || date_fields.is_empty() {
                     continue;
                 }
+                let accepted: Vec<&str> = mapping["accepted_statuses"].as_array()
+                    .into_iter().flatten().filter_map(Value::as_str).collect();
+                let status_field = mapping["status_field"].as_str();
                 let mut header_row = None;
                 let mut field_cols = BTreeMap::<String, usize>::new();
                 for (row_idx, row) in data.rows.iter().take(header_rows_max).enumerate() {
@@ -2580,6 +2494,11 @@ fn observed_profile_periods(
                         for field in value_fields.iter().chain(date_fields.iter()) {
                             if raw == norm(field) {
                                 found.insert(field.clone(), column);
+                            }
+                        }
+                        if let Some(status) = status_field {
+                            if raw == norm(status) {
+                                found.insert(status.to_string(), column);
                             }
                         }
                     }
@@ -2597,6 +2516,13 @@ fn observed_profile_periods(
                     .and_then(Value::as_str)
                     .unwrap_or("date");
                 for row in data.rows.iter().skip(header_row + 1) {
+                    if !accepted.is_empty() {
+                        let status = status_field.and_then(|field| field_cols.get(field))
+                            .and_then(|column| row.get(*column)).map(|cell| cell.raw_text());
+                        if !status.as_deref().is_some_and(|value| accepted.contains(&value.trim())) {
+                            continue;
+                        }
+                    }
                     let has_value = value_fields.iter().any(|field| {
                         field_cols
                             .get(field)
@@ -2607,34 +2533,9 @@ fn observed_profile_periods(
                     if !has_value {
                         continue;
                     }
-                    let period = if period_kind == "year_month" {
-                        let year = date_fields
-                            .first()
-                            .and_then(|field| field_cols.get(field))
-                            .and_then(|column| row.get(*column))
-                            .and_then(|cell| parse_component(&cell.raw_text()));
-                        let month = date_fields
-                            .get(1)
-                            .and_then(|field| field_cols.get(field))
-                            .and_then(|column| row.get(*column))
-                            .and_then(|cell| parse_component(&cell.raw_text()))
-                            .and_then(|value| u32::try_from(value).ok());
-                        year.zip(month)
-                            .and_then(|(year, month)| NaiveDate::from_ymd_opt(year, month, 1))
-                            .map(|date| DateRange {
-                                from: date,
-                                to: date,
-                            })
-                    } else {
-                        date_fields.iter().find_map(|field| {
-                            field_cols
-                                .get(field)
-                                .and_then(|column| row.get(*column))
-                                .and_then(|cell| {
-                                    crate::store::analysis::observation_period(&cell.raw_text())
-                                })
-                        })
-                    };
+                    let period = crate::store::analysis::profile_record_period(
+                        period_kind, &date_fields, &field_cols, row,
+                    );
                     if let Some(period) = period {
                         periods.insert((period.from, period.to));
                     }
@@ -2643,6 +2544,22 @@ fn observed_profile_periods(
         }
     }
     periods
+}
+
+fn effective_source_periods(
+    files: &[ScannedFile],
+    profile: &SourceProfileBinding,
+    confirmed_mappings: Option<&[FieldMappingEntry]>,
+) -> BTreeSet<(NaiveDate, NaiveDate)> {
+    let mut observed = BTreeSet::new();
+    for file in files {
+        if super::source_review::reference_only(confirmed_mappings.unwrap_or(&[]), file) { continue; }
+        observed.extend(observed_source_periods(std::slice::from_ref(file), confirmed_mappings.unwrap_or(&[]), profile));
+        if profile.mode == "profile" {
+            observed.extend(observed_profile_periods(std::slice::from_ref(file), profile));
+        }
+    }
+    observed
 }
 
 fn available_analysis_periods(
@@ -2654,13 +2571,7 @@ fn available_analysis_periods(
 ) -> CliResult<(String, Vec<Value>)> {
     let current = current_analysis_calendar(conn, workspace_id)?;
     let mut buckets = BTreeSet::new();
-    let mut observed = observed_source_periods(files);
-    if profile.mode == "generic" && observed.is_empty() {
-        observed.extend(observed_generic_detail_periods(files, confirmed_mappings));
-    }
-    if profile.mode == "profile" {
-        observed.extend(observed_profile_periods(files, profile));
-    }
+    let observed = effective_source_periods(files, profile, confirmed_mappings);
     for (from, to) in observed {
         let bucket = analysis_bucket(from, &current.grain, &current.calendar)?;
         // 只能向同一或更粗桶归并。跨桶总值不能拆分、复制到多个桶。
@@ -2852,6 +2763,11 @@ fn scan_summary_internal(
         },
     });
     if desktop_periods {
+        if let Some(views) = summary["files"].as_array_mut() {
+            for (view, file) in views.iter_mut().zip(files.iter()) {
+                view["review"] = super::source_review::file_review(file, profile, confirmed_mappings.as_deref());
+            }
+        }
         let (policy_id, periods) = available_analysis_periods(
             conn,
             workspace_id,
@@ -2859,6 +2775,11 @@ fn scan_summary_internal(
             profile,
             confirmed_mappings.as_deref(),
         )?;
+        // Display the same effective source dates used for period discovery,
+        // including manual date corrections and excluding reference-only files.
+        let observed = effective_source_periods(&files, profile, confirmed_mappings.as_deref());
+        summary["coverage"]["from"] = json!(observed.iter().map(|(from, _)| from).min().map(ToString::to_string));
+        summary["coverage"]["to"] = json!(observed.iter().map(|(_, to)| to).max().map(ToString::to_string));
         summary["available_periods"] = json!(periods);
         summary["available_period_policy_id"] = json!(policy_id);
     }
@@ -2934,6 +2855,7 @@ mod tests {
             column: Some("当月实发".into()),
             header_signature: None,
             target_role: Some("labor_cost".into()),
+            tax_treatments: None,
         }];
         assert!(file_mapping_ready(
             &file,
@@ -2994,6 +2916,7 @@ mod tests {
             column: None,
             header_signature: None,
             target_role: None,
+            tax_treatments: None,
         };
         assert!(mapping_targets_same_source(
             &entry(Some("source-1"), "旧文件"),
@@ -3010,6 +2933,64 @@ mod tests {
     }
 
     #[test]
+    fn source_column_updates_preserve_roles_sheets_and_legacy_acknowledgements() {
+        let conn = Connection::open_in_memory().unwrap();
+        let workspace = Uuid::new_v4();
+        let save = |entries: Value| {
+            source_mapping_set(&conn, workspace, "source", "profile", serde_json::from_value(entries).unwrap()).unwrap();
+            source_mapping_confirmed(&conn, workspace, "source", "profile").unwrap().unwrap()
+        };
+        let entry = |role: &str, column: &str, sheet: Option<&str>| json!({
+            "source":"source.xlsx", "source_label":"source.xlsx", "tool_field":role,
+            "recognized":column, "column":column, "target_role":role, "sheet":sheet, "usage":"确认列"
+        });
+        save(json!([entry("actual", "D", Some("first"))]));
+        save(json!([entry("date", "E", Some("first"))]));
+        save(json!([entry("actual", "F", Some("second"))]));
+        let updated = save(json!([entry("period", "B", Some("first")), entry("actual", "C", Some("first"))]));
+        assert_eq!(updated.len(), 3);
+        assert!(updated.iter().any(|item| item.sheet.as_deref() == Some("first") && item.column_override() == Some(("period", "B"))));
+        assert!(updated.iter().any(|item| item.sheet.as_deref() == Some("first") && item.column_override() == Some(("actual", "C"))));
+        assert!(updated.iter().any(|item| item.sheet.as_deref() == Some("second") && item.column_override() == Some(("actual", "F"))));
+        assert_eq!(save(json!([])).len(), 3);
+        let legacy = save(json!([{"source":"source.xlsx", "source_label":"source.xlsx", "tool_field":"source",
+            "recognized":"已确认", "usage":"旧客户端确认"}]));
+        assert_eq!(legacy.iter().filter(|entry| entry.column_override().is_some()).count(), 3);
+        // An unscoped role is distinct from a worksheet-specific role.
+        let unscoped = save(json!([entry("actual", "G", None)]));
+        assert_eq!(unscoped.iter().filter(|entry| entry.column_override().is_some()).count(), 4);
+    }
+
+    #[test]
+    fn file_role_changes_reset_columns_and_omitted_taxes_remain_saved() {
+        let conn = Connection::open_in_memory().unwrap();
+        let workspace = Uuid::new_v4();
+        let save = |entries: Value| {
+            source_mapping_set(&conn, workspace, "source", "profile", serde_json::from_value(entries).unwrap()).unwrap();
+            source_mapping_confirmed(&conn, workspace, "source", "profile").unwrap().unwrap()
+        };
+        let file_entry = |role: &str| json!({"source":"source.xlsx", "source_label":"source.xlsx",
+            "tool_field":role, "target_role":role, "recognized":"已确认", "usage":"确认用途"});
+        let mut confirmed = file_entry("profile_mapping");
+        confirmed["tax_treatments"] = json!({"sales_net":{"basis":"inclusive", "rate_percent":"13"}});
+        save(json!([confirmed]));
+        let retained = save(json!([file_entry("profile_mapping")]));
+        assert_eq!(retained[0].tax_treatments.as_ref().unwrap()["sales_net"].rate_percent.as_deref(), Some("13"));
+        let column = json!({"source":"source.xlsx", "source_label":"source.xlsx", "tool_field":"actual",
+            "target_role":"actual", "column":"D", "recognized":"D", "usage":"修正金额"});
+        assert_eq!(save(json!([column]))[0].column_override(), Some(("actual", "D")));
+        let reference = save(json!([file_entry("reference_only")]));
+        assert_eq!(reference.len(), 1);
+        assert_eq!(reference[0].target_role.as_deref(), Some("reference_only"));
+        assert!(reference[0].tax_treatments.is_some());
+        let mut clear = file_entry("profile_mapping");
+        clear["tax_treatments"] = json!({});
+        let cleared = save(json!([clear]));
+        assert_eq!(cleared.len(), 1);
+        assert!(cleared[0].tax_treatments.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
     fn profile_record_mappings_expose_monthly_periods() {
         let profile = resolve_source_profile(Some("xsd_trade_v1"), false).unwrap();
         let file = ScannedFile {
@@ -3023,10 +3004,12 @@ mod tests {
                         vec![
                             CellValue::Text("出库时间".into()),
                             CellValue::Text("出库产品售价总额(含税)/元".into()),
+                            CellValue::Text("产品出库确认".into()),
                         ],
                         vec![
-                            CellValue::Text("2026-10-12".into()),
+                            CellValue::Text("2026-10-12 09:30:00".into()),
                             CellValue::Number("1234.50".into()),
+                            CellValue::Text("确认".into()),
                         ],
                     ],
                     merged_ranges: vec![],
@@ -3087,59 +3070,9 @@ mod tests {
         let periods = observed_profile_periods(&[file], &profile);
         assert!(periods.contains(&(
             NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 10, 31).unwrap(),
         )));
     }
 
-    #[test]
-    fn generic_detail_columns_require_confirmed_value_column() {
-        let file = ScannedFile {
-            file_label: "销售出库_202610.xlsx".into(),
-            content_hash: "generic-period-hash".into(),
-            kind: "xlsx".into(),
-            sheets: vec![(
-                SheetData {
-                    name: "销售出库".into(),
-                    rows: vec![
-                        vec![
-                            CellValue::Text("业务日期".into()),
-                            CellValue::Text("销售金额/元".into()),
-                        ],
-                        vec![
-                            CellValue::Text("2026-10-12 09:30:00".into()),
-                            CellValue::Number("1234.50".into()),
-                        ],
-                    ],
-                    merged_ranges: vec![],
-                },
-                ScannedSheet {
-                    sheet: Some("销售出库".into()),
-                    role: "generic_table",
-                    header: None,
-                    match_info: None,
-                    rows: 2,
-                    blocked_reason: None,
-                    profile_role_id: None,
-                },
-            )],
-        };
-        assert!(observed_generic_detail_periods(std::slice::from_ref(&file), Some(&[])).is_empty());
-        let mappings = vec![FieldMappingEntry {
-            tool_field: "sales_net".into(),
-            source_label: "销售出库_202610.xlsx".into(),
-            recognized: "B".into(),
-            usage: "销售收入".into(),
-            source_id: Some("销售出库_202610.xlsx".into()),
-            source: None,
-            sheet: Some("销售出库".into()),
-            column: Some("B".into()),
-            header_signature: None,
-            target_role: Some("sales_net".into()),
-        }];
-        let periods = observed_generic_detail_periods(&[file], Some(&mappings));
-        assert!(periods.contains(&(
-            NaiveDate::from_ymd_opt(2026, 10, 12).unwrap(),
-            NaiveDate::from_ymd_opt(2026, 10, 12).unwrap(),
-        )));
-    }
+
 }

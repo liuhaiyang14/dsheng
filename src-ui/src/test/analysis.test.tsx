@@ -1,13 +1,14 @@
 // 测试层次：UI 纯组件/状态测试（FixtureClient 注入，无网络、无 Tauri、无 canvas）。
 // S4 经营分析屏：指标呈现、decimal 字符串原样展示、不可比原因、缺桶断线、系统设置粒度与显式分析。
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
 import { fixtureAnalysisRun, fixtureScan } from '../api/fixtureData';
 import { buildChartOption } from '../components/chartOptions';
 import type { DshengClient } from '../api';
 
+beforeEach(() => window.localStorage.setItem('dsheng.source-profile.00000000-0000-4000-8000-0000000000a1', 'generic'));
 afterEach(cleanup);
 vi.mock('echarts', () => ({
   init: () => ({ setOption: vi.fn(), dispose: vi.fn() }),

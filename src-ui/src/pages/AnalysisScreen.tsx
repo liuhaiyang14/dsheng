@@ -117,7 +117,7 @@ export function AnalysisScreen() {
       <LocalAnalysisForm />
         <EmptyState
           title="尚无分析期间"
-          hint="完成数据源导入与字段映射后，由本地计算生成分析结果；本页不做任何计算。"
+          hint="选择上方月份并点击“生成并保存期间”。首次保存后，这里会显示分析结果，页眉可切换已保存月份。"
         />
       </div>
     );

@@ -163,7 +163,8 @@
         "accepted_statuses": { "type": "array", "items": { "type": "string" } },
         "requires_confirmation": { "type": "boolean" },
         "period_kind": { "enum": ["date", "year_month"] },
-        "scope_field": { "type": "string" }
+        "scope_field": { "type": "string" },
+        "source_tax_basis": { "enum": ["inclusive", "exclusive", "not_applicable", "confirm_at_runtime"], "description": "该指标来源金额的税口径；未提供时使用 normalization.tax_basis。" }
       }
     }
   }

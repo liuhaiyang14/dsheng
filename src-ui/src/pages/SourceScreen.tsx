@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { ImportDropzone } from '../components/ImportDropzone';
 import { Tag } from '../components/bits';
+import { SourceReviewPanel, type SourceConfirmation } from '../components/SourceReviewPanel';
 import { FIXTURE_DEMO_ANNOTATION, type FieldMappingRow } from '../api';
 
 const SOURCE_PROFILE_LABELS: Record<string, string> = {
@@ -13,8 +14,6 @@ const SOURCE_PROFILE_LABELS: Record<string, string> = {
   service_demo: '服务业示例模板',
 };
 const BUILTIN_SOURCE_PROFILES = new Set(Object.keys(SOURCE_PROFILE_LABELS));
-
-const COMMON_METRIC_LABELS = '不含税销售额、订单成本、订单毛利、订单毛利率、入库金额、收款金额、付款金额、开票金额、经营费用、人工费、附加值（扣人工前）、经营收益（扣人工后）、有效工时、单位时间附加值、回款率和付款率';
 
 const PROFILE_ROLE_LABELS: Record<string, string> = {
   sales_outbound: '销售出库',
@@ -31,41 +30,6 @@ const PROFILE_ROLE_LABELS: Record<string, string> = {
   salary: '人工/工资',
   generic_source: '通用经营数据表',
 };
-
-/** 待确认面板展示的业务角色；value 只用于交给核心，不直接展示给用户。 */
-const FIELD_REVIEW_OPTIONS = [
-  { value: 'sales_net', label: '不含税销售额', usage: '销售收入' },
-  { value: 'purchase_signed_amount', label: '订单成本', usage: '采购订单成本' },
-  { value: 'purchase_inbound_amount', label: '入库金额', usage: '采购入库' },
-  { value: 'cash_received', label: '收款金额', usage: '回款' },
-  { value: 'cash_paid', label: '付款金额', usage: '付款' },
-  { value: 'invoice_amount', label: '开票金额', usage: '销项发票' },
-  { value: 'operating_expense', label: '经营费用', usage: '费用分类确认' },
-  { value: 'labor_cost', label: '人工费', usage: '工资条' },
-  { value: 'period', label: '分析期间', usage: '日期/期间字段' },
-  { value: 'metric_label', label: '指标名称', usage: '通用表指标列' },
-  { value: 'actual_value', label: '实际值', usage: '通用表数值列' },
-] as const;
-
-type FieldReviewDraft = {
-  field: string;
-  column: string;
-  status: 'confirmed' | 'pending';
-};
-
-function inferReviewField(fileLabel: string) {
-  const matchers: [RegExp, string][] = [
-    [/销售出库|销售订单|销售发票/, 'sales_net'],
-    [/采购订单/, 'purchase_signed_amount'],
-    [/采购入库|入库/, 'purchase_inbound_amount'],
-    [/收款/, 'cash_received'],
-    [/付款/, 'cash_paid'],
-    [/销项发票|开票/, 'invoice_amount'],
-    [/费用|报销/, 'operating_expense'],
-    [/工资|薪资/, 'labor_cost'],
-  ];
-  return matchers.find(([pattern]) => pattern.test(fileLabel))?.[1] ?? '';
-}
 
 function sourceProfileLabel(profileId?: string | null) {
   if (!profileId) return SOURCE_PROFILE_LABELS.generic;
@@ -86,7 +50,8 @@ function humanizeSourceNote(note: string | null, sheetCount: number) {
 export function SourceScreen() {
   const app = useApp();
   // 当前提供的示例数据使用 xsd_trade_v1；未指定行业模板仍可由用户显式选择。
-  const [sourceProfile, setSourceProfile] = useState('xsd_trade_v1');
+  const sourceProfile = app.sourceInputProfile;
+  const setSourceProfile = app.rememberSourceProfile;
   const [mappings, setMappings] = useState<FieldMappingRow[]>([]);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanNote, setScanNote] = useState<string | null>(null);
@@ -94,7 +59,15 @@ export function SourceScreen() {
   const [diag, setDiag] = useState<string[]>([]);
   const [fieldReviewOpen, setFieldReviewOpen] = useState(false);
   const [fieldReviewBusy, setFieldReviewBusy] = useState(false);
-  const [fieldReviewDraft, setFieldReviewDraft] = useState<Record<string, FieldReviewDraft>>({});
+  const operation = useRef(false);
+  const currentWorkspace = useRef(app.activeWorkspaceId);
+  currentWorkspace.current = app.activeWorkspaceId;
+  const beginOperation = () => {
+    if (operation.current || app.loading || app.contextLockReason) return false;
+    operation.current = true; app.setContextLock('正在处理原始数据，请完成后切换企业或页面。'); return true;
+  };
+  const endOperation = () => { operation.current = false; app.setContextLock(null); };
+  useEffect(() => { setFieldReviewOpen(false); setScanError(null); setScanNote(null); }, [app.activeWorkspaceId]);
   const lastDir = app.sourceDirectory;
   const hasData = workspaceHasData(app.data);
   const workspaceName = app.activeWorkspace?.name ?? '当前企业';
@@ -119,11 +92,10 @@ export function SourceScreen() {
     // 仅在切换档案/重载数据后刷新映射。
   }, [app.client, app.activeWorkspaceId, app.data.currentDetail]);
 
-  // 重新进入页面时沿用当前扫描绑定的模板，避免下拉框显示默认值而覆盖实际口径。
   useEffect(() => {
-    const profileId = app.data.scan?.source_profile?.profile_id;
-    if (profileId) setSourceProfile(profileId);
-  }, [app.data.scan?.source_profile?.profile_id]);
+    const selected = app.data.scan?.source_profile;
+    if (selected) app.rememberSourceProfile(selected.mode === 'generic' ? 'generic' : selected.profile_ref ?? selected.profile_id);
+  }, [app.activeWorkspaceId, app.data.scan?.source_profile?.hash, app.data.scan?.source_profile?.profile_ref]);
 
   const scan = app.data.scan;
   const pendingFiles = (scan?.files ?? []).filter((file) => file.mapping_status === 'pending_review');
@@ -216,7 +188,7 @@ export function SourceScreen() {
   };
 
   /** 解析目录（本地扫描，无 Provider 调用）。 */
-  const runScan = async (path: string, note?: string, profileOverride?: string) => {
+  const runScan = async (path: string, note?: string, profileOverride?: string, registerDefaults = false) => {
     if (!app.client || !app.activeWorkspaceId) {
       setScanError('请先创建企业档案（右上角「＋ 新建档案」）。');
       return;
@@ -227,11 +199,14 @@ export function SourceScreen() {
       setScanError('请先选择内置模板，或填写自定义输入模板 JSON 文件路径。');
       return;
     }
+    if (!beginOperation()) return;
+    const workspaceId = app.activeWorkspaceId;
     setScanBusy(true);
     setScanError(null);
     setScanNote(note ?? `已选择：${path}；本地解析中…`);
     pushDiag(`scan 调用：workspace=${app.activeWorkspaceId} dir=${path}`);
     try {
+      if (registerDefaults) await app.client.metricRegisterDefaults(workspaceId);
       const summary = await Promise.race([
         app.client.scan(
           app.activeWorkspaceId,
@@ -243,7 +218,9 @@ export function SourceScreen() {
           setTimeout(() => rej(new Error('核心未在 15 秒内返回（scan 挂起）')), 15000),
         ),
       ]);
+      if (currentWorkspace.current !== workspaceId) return;
       app.rememberSourceDirectory(path);
+      app.rememberSourceProfile(selectedProfile);
       pushDiag(`scan 返回：${summary.files.length} 文件 / ${summary.total_rows} 行`);
       setScanNote(`解析完成：${summary.files.length} 个文件 / ${summary.total_rows} 行。待核对的表可在下方确认；完成后到「经营分析」运行分析。`);
       // 刷新时显式携带真实摘要（闭包竞态修复：不再依赖先 setState 再读旧 state）
@@ -253,111 +230,29 @@ export function SourceScreen() {
       setScanError(err instanceof Error ? err.message : String(err));
     } finally {
       setScanBusy(false);
+      endOperation();
     }
   };
 
-  /** 一键注册常用指标并重扫（对齐 CLI 验证流；让推移表按指标列识别）。 */
   const registerAndRescan = async () => {
-    if (!app.client || !app.activeWorkspaceId) {
-      setScanError('请先创建企业档案。');
-      return;
-    }
-    setScanBusy(true);
-    setScanError(null);
-    try {
-      const r = await app.client.metricRegisterDefaults(app.activeWorkspaceId);
-      pushDiag(`指标注册：新增 ${r.registered}，已存在跳过 ${(r.skipped_already_present ?? []).length}`);
-      if (lastDir) {
-        await runScan(lastDir, '注册后自动重扫（推移表将按指标列识别）');
-      } else {
-        setScanNote('指标已注册；请重新选择目录扫描一次，让推移表按指标列识别。');
-      }
-    } catch (err) {
-      setScanError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setScanBusy(false);
-    }
+    if (lastDir) await runScan(lastDir, '注册常用指标后重新扫描原始数据…', undefined, true);
   };
 
-  const openFieldReview = () => {
-    const next: Record<string, FieldReviewDraft> = { ...fieldReviewDraft };
-    for (const file of pendingFiles) {
-      next[file.file_id] ??= {
-        field: inferReviewField(file.file_label),
-        column: '',
-        // Filename matching is only a candidate. The user must explicitly
-        // choose “已确认” before the mapping is persisted.
-        status: 'pending',
-      };
-    }
-    setFieldReviewDraft(next);
-    setFieldReviewOpen(true);
-  };
-
-  /** 保存逐文件的字段确认，并按当前目录/profile 重新扫描。 */
-  const saveFieldReview = async () => {
-    if (!app.client || !app.activeWorkspaceId || !lastDir || !scan?.source_profile) {
-      setScanError('缺少数据目录或输入模板，无法保存字段确认。');
-      return;
-    }
-    const unresolved = pendingFiles.filter((file) => {
-      const draft = fieldReviewDraft[file.file_id];
-      return !draft || draft.status !== 'confirmed' || !draft.field;
-    });
-    setFieldReviewBusy(true);
-    setScanBusy(true);
-    setScanError(null);
+  const saveFieldReview = async (mappings: SourceConfirmation[]) => {
+    if (!app.client || !app.activeWorkspaceId || !lastDir || !scan?.source_profile || !beginOperation()) return;
+    const workspaceId = app.activeWorkspaceId;
+    setFieldReviewBusy(true); setScanBusy(true); setScanError(null);
     try {
-      const mappings = pendingFiles
-        .map((file) => {
-          const draft = fieldReviewDraft[file.file_id];
-          const option = FIELD_REVIEW_OPTIONS.find((item) => item.value === draft?.field);
-          if (!draft || draft.status !== 'confirmed' || !draft.field) return null;
-          return {
-            tool_field: draft.field,
-            source_label: file.file_label,
-            recognized: draft.column.trim() || '已确认',
-            usage: option?.usage ?? '用户确认字段',
-            // 核心按已注册来源的 file_label 匹配 source_id；file_id 是读视图标识，
-            // 不用于 generic 表头映射定位。
-            source_id: file.file_label,
-            source: file.file_label,
-            target_role: draft.field,
-            ...(draft.column.trim() ? { column: draft.column.trim() } : {}),
-          };
-        })
-        .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
-      if (scan.source_profile.mode === 'generic' && mappings.some((entry) => !entry.column)) {
-        setScanError('未指定行业模板时，已确认字段还需要填写来源列字母（例如 C）；不确定的文件请先标记为待补。');
-        return;
-      }
-      await app.client.sourceMappingSet(
-        app.activeWorkspaceId,
-        lastDir,
-        scan.source_profile.hash,
-        mappings,
-      );
-      const summary = await app.client.scan(
-        app.activeWorkspaceId,
-        lastDir,
-        scan.source_profile.mode === 'generic'
-          ? undefined
-          : (scan.source_profile.profile_ref ?? scan.source_profile.profile_id),
-        scan.source_profile.mode === 'generic',
-      );
+      await app.client.sourceMappingSet(workspaceId, lastDir, scan.source_profile.hash, mappings);
+      const summary = await app.client.scan(workspaceId, lastDir,
+        scan.source_profile.mode === 'generic' ? undefined : (scan.source_profile.profile_ref ?? scan.source_profile.profile_id),
+        scan.source_profile.mode === 'generic');
+      if (currentWorkspace.current !== workspaceId) return;
       await app.reloadWorkspaceData({ keepScan: summary });
       setFieldReviewOpen(false);
-      setScanNote(
-        unresolved.length > 0
-          ? `已保存 ${mappings.length} 个字段确认；${unresolved.length} 个文件仍标记为待补，请补齐后再次确认。`
-          : '字段确认已保存并重新扫描；完成后可以到「经营分析」运行本地分析。',
-      );
-    } catch (err) {
-      setScanError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setFieldReviewBusy(false);
-      setScanBusy(false);
-    }
+      setScanNote('字段确认已保存并重新扫描；请选择月份生成并保存期间。未确认的税口径、分类或缺列继续显示待补。');
+    } catch (error) { setScanError(error instanceof Error ? error.message : String(error)); }
+    finally { setFieldReviewBusy(false); setScanBusy(false); endOperation(); }
   };
 
   /** generic source 必须先明确确认字段映射，确认记录绑定本次目录与 profile hash。 */
@@ -366,6 +261,7 @@ export function SourceScreen() {
       setScanError('缺少数据目录或输入模板，无法确认字段。');
       return;
     }
+    if (!beginOperation()) return;
     setScanBusy(true);
     setScanError(null);
     try {
@@ -389,6 +285,7 @@ export function SourceScreen() {
       setScanError(err instanceof Error ? err.message : String(err));
     } finally {
       setScanBusy(false);
+      endOperation();
     }
   };
 
@@ -533,130 +430,18 @@ export function SourceScreen() {
         </div>
       ) : null}
 
-      {scan && (scan.files ?? []).some((f) => f.mapping_status === 'pending_review') ? (() => {
-        const pendingFiles = (scan.files ?? []).filter((f) => f.mapping_status === 'pending_review');
-        const previewFiles = pendingFiles.slice(0, 3).map((f) => f.file_label).join('、');
-        const remainingCount = pendingFiles.length - Math.min(pendingFiles.length, 3);
-        return (
+      {scan && scan.files.length > 0 ? <>
         <div className="notice pending-review-guide" data-testid="pending-review-guide">
-          <b>需要确认文件用途和关键列</b>
-          <div className="pending-review-content">
-            <p>
-              系统已经按当前输入模板猜测了文件用途，但还没有得到你的确认。你需要确认：这个文件属于哪类业务数据，以及金额、日期等关键列是否选对。
-              {` 当前有 ${pendingFiles.length} 个文件待确认。`}
-              {previewFiles ? ` 当前包括：${previewFiles}${remainingCount > 0 ? ` 等 ${remainingCount} 个文件` : ''}。` : ''}
-            </p>
-            <p className="pending-review-metrics">可选业务用途包括销售、采购、收款、付款、发票、经营费用和人工。常用指标包括：{COMMON_METRIC_LABELS}。不确定的文件可以保留“待补”，不会按 0 参与计算。</p>
-            <details className="pending-review-files">
-              <summary>查看待确认文件（{pendingFiles.length}）</summary>
-              <ul>{pendingFiles.map((f) => <li key={f.file_id}>{f.file_label} · {f.row_count} 行</li>)}</ul>
-            </details>
+          <b>{pendingFiles.length ? '需要确认文件用途和关键列' : '文件用途已确认'}</b>
+          <div className="pending-review-content"><p>系统已经按当前输入模板猜测了文件用途。请核对金额、日期等关键列，并分别确认需要换算的税口径；辅助资料只保留供查阅。</p>
+            <p>{pendingFiles.length ? `当前有 ${pendingFiles.length} 个文件待确认。` : '可以重新查看或修改已保存的确认，旧分析版本会保留。'}</p></div>
+          <div className="pending-review-actions"><button type="button" className="primary" disabled={scanBusy || !lastDir} onClick={() => setFieldReviewOpen(true)} data-testid="open-field-review-button">{pendingFiles.length ? '逐项确认文件用途' : '查看 / 重新确认'}</button>
+            {scan.source_profile?.mode === 'generic' && pendingFiles.length > 0 ? <button type="button" className="outline" disabled={scanBusy || !lastDir} onClick={() => void confirmGenericMapping()} data-testid="confirm-source-mapping-button">确认当前字段识别</button> : null}
+            {pendingFiles.length > 0 ? <button type="button" className="outline" disabled={scanBusy || !lastDir} onClick={() => void registerAndRescan()} data-testid="register-metrics-button">一键注册常用指标并重扫</button> : null}
           </div>
-          <div className="pending-review-actions">
-            <button
-              type="button"
-              className="primary"
-              disabled={scanBusy || fieldReviewBusy || !lastDir}
-              onClick={openFieldReview}
-              data-testid="open-field-review-button"
-            >
-              逐项确认文件用途
-            </button>
-            {scan.source_profile?.mode === 'generic' ? <button
-              type="button"
-              className="primary"
-              disabled={scanBusy || !lastDir}
-              onClick={() => void confirmGenericMapping()}
-              data-testid="confirm-source-mapping-button"
-            >
-              {scanBusy ? '处理中…' : '确认当前字段识别'}
-            </button> : null}
-            <button
-              type="button"
-              className="primary"
-              disabled={scanBusy}
-              onClick={() => void registerAndRescan()}
-              data-testid="register-metrics-button"
-            >
-              {scanBusy ? '处理中…' : '一键注册常用指标并重扫'}
-            </button>
-          </div>
-          {fieldReviewOpen ? (
-            <div className="field-review-panel" data-testid="field-review-panel">
-              <div className="field-review-head">
-                <div>
-                  <strong>逐项确认文件用途和关键列</strong>
-                  <p>系统只提供识别候选，不会替你决定业务口径。请为每个文件选择它代表的业务数据；如果暂时无法判断，选“待补/待确认”。</p>
-                </div>
-                <span className="panel-note">已确认 {pendingFiles.filter((file) => fieldReviewDraft[file.file_id]?.status === 'confirmed').length} / {pendingFiles.length}</span>
-              </div>
-              <div className="field-review-list">
-                {pendingFiles.map((file) => {
-                  const draft = fieldReviewDraft[file.file_id] ?? { field: '', column: '', status: 'pending' as const };
-                  return (
-                    <div className="field-review-row" key={file.file_id}>
-                      <div className="field-review-file">
-                        <strong>{file.file_label}</strong>
-                        <span>{file.row_count} 行 · {humanizeSourceNote(file.note, file.sheet_count)}</span>
-                      </div>
-                      <label>
-                        <span>确认状态</span>
-                        <select
-                          aria-label={`确认状态：${file.file_label}`}
-                          value={draft.status}
-                          disabled={fieldReviewBusy}
-                          onChange={(event) => setFieldReviewDraft((prev) => ({
-                            ...prev,
-                            [file.file_id]: { ...draft, status: event.target.value as FieldReviewDraft['status'] },
-                          }))}
-                        >
-                          <option value="confirmed">已确认</option>
-                          <option value="pending">待补/待确认</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>这个文件是什么数据</span>
-                        <select
-                          aria-label={`确认字段：${file.file_label}`}
-                          value={draft.field}
-                          disabled={fieldReviewBusy || draft.status === 'pending'}
-                          onChange={(event) => setFieldReviewDraft((prev) => ({
-                            ...prev,
-                            [file.file_id]: { ...draft, field: event.target.value },
-                          }))}
-                        >
-                          <option value="">请选择字段</option>
-                          {FIELD_REVIEW_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}（用于{option.usage}）</option>)}
-                        </select>
-                      </label>
-                      <label>
-                        <span>关键列字母（可选）</span>
-                        <input
-                          aria-label={`确认列：${file.file_label}`}
-                          value={draft.column}
-                          disabled={fieldReviewBusy || draft.status === 'pending'}
-                          placeholder="如 C（金额）或 B（日期）"
-                          onChange={(event) => setFieldReviewDraft((prev) => ({
-                            ...prev,
-                            [file.file_id]: { ...draft, column: event.target.value },
-                          }))}
-                        />
-                      </label>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="field-review-actions">
-                <button type="button" className="outline" disabled={fieldReviewBusy} onClick={() => setFieldReviewOpen(false)}>稍后处理</button>
-                <button type="button" className="primary" disabled={fieldReviewBusy} onClick={() => void saveFieldReview()} data-testid="save-field-review-button">
-                  {fieldReviewBusy ? '保存并重扫中…' : '保存确认并重新扫描'}
-                </button>
-              </div>
-            </div>
-          ) : null}
         </div>
-        );
-      })() : null}
+        {fieldReviewOpen ? <SourceReviewPanel key={`${app.activeWorkspaceId}:${scan.scanned_at}:${scan.source_profile?.hash}`} files={scan.files} generic={scan.source_profile?.mode === 'generic'} busy={fieldReviewBusy || scanBusy} onSave={saveFieldReview} onClose={() => setFieldReviewOpen(false)} /> : null}
+      </> : null}
 
       {!hasData ? (
         <EmptyState
@@ -686,10 +471,10 @@ export function SourceScreen() {
                       <td>{m.tool_field}</td>
                       <td>{m.source_label}</td>
                       <td>
-                        {m.recognized.includes('已匹配') ? (
-                          <Tag tone="green">{m.recognized}</Tag>
+                        {m.recognized?.includes('已匹配') ? (
+                          <Tag tone="green">{m.recognized ?? '待确认'}</Tag>
                         ) : (
-                          <Tag tone="gold">{m.recognized}</Tag>
+                          <Tag tone="gold">{m.recognized ?? '待确认'}</Tag>
                         )}
                       </td>
                       <td>{m.usage}</td>

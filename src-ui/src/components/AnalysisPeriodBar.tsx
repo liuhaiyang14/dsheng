@@ -27,7 +27,7 @@ export function AnalysisPeriodBar() {
       </select>
       {noSavedPeriods ? <button type="button" className="period-create-action" disabled={disabled}
         aria-label="去经营分析生成期间" title="选择可用月份并点击“运行本地分析”，期间才会保存到这里"
-        onClick={() => app.setScreen('analysis')}>生成期间</button> : null}
+        onClick={app.openPeriodCreation}>生成期间</button> : null}
       <span className="sr-only" data-testid="current-period-label">{exactRange}</span>
       <button type="button" className="period-refresh" aria-label="刷新所选期间" title="刷新所选期间"
         disabled={disabled || !app.activeWorkspaceId} onClick={() => void app.refresh()}>↻</button>

@@ -13,6 +13,7 @@ pub mod diagnosis;
 pub mod generation;
 pub mod settings;
 pub mod sources;
+pub mod source_review;
 pub mod task_diagnosis_context;
 pub mod task_history;
 pub mod views;

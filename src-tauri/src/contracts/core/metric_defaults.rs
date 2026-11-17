@@ -1,7 +1,9 @@
-//! 一键注册常用指标（目录子集＋真实科目全名别名；CNY/不含税口径确认值）。
-//! 与主 Agent CLI 验证流（批次 2026-11-04）完全一致；幂等：已注册的指标跳过。
+//! 桌面导入流程的常用指标（目录子集＋真实科目全名别名）。
+//! 只补缺失定义，用户已注册的指标和历史版本保持不变。
 
-use super::DesktopEnv;
+use super::{envelope, DesktopEnv};
+use dsheng_cli::error::{CliError, CliResult};
+use dsheng_core::contracts::cli::CliErrorCode;
 use serde_json::{json, Value};
 
 const DEFAULTS: &str = r#"[
@@ -441,22 +443,22 @@ const DEFAULTS: &str = r#"[
 ]"#;
 
 pub fn register_defaults(env: &DesktopEnv, workspace_id: String) -> Value {
-    let defs: Vec<Value> = serde_json::from_str(DEFAULTS).unwrap_or_default();
+    envelope((|| {
+        let db = env.db_arg()?;
+        let mut conn = dsheng_cli::ctx::open_db(Some(&db))?;
+        let workspace = dsheng_cli::ctx::resolve_workspace(&conn, Some(&workspace_id))?;
+        ensure_defaults(&mut conn, workspace.workspace_id)
+    })())
+}
+
+/// Shared by normal scan/analyze and the explicit repair action. Revision zero
+/// makes registration additive: existing definitions cannot be overwritten.
+pub(super) fn ensure_defaults(conn: &mut rusqlite::Connection, ws: uuid::Uuid) -> CliResult<Value> {
+    let defs: Vec<Value> = serde_json::from_str(DEFAULTS)
+        .map_err(|e| CliError::invalid(format!("内置指标定义无法读取: {e}")))?;
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut registered: Vec<Value> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
-    let mut failed: Vec<Value> = Vec::new();
-    let db = match env.db_arg() {
-        Ok(p) => p,
-        Err(e) => return json!({"schema_version":"1","ok":false,"error":{"code":"DATA_DIRECTORY_UNAVAILABLE","message":e.to_string(),"field":null,"details":null}}),
-    };
-    let Ok(mut conn) = dsheng_cli::ctx::open_db_at(std::path::Path::new(&db)) else {
-        return json!({"schema_version":"1","ok":false,"error":{"code":"LOCAL_SAVE_FAILED","message":"无法打开数据库","field":null,"details":null}});
-    };
-    let ws: uuid::Uuid = match workspace_id.parse() {
-        Ok(w) => w,
-        Err(_) => return json!({"schema_version":"1","ok":false,"error":{"code":"INVALID_ARGUMENT","message":"workspace_id 非法","field":null,"details":null}}),
-    };
     for def in defs {
         let input = dsheng_cli::store::sources::MetricDefinitionSet {
             metric_key: def["metric_key"].as_str().unwrap_or_default().to_string(),
@@ -477,21 +479,12 @@ pub fn register_defaults(env: &DesktopEnv, workspace_id: String) -> Value {
             scope_key: None,
             expected_revision: 0,
         };
-        match dsheng_cli::store::sources::metric_set(&mut conn, ws, input) {
+        match dsheng_cli::store::sources::metric_set(conn, ws, input) {
             Ok(v) => registered.push(v),
-            Err(e) => {
-                let code = format!("{:?}", e.code);
-                if code.contains("RevisionConflict") {
-                    skipped.push(def["metric_key"].as_str().unwrap_or_default().to_string());
-                } else {
-                    failed.push(json!({"metric_key": def["metric_key"], "error": e.to_string()}));
-                }
-            }
+            Err(e) if e.code == CliErrorCode::RevisionConflict =>
+                skipped.push(def["metric_key"].as_str().unwrap_or_default().to_string()),
+            Err(e) => return Err(e),
         }
     }
-    json!({
-        "schema_version": "1", "ok": failed.is_empty(),
-        "data": {"registered": registered.len(), "skipped_already_present": skipped, "failed": failed},
-        "error": null
-    })
+    Ok(json!({"registered": registered.len(), "skipped_already_present": skipped, "failed": []}))
 }

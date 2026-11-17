@@ -276,6 +276,20 @@
       .drawer { width: 100%; max-width: 100vw; }
       .drawer-actions { gap: 12px; align-items: flex-start; flex-direction: column; }
     }
+    .pending-review-guide { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+    .pending-review-guide button { flex-shrink:0; white-space:nowrap; }
+    .field-review-panel { margin:16px 0; }
+    .field-review-row { padding:20px; border-bottom:1px solid var(--line); }
+    .field-review-file { display:flex; justify-content:space-between; flex-wrap:wrap; gap:16px; }
+    .field-review-row h4 { margin:16px 0 8px; }
+    .field-review-row dl { display:grid; grid-template-columns:160px 1fr; gap:8px 16px; line-height:1.7; }
+    .field-review-row dd { margin:0; }
+    .field-review-row dt,.field-review-row p { color:var(--muted); }
+    .field-review-row input,.field-review-row select { padding:8px; border:1px solid var(--line); background:white; }
+    .field-review-actions,.period-create-controls { padding:20px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+    .period-create-controls p { flex-basis:100%; color:var(--muted); }
+    #periodCreation { margin-bottom:20px; }
+    @media(max-width:900px) { .pending-review-guide { flex-direction:column; } .field-review-row dl { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -294,7 +308,7 @@
       <div class="side-foot">当前企业档案<br><span id="workspaceFoot" style="color:#d7b46e">示例制造企业</span><br><br>全量虚构演示数据。真实版本仅在本机运行；模型发送前逐次确认范围。</div>
     </aside>
     <main class="main">
-      <header class="topbar"><div class="crumb">企业档案 <select class="select" id="workspaceSelect" aria-label="切换企业档案"><option value="sample">示例制造企业</option><option value="sample-2">新建空白档案</option></select> / <strong id="crumb">数据源</strong></div><div class="top-actions"><span class="demo-stamp">虚构演示数据</span><span class="period">本地 SQLite</span><button class="outline" id="exportButton">导出</button></div></header>
+      <header class="topbar"><div class="crumb">企业档案 <select class="select" id="workspaceSelect" aria-label="切换企业档案"><option value="sample">示例制造企业</option><option value="sample-2">新建空白档案</option></select> / <strong id="crumb">数据源</strong></div><div class="top-actions"><span class="demo-stamp">虚构演示数据</span><select class="select" id="savedPeriod" aria-label="已保存期间"><option value="">暂无已保存期间</option></select><button class="outline" id="createPeriod">生成期间</button><button class="outline" id="exportButton">导出</button></div></header>
       <section class="content">
         <div class="notice workspace-empty" id="workspaceEmptyNotice" hidden><b>当前企业档案还没有数据</b><span>“新建空白档案”是一个独立的空档案示例。请先选择本地目录并完成字段映射；它不会显示或读取其他企业的分析、任务、历史和 Provider。</span></div>
         <div class="screen active" id="source">
@@ -311,7 +325,8 @@
             <div class="panel"><div class="panel-head"><span class="panel-title">本地目录</span><span class="panel-note"><span class="status-dot"></span>已扫描 · 只读</span></div><div class="dropzone"><div><div class="folder">⌂</div><p>经营复盘 / 2026 年 10 月</p><small>核算周期：日度 · 数据覆盖：2026-10-01 至 2026-10-28</small></div></div><div class="path">示例路径：~/Documents/经营复盘/示例制造企业/2026-10</div></div>
             <div class="panel"><div class="panel-head"><span class="panel-title">已识别文件</span><span class="panel-note" id="sourceFileNote">当前输入模板 · 4 类来源</span></div><div class="file-list" id="sourceFileList"></div></div>
           </div>
-          <div class="notice pending-review-guide" id="pendingReviewGuide"><b>需要确认文件用途和关键列</b><div class="pending-review-content"><p id="pendingReviewSummary">系统已经按当前输入模板猜测了文件用途，但还没有得到你的确认。你需要确认：这个文件属于哪类业务数据，以及金额、日期等关键列是否选对；待补项不会按 0 参与计算。</p><p class="pending-review-metrics">常用业务用途包括销售、采购、收款、付款、发票、经营费用和人工；常用指标包括销售额、订单成本、入库金额、收付款、开票金额、经营费用、人工费、附加值和经营收益。</p><details class="pending-review-files"><summary>查看待确认文件</summary><ul id="pendingReviewFiles"></ul></details></div><div class="pending-review-actions"><button class="primary" id="openFieldReview">逐项确认文件用途</button></div><div class="field-review-panel" id="fieldReviewPanel" hidden><div class="field-review-head"><div><strong>逐项确认文件用途和关键列</strong><p>请选择文件的业务用途；“关键列字母”可填写金额或日期列，例如 C（金额）或 B（日期）。不确定时选“待补/待确认”。</p></div><span class="panel-note" id="fieldReviewCount"></span></div><div class="field-review-list" id="fieldReviewList"></div><div class="field-review-actions"><button class="outline" id="closeFieldReview">稍后处理</button><button class="primary" id="saveFieldReview">保存确认并重新扫描</button></div></div></div>
+          <div class="notice pending-review-guide" id="pendingReviewGuide"><div><b>核对文件用途和关键列</b><p id="pendingReviewSummary"></p><details><summary>查看待确认文件</summary><ul id="pendingReviewFiles"></ul></details></div><button class="primary" id="openFieldReview">确认文件用途和关键列</button></div>
+          <section class="panel field-review-panel" id="fieldReviewPanel" hidden><div class="panel-head"><div><strong>确认文件用途和关键列</strong><p>核对每项计算使用的金额、归属日期及有效单据条件。缺失或不能核实的内容保持待补。</p></div><span id="fieldReviewCount"></span></div><div id="fieldReviewList"></div><div class="field-review-actions"><button class="outline" id="closeFieldReview">稍后处理</button><button class="primary" id="saveFieldReview">保存确认并重新扫描</button></div></section>
           <div class="panel" style="margin-top:16px"><div class="panel-head"><span class="panel-title">字段映射</span><span class="panel-note">自动识别 · 可手动修正 · 当前映射已确认</span></div><div class="table-wrap"><table class="data-table"><thead><tr><th>工具字段</th><th>来源表 / 字段</th><th>识别结果</th><th>用途</th></tr></thead><tbody>
             <tr><td>销售额</td><td>销售出库 / 出库产品售价总额（含税）</td><td><span class="tag green">金额 · 已匹配</span></td><td>收入实绩</td></tr>
             <tr><td>对应出库成本</td><td>销售出库 / 出库产品成本总额</td><td><span class="tag green">金额 · 已匹配</span></td><td>毛利与附加值</td></tr>
@@ -322,6 +337,7 @@
         </div>
 
         <div class="screen" id="analysis">
+          <section class="panel" id="periodCreation" tabindex="-1"><div class="panel-head"><strong>生成并保存分析期间</strong><span>原型演示 · 不读取文件或写入数据库</span></div><div class="period-create-controls"><label>选择已识别月份 <select class="select" id="monthToSave"><option value="2026-09">2026年9月</option><option value="2026-10">2026年10月（虚构演示）</option></select></label><button class="primary" id="savePeriod">生成并保存期间</button><p id="periodSaveResult" role="status">确认文件用途后，选择月份并主动生成。缺失指标保留待补；已有结果会保留旧版本。</p></div></section>
           <div class="screen-head"><div><div class="eyebrow">02 · operating review</div><h2>经营分析</h2><div class="sub">示例制造企业 · 2026-10-01 至 2026-10-28 · 日度聚合，可切换周 / 月 / 季度</div></div><div class="head-controls"><select class="select" id="analysisWindow"><option>本期：2026-10-01 至 10-28</option><option>上期：2026-09-01 至 09-30</option></select><select class="select" id="analysisGrain"><option value="day">日度</option><option value="week">周度</option><option value="month">月度</option><option value="quarter">季度</option></select></div></div>
           <div class="status-banner"><span class="status-dot"></span><div><strong>本期两表已生成</strong><br>本地计算已完成。经营收益依赖人工费，单位时间指标仍有 1 天工时待补；目标缺失时不会生成达成率。</div></div>
           <div class="metric-grid"><div class="metric"><div class="label">结算收益</div><div class="value">¥ 184,600</div><div class="delta bad">↓ 低于目标 ¥ 25,400</div><div class="metric-sub"><span>达成率 87.9%</span><span>环比 -4.2%</span></div></div><div class="metric"><div class="label">订单毛利率</div><div class="value">18.6%</div><div class="delta good">↑ 同比 +2.1 个百分点</div><div class="metric-sub"><span>目标 20.0%</span><span>环比 +0.8pp</span></div></div><div class="metric"><div class="label">回款率</div><div class="value">92.4%</div><div class="delta good">↑ 环比 +3.6 个百分点</div><div class="metric-sub"><span>开票 ¥ 1.26m</span><span>未回款 ¥ 95k</span></div></div><div class="metric"><div class="label">单位时间附加值</div><div class="value">¥ 428 / 时</div><div class="delta warn">↓ 1 天工时待补</div><div class="metric-sub"><span>有效工时 431h</span><span>同比 +6.4%</span></div></div></div>
@@ -498,31 +514,25 @@
       },
       missing: ['工时待补', '月度目标待补']
     };
-    const fieldReviewOptions = [
-      ['sales_net', '不含税销售额（用于销售收入）'], ['purchase_signed_amount', '订单成本（用于采购订单成本）'],
-      ['purchase_inbound_amount', '入库金额（用于采购入库）'], ['cash_received', '收款金额（用于回款）'],
-      ['cash_paid', '付款金额（用于付款）'], ['invoice_amount', '开票金额（用于销项发票）'],
-      ['operating_expense', '经营费用（用于费用分类确认）'], ['labor_cost', '人工费（用于工资条）'],
-      ['period', '分析期间（用于日期/期间字段）'], ['metric_label', '指标名称（用于通用表指标列）'], ['actual_value', '实际值（用于通用表数值列）']
-    ];
-    const inferReviewField = name => {
-      const pairs = [[/销售出库|销售订单/, 'sales_net'], [/采购订单/, 'purchase_signed_amount'], [/采购入库|入库/, 'purchase_inbound_amount'], [/收款/, 'cash_received'], [/付款/, 'cash_paid'], [/发票|开票/, 'invoice_amount'], [/费用|报销/, 'operating_expense'], [/工资|薪资/, 'labor_cost']];
-      return pairs.find(([pattern]) => pattern.test(name))?.[1] || '';
+    const reviewPurpose = name => {
+      if (/销售订单|进项发票|资金账户|辅助/.test(name)) return ['辅助资料，仅供查阅', '不计入销售、成本或收付款', '不生成分析月份'];
+      if (/销售出库/.test(name)) return ['销售收入与订单成本', '出库产品售价总额（含税）/元、出库产品成本总额/元', '出库时间；产品出库确认 = 确认'];
+      if (/工资/.test(name)) return ['人工费', '当月实发', '薪资归属年份、薪资归属月份'];
+      if (/费用|报销/.test(name)) return ['经营费用（分类待确认）', '报销金额/元、报销类型', '申请时间；报销审核结果 = 通过'];
+      if (/采购入库/.test(name)) return ['采购入库金额', '入库产品采购价总额（含税）/元', '入库时间；合格品入库确认 = 确认或合格'];
+      return ['按所选输入模板核对', '检查实际数值列', '检查日期列；不确定时保留待确认'];
     };
     const renderFieldReview = profile => {
-      const pending = profile.files.map((file, index) => ({ file, index })).filter(({ file }) => file[2] === 'gold' || /待/.test(file[3]));
-      const guide = document.getElementById('pendingReviewGuide');
-      const panel = document.getElementById('fieldReviewPanel');
-      guide.hidden = pending.length === 0;
-      panel.hidden = true;
-      document.getElementById('pendingReviewSummary').textContent = `系统已猜测 ${pending.length} 个文件的用途，但还需要你确认业务类型和金额、日期等关键列；原始数据已保留，待补项不会按 0 参与计算。`;
-      document.getElementById('pendingReviewFiles').innerHTML = pending.map(({ file }) => `<li>${file[0]} · ${file[1]}</li>`).join('');
-      document.getElementById('fieldReviewList').innerHTML = pending.map(({ file, index }) => {
-        const inferred = inferReviewField(file[0]);
-        const options = `<option value="">请选择字段</option>${fieldReviewOptions.map(([value, label]) => `<option value="${value}"${value === inferred ? ' selected' : ''}>${label}</option>`).join('')}`;
-        return `<div class="field-review-row" data-file-index="${index}"><div class="field-review-file"><strong>${file[0]}</strong><span>${file[1]}</span></div><label><span>确认状态</span><select data-review-status><option value="confirmed">已确认</option><option value="pending" selected>待补/待确认</option></select></label><label><span>这个文件是什么数据</span><select data-review-field>${options}</select></label><label><span>关键列字母（可选）</span><input data-review-column placeholder="如 C（金额）或 B（日期）" /></label></div>`;
+      const files = profile.files.map((file, index) => ({ file, index }));
+      document.getElementById('pendingReviewGuide').hidden = false;
+      document.getElementById('fieldReviewPanel').hidden = true;
+      document.getElementById('pendingReviewSummary').textContent = '确认这些文件将用于什么计算，以及金额和日期是否来自正确的列。已确认文件也可以重新核对。';
+      document.getElementById('pendingReviewFiles').innerHTML = files.map(({file}) => `<li>${file[0]}</li>`).join('');
+      document.getElementById('fieldReviewList').innerHTML = files.map(({ file, index }) => {
+        const [purpose, amount, date] = reviewPurpose(file[0]);
+        return `<article class="field-review-row" data-file-index="${index}"><div class="field-review-file"><strong>${file[0]}</strong><label>确认状态 <select data-review-status><option value="pending">待补/待确认</option><option value="confirmed">已核对文件用途和关键列</option></select></label></div><h4>用于${purpose}</h4><dl><dt>金额 / 数值列</dt><dd>${amount}</dd><dt>归属日期与有效单据</dt><dd>${date}</dd></dl>${/销售出库/.test(file[0]) ? '<p>销售金额含税。税率未核实时不含税销售额保持待补；订单成本的税口径需单独核对。</p><label>销售统一税率（%） <input inputmode="decimal" placeholder="仅填写已核实的统一税率" /></label><p>留空不按 0% 或 13% 计算；混合税率请保留待确认。</p>' : ''}</article>`;
       }).join('');
-      document.getElementById('fieldReviewCount').textContent = `已确认 0 / ${pending.length}`;
+      document.getElementById('fieldReviewCount').textContent = `待核对 ${files.length} 个文件`;
     };
     const renderSourceProfile = () => {
       const select = document.getElementById('sourceProfileSelect');
@@ -623,9 +633,20 @@
       sample: { name: '示例制造企业', cadence: 'day', version: 2, foot: '示例制造企业', source: '示例制造企业 · 2026-10 日度经营复盘', sourceProfile: 'xsd_trade_v1', hasData: true, tablesReady: true, tableRevision: 3, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '2026-10-01', provider: { baseUrl: 'https://api.demo-provider.local/v1', model: 'demo-reasoner-32b', apiKey: 'demo-local-key-2026' } },
       'sample-2': { name: '新建空白档案', cadence: 'month', version: 1, foot: '新建空白档案', source: '新建空白档案 · 尚未导入数据', sourceProfile: 'xsd_trade_v1', hasData: false, tablesReady: false, tableRevision: null, weekStart: '1', fiscalYearStart: '1', timezone: 'Asia/Shanghai', effectiveFrom: '', provider: { baseUrl: '', model: '', apiKey: '' } }
     };
+    const demoPeriods = { sample: { months: [], selected: '' }, 'sample-2': { months: [], selected: '' } };
     const workspaceSelect = document.getElementById('workspaceSelect');
     const applyWorkspace = () => {
       const workspace = workspaceState[workspaceSelect.value];
+      const periodState = demoPeriods[workspaceSelect.value];
+      const savedPeriod = document.getElementById('savedPeriod');
+      savedPeriod.replaceChildren(new Option('暂无已保存期间', ''));
+      periodState.months.forEach(month => savedPeriod.add(new Option(month + ' · 演示保存', month)));
+      savedPeriod.value = periodState.selected;
+      document.getElementById('createPeriod').disabled = !workspace.hasData;
+      document.getElementById('createPeriod').title = workspace.hasData ? '选择月份并生成保存' : '先为当前企业导入数据';
+      document.getElementById('periodSaveResult').textContent = periodState.selected
+        ? '演示完成：' + periodState.selected + ' 已出现在右上角期间列表。此原型不写入数据库。'
+        : '确认文件用途后，选择月份并主动生成。此原型不写入数据库。';
       document.getElementById('workspaceFoot').textContent = workspace.foot;
       const dataScreens = ['source', 'analysis', 'tables', 'diagnosis', 'task', 'history'];
       dataScreens.forEach(id => {
@@ -643,6 +664,8 @@
       document.querySelector('#analysis .sub').textContent = workspace.hasData ? `${workspace.name} · 2026-10-01 至 2026-10-28 · 日度聚合，可切换周 / 月 / 季度` : `${workspace.name} · 尚无分析期间`;
       document.getElementById('sourceProfileSelect').value = workspace.sourceProfile || 'xsd_trade_v1';
       renderSourceProfile();
+      document.getElementById('pendingReviewGuide').hidden = !workspace.hasData;
+      document.getElementById('fieldReviewPanel').hidden = true;
       const tablesReady = Boolean(workspace.tablesReady);
       const gate = document.getElementById('taskTableGate');
       const gateText = document.getElementById('taskTableGateText');
@@ -707,8 +730,7 @@
       const row = event.target.closest('.field-review-row');
       const pending = [...document.querySelectorAll('#fieldReviewList [data-review-status]')].filter(item => item.value === 'confirmed').length;
       document.getElementById('fieldReviewCount').textContent = `已确认 ${pending} / ${document.querySelectorAll('#fieldReviewList .field-review-row').length}`;
-      row.querySelector('[data-review-field]').disabled = event.target.value === 'pending';
-      row.querySelector('[data-review-column]').disabled = event.target.value === 'pending';
+
     });
     document.getElementById('saveFieldReview').addEventListener('click', () => {
       const profile = sourceProfiles[document.getElementById('sourceProfileSelect').value];
@@ -717,8 +739,7 @@
       rows.forEach(row => {
         const index = Number(row.dataset.fileIndex);
         const status = row.querySelector('[data-review-status]').value;
-        const field = row.querySelector('[data-review-field]').value;
-        if (status === 'confirmed' && field) {
+        if (status === 'confirmed') {
           profile.files[index][2] = 'green';
           profile.files[index][3] = '已确认';
           confirmed += 1;
@@ -729,8 +750,25 @@
       });
       renderSourceProfile();
       document.getElementById('fieldReviewPanel').hidden = true;
-      alert(`已保存 ${confirmed} 个字段确认并重新扫描；待补项仍保留，不会按 0 参与计算。`);
+      alert(`原型演示：已确认 ${confirmed} 个文件；待补项仍保留。真实版本点击生成并保存期间后会写入本机数据库。`);
     });
+    document.getElementById('createPeriod').addEventListener('click', () => {
+      document.querySelector('[data-screen="analysis"]').click();
+      document.getElementById('periodCreation').scrollIntoView({behavior: 'smooth', block: 'start'});
+      document.getElementById('monthToSave').focus();
+    });
+    document.getElementById('savePeriod').addEventListener('click', () => {
+      if (!workspaceState[workspaceSelect.value].hasData) return;
+      const month = document.getElementById('monthToSave').value;
+      const saved = document.getElementById('savedPeriod');
+      if (![...saved.options].some(option => option.value === month)) saved.add(new Option(month + ' · 演示保存', month));
+      saved.value = month;
+      const state = demoPeriods[workspaceSelect.value];
+      if (!state.months.includes(month)) state.months.push(month);
+      state.selected = month;
+      document.getElementById('periodSaveResult').textContent = '演示完成：' + month + ' 已出现在右上角期间列表。此原型不写入数据库。';
+    });
+    document.getElementById('savedPeriod').addEventListener('change', event => { demoPeriods[workspaceSelect.value].selected = event.target.value; });
     document.getElementById('sourceProfileSelect').addEventListener('change', renderSourceProfile);
     renderSourceProfile();
     document.getElementById('exportButton').addEventListener('click', () => document.querySelector('[data-screen="tables"]').click());
