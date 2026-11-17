@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
-import { fixtureAnalysisRun } from '../api/fixtureData';
+import { fixtureAnalysisRun, fixtureScan } from '../api/fixtureData';
 import { buildChartOption } from '../components/chartOptions';
 import type { DshengClient } from '../api';
 
@@ -111,6 +111,33 @@ describe('S4 经营分析屏', () => {
     await screen.findByText('尚无分析期间');
     expect(analyzeSpy).not.toHaveBeenCalled();
     void DEMO;
+  });
+
+  it('没有可用期间时说明保存路径，并可回到数据源选择输入模板', async () => {
+    window.localStorage.setItem(`dsheng.source-directory.${DEMO}`, '/tmp/detail-source');
+    const client = new FixtureClient();
+    vi.spyOn(client, 'scan').mockResolvedValue({
+      ...structuredClone(fixtureScan[DEMO]),
+      available_periods: [],
+      source_profile: { profile_id: 'generic', version: 1, hash: 'generic-hash', mode: 'generic' },
+    });
+    render(<App runtime={{ mode: 'fixture', client }} />);
+    await screen.findByTestId('foot-workspace');
+    (screen.getAllByText('经营分析')[0].closest('button') as HTMLButtonElement).click();
+    const analysisSummary = screen.queryByText('重新分析数据');
+    if (analysisSummary) fireEvent.click(analysisSummary);
+    const rescan = await screen.findByRole('button', { name: '重新扫描数据' });
+    fireEvent.click(rescan);
+    const guidance = await screen.findByTestId('analysis-period-empty-guidance');
+    const details = guidance.closest('details') as HTMLDetailsElement | null;
+    if (details && !details.open) fireEvent.click(details.querySelector('summary') as HTMLElement);
+    expect(screen.getByText(/通用数据模板/)).toBeTruthy();
+    expect(screen.getByText(/期间不会在导入时自动保存/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: '去数据源选择输入模板' })).toBeVisible();
+    expect(screen.queryByText(/undefined/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '去数据源选择输入模板' }));
+    expect(screen.getByTestId('crumb-screen')).toHaveTextContent('数据源');
+    window.localStorage.removeItem(`dsheng.source-directory.${DEMO}`);
   });
 });
 

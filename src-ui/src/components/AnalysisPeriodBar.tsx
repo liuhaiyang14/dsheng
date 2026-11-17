@@ -14,7 +14,7 @@ export function AnalysisPeriodBar() {
   const noSavedPeriods = periods.length === 0;
   return (
     <div className="header-period" aria-label="查看期间" data-testid="analysis-period-bar"
-      title={app.contextLockReason ?? (noSavedPeriods ? '导入数据后，请到经营分析页生成第一个期间结果' : exactRange)}>
+      title={app.contextLockReason ?? (noSavedPeriods ? '先到经营分析页选择可用月份，再点击“运行本地分析”保存第一个期间结果' : exactRange)}>
       <label htmlFor="saved-analysis-period">期间</label>
       <select id="saved-analysis-period" className="select" aria-label="已保存分析期间"
         data-testid="saved-period-select" value={entry?.run_id ?? ''}
@@ -26,7 +26,7 @@ export function AnalysisPeriodBar() {
         </option>)}
       </select>
       {noSavedPeriods ? <button type="button" className="period-create-action" disabled={disabled}
-        aria-label="去经营分析生成期间" title="导入数据后，在经营分析页选择可用期间并运行本地分析"
+        aria-label="去经营分析生成期间" title="选择可用月份并点击“运行本地分析”，期间才会保存到这里"
         onClick={() => app.setScreen('analysis')}>生成期间</button> : null}
       <span className="sr-only" data-testid="current-period-label">{exactRange}</span>
       <button type="button" className="period-refresh" aria-label="刷新所选期间" title="刷新所选期间"

@@ -70,6 +70,29 @@ it('待确认文件提供逐项确认入口，保存后调用映射确认并重�
   expect(screen.queryByTestId('field-review-panel')).toBeNull();
   expect(screen.getByTestId('scan-note')).toHaveTextContent('字段确认已保存并重新扫描');
 });
+
+it('通用模板没有可分析期间时，提供示例模板重扫入口', async () => {
+  const client = new FixtureClient();
+  const rawScan = client.scan.bind(client);
+  const scanSpy = vi.spyOn(client, 'scan').mockImplementation(async (...args) => {
+    const result = await rawScan(...args);
+    return args[3] ? { ...result, available_periods: [] } : result;
+  });
+  await openSource(client);
+  fireEvent.change(screen.getByLabelText('原始数据模板'), { target: { value: 'generic' } });
+  await scan('/tmp/detail-source');
+  expect(screen.getByTestId('generic-period-guide')).toHaveTextContent('当前还没有可生成的分析期间');
+  expect(screen.getByTestId('generic-period-guide')).toHaveTextContent('销售出库、采购入库、工资条');
+  fireEvent.click(screen.getByRole('button', { name: '使用当前示例模板并重新扫描' }));
+  await waitFor(() => expect(scanSpy).toHaveBeenLastCalledWith(
+    WS_DEMO_ID,
+    '/tmp/detail-source',
+    'xsd_trade_v1',
+    false,
+  ));
+  expect(screen.getByLabelText('原始数据模板')).toHaveValue('xsd_trade_v1');
+});
+
 it('profile 模板仍有待确认文件时，经营分析入口保持禁用并说明原因', async () => {
   const client = new FixtureClient();
   await openSource(client);

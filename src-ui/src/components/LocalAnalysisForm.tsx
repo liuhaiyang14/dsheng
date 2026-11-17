@@ -114,6 +114,7 @@ export function LocalAnalysisForm() {
   };
   const scanNeeded = !scanMatchesPolicy || scan?.available_periods === undefined
     || (scan.available_periods.length > 0 && !periods.length);
+  const genericProfile = scan?.source_profile?.mode === 'generic';
   return <>
     <details className="local-analysis" open={detail ? undefined : true}>
       <summary>{detail ? '重新分析数据' : '分析导入的数据'}</summary>
@@ -131,8 +132,14 @@ export function LocalAnalysisForm() {
       <p className="period-help">仅列出导入数据中可分析的期间，按系统设置的核算周期计算。</p>
       {!app.sourceDirectory ? <p className="period-help">请先导入数据。<button type="button" className="outline" onClick={() => app.setScreen('source')}>前往数据源</button></p>
         : <>
-          {scanNeeded ? <p className="period-help">请重新扫描数据，读取当前核算周期的可分析期间。</p>
-            : !periods.length ? <p className="period-help">当前还没有可运行的期间。月度设置只决定如何归集数据，不会在导入时自动保存期间；请先确认文件用途和关键日期列，再点击“重新扫描数据”。</p> : null}
+          {scanNeeded ? <p className="period-help">当前扫描结果还没有按本企业的核算周期生成可分析期间，请点击“重新扫描数据”。</p> : null}
+          {!periods.length ? <div className="period-empty-guidance" data-testid="analysis-period-empty-guidance">
+            <p className="period-help">{genericProfile
+              ? '当前选择的是“通用数据模板”。它只能识别已经整理成“期间、指标、实际值”的表格；销售出库、采购入库、工资条等明细单据需要在“数据源”选择对应的输入模板，并确认关键日期列。'
+              : '当前还没有可运行的期间。请先在“数据源”确认文件用途和关键日期列，再重新扫描数据。'}</p>
+            <p className="period-help">期间不会在导入时自动保存。完成“选择输入模板 → 确认文件用途和关键日期 → 重新扫描 → 选择月份 → 运行本地分析”后，结果才会保存到页眉的期间列表。</p>
+            <button type="button" className="outline period-source-action" onClick={() => app.setScreen('source')}>去数据源选择输入模板</button>
+          </div> : null}
           {mappingPending ? <p className="period-help">部分原始文件的业务用途尚未确认，请先到「数据源」逐项确认文件用途；不确定的文件可保留“待补”。</p> : null}
           <p className="period-help">数据目录：{app.sourceDirectory}</p>
         </>}

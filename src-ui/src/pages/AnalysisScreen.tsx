@@ -365,15 +365,17 @@ export function AnalysisScreen() {
 
 function ScreenHead({ hasData }: { hasData: boolean }) {
   const app = useApp();
+  const workspaceName = app.activeWorkspace?.name ?? '当前企业';
+  const savedDetail = app.data.currentDetail;
   return (
     <div className="screen-head">
       <div>
         <div className="eyebrow">02 · 经营分析</div>
         <h2 className="screen-title">经营分析</h2>
         <div className="sub">
-          {hasData
-            ? `${app.activeWorkspace?.name} · ${app.data.currentDetail?.period.from} 至 ${app.data.currentDetail?.period.to} · 在页眉切换历史期间`
-            : `${app.activeWorkspace?.name} · 尚无分析期间`}
+          {hasData && savedDetail
+            ? `${workspaceName} · ${savedDetail.period.from} 至 ${savedDetail.period.to} · 在页眉切换历史期间`
+            : `${workspaceName} · 尚未保存分析期间 · 选择月份并运行本地分析后保存`}
         </div>
       </div>
     </div>

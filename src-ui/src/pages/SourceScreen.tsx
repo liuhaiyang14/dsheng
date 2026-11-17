@@ -129,6 +129,9 @@ export function SourceScreen() {
   const pendingFiles = (scan?.files ?? []).filter((file) => file.mapping_status === 'pending_review');
   const profileChoice = BUILTIN_SOURCE_PROFILES.has(sourceProfile) ? sourceProfile : 'custom';
   const customProfilePath = profileChoice === 'custom' ? sourceProfile : '';
+  const genericPeriodUnavailable = scan?.source_profile?.mode === 'generic'
+    && (scan.available_periods == null || scan.available_periods.length === 0)
+    && (scan.files ?? []).length > 0;
 
   const pushDiag = (line: string) =>
     setDiag((prev) => [...prev.slice(-10), `${new Date().toLocaleTimeString()} ${line}`]);
@@ -213,12 +216,14 @@ export function SourceScreen() {
   };
 
   /** 解析目录（本地扫描，无 Provider 调用）。 */
-  const runScan = async (path: string, note?: string) => {
+  const runScan = async (path: string, note?: string, profileOverride?: string) => {
     if (!app.client || !app.activeWorkspaceId) {
       setScanError('请先创建企业档案（右上角「＋ 新建档案」）。');
       return;
     }
-    if (profileChoice === 'custom' && !customProfilePath.trim()) {
+    const selectedProfile = profileOverride ?? sourceProfile;
+    const selectedProfileIsBuiltin = BUILTIN_SOURCE_PROFILES.has(selectedProfile);
+    if (!selectedProfileIsBuiltin && !selectedProfile.trim()) {
       setScanError('请先选择内置模板，或填写自定义输入模板 JSON 文件路径。');
       return;
     }
@@ -231,8 +236,8 @@ export function SourceScreen() {
         app.client.scan(
           app.activeWorkspaceId,
           path,
-          sourceProfile === 'generic' ? undefined : sourceProfile,
-          sourceProfile === 'generic',
+          selectedProfile === 'generic' ? undefined : selectedProfile,
+          selectedProfile === 'generic',
         ),
         new Promise<never>((_, rej) =>
           setTimeout(() => rej(new Error('核心未在 15 秒内返回（scan 挂起）')), 15000),
@@ -486,6 +491,21 @@ export function SourceScreen() {
             <span className="panel-note">扫描会记录模板版本；核算表、推移表只能作为生成结果查看。</span>
           </div>
           <p className="panel-note source-profile-metrics">常用指标：不含税销售额、订单成本、订单毛利率、经营费用、人工费、附加值（扣人工前）、经营收益（扣人工后）、有效工时和回款率。</p>
+          {genericPeriodUnavailable ? <div className="notice source-period-guide" data-testid="generic-period-guide">
+            <b>当前还没有可生成的分析期间</b>
+            <span>当前选择的是“未指定行业模板”，系统只能读取已经整理成“期间、指标、实际值”的通用表。你提供的销售出库、采购入库、工资条等明细单据，需要确认关键日期和金额列；如果这些文件就是当前示例数据，请切换到“贸易/制造业单据模板（当前示例）”后重新扫描。</span>
+            <button
+              type="button"
+              className="outline source-period-action"
+              disabled={scanBusy || !lastDir}
+              onClick={() => {
+                setSourceProfile('xsd_trade_v1');
+                if (lastDir) void runScan(lastDir, '已切换到贸易/制造业单据模板，正在重新扫描期间字段…', 'xsd_trade_v1');
+              }}
+            >
+              使用当前示例模板并重新扫描
+            </button>
+          </div> : null}
           <ImportDropzone busy={scanBusy} onPath={(path, note) => void runScan(path, note)} onDiag={pushDiag} />
           <div className="source-directory-summary">
             <div data-testid="source-directory">{lastDir ? `有效数据目录：${lastDir}` : '尚未成功扫描数据目录'}</div>

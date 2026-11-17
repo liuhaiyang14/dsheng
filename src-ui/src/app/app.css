@@ -570,6 +570,9 @@ tr:last-child td { border-bottom: 0; }
 .period-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: .8125rem; color: var(--muted); }
 .period-field input[type="date"] { width: 154px; min-height: 38px; }
 .period-help { margin: 8px 0 0; color: var(--muted); font-size: .8125rem; line-height: 1.7; overflow-wrap: anywhere; }
+.period-empty-guidance { margin-top: 10px; padding: 12px 14px; border: 1px solid var(--line); background: var(--paper); }
+.period-empty-guidance .period-help:first-child { margin-top: 0; color: var(--ink); }
+.period-source-action { margin-top: 4px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 @media (max-width: 680px) {
   .period-field { flex: 1 1 140px; }
@@ -582,6 +585,8 @@ tr:last-child td { border-bottom: 0; }
 .source-intake-panel .import-row { padding: 16px; }
 .source-intake-panel .dropzone.interactive { margin: 0; }
 .source-profile-metrics { margin: -4px 16px 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.source-period-guide { margin: 0 16px 14px; }
+.source-period-guide .source-period-action { flex: 0 0 auto; align-self: center; white-space: nowrap; }
 .source-directory-summary { display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; padding: 14px 16px; border-top: 1px solid var(--line); background: #fafbf9; font-size: .875rem; overflow-wrap: anywhere; }
 .source-directory-summary .path { flex: 1 1 100%; margin: 0; background: white; }
 .source-technical-details { margin: 12px 16px; color: var(--muted); font-size: .8125rem; }

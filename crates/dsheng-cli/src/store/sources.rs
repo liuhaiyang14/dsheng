@@ -2309,6 +2309,178 @@ fn observed_source_periods(files: &[ScannedFile]) -> BTreeSet<(NaiveDate, NaiveD
     periods
 }
 
+/// 从未绑定 source profile 的详细业务表中识别可选期间。
+///
+/// generic 模式不能把当前示例企业的字段或公式当成默认口径，但也不能因为
+/// 业务表没有规范的“指标/期间/实际值”三列表头，就把期间列表留空。这里仅
+/// 使用通用的表头语义（日期/时间/年月）和已确认数值列同行来发现“确有数据”
+/// 的日期桶；它不决定指标归属，也不参与金额计算。用户仍需在映射页面确认
+/// 业务用途和关键列后，分析层才会读取这些明细。
+fn observed_generic_detail_periods(
+    files: &[ScannedFile],
+    mappings: Option<&[FieldMappingEntry]>,
+) -> BTreeSet<(NaiveDate, NaiveDate)> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum DateColumn {
+        Date,
+        Year,
+        Month,
+    }
+
+    fn date_column_kind(raw: &str) -> Option<DateColumn> {
+        let text = normalize_header(raw).to_ascii_lowercase();
+        if text.is_empty()
+            || [
+                "提交", "更新", "创建", "审批", "当前", "备注", "计划", "预计", "收货确认",
+            ]
+            .iter()
+            .any(|token| text.contains(token))
+        {
+            return None;
+        }
+        if text.contains("年份") || text.contains("year") {
+            return Some(DateColumn::Year);
+        }
+        if text.contains("月份") || text.contains("month") {
+            return Some(DateColumn::Month);
+        }
+        if text.contains("日期")
+            || text.contains("时间")
+            || text.contains("date")
+            || text.contains("time")
+        {
+            return Some(DateColumn::Date);
+        }
+        None
+    }
+
+    fn parse_component(raw: &str) -> Option<i32> {
+        raw.trim().parse::<i32>().ok().or_else(|| {
+            let digits: String = raw.chars().filter(|ch| ch.is_ascii_digit()).collect();
+            (!digits.is_empty()).then(|| digits.parse::<i32>().ok()).flatten()
+        })
+    }
+
+    fn parse_date(raw: &str) -> Option<DateRange> {
+        crate::store::analysis::observation_period(raw).or_else(|| {
+            let date = raw.trim().split([' ', 'T']).next()?;
+            dsheng_core::analysis::periods::parse_calendar_date(date)
+                .ok()
+                .map(|date| DateRange {
+                    from: date,
+                    to: date,
+                })
+        })
+    }
+
+    let Some(mappings) = mappings else {
+        return BTreeSet::new();
+    };
+    // generic 模式的空映射只代表“用户打开过确认面板”，不代表任何列已确认。
+    // 只有带来源列的逐文件映射才能作为“同行存在实绩”的证据。
+    fn column_index(raw: &str) -> Option<usize> {
+        let letters = raw.trim().bytes().take_while(u8::is_ascii_alphabetic);
+        let mut value = 0usize;
+        let mut count = 0usize;
+        for byte in letters {
+            value = value * 26 + (byte.to_ascii_uppercase() - b'A' + 1) as usize;
+            count += 1;
+        }
+        (count > 0).then_some(value - 1)
+    }
+
+    let mut periods = BTreeSet::new();
+    for file in files {
+        let confirmed_value_cols: BTreeSet<usize> = mappings
+            .iter()
+            .filter(|entry| {
+                entry.source_id.as_deref() == Some(file.file_label.as_str())
+                    || entry.source.as_deref() == Some(file.file_label.as_str())
+                    || entry.source_label == file.file_label
+            })
+            .filter_map(|entry| entry.column.as_deref().and_then(column_index))
+            .collect();
+        if confirmed_value_cols.is_empty() {
+            continue;
+        }
+        for (data, sheet) in &file.sheets {
+            if sheet.role != "generic_table" || sheet.blocked_reason.is_some() {
+                continue;
+            }
+            let Some((header_row, date_cols, value_cols)) = data
+                .rows
+                .iter()
+                .take(20)
+                .enumerate()
+                .filter_map(|(row_idx, row)| {
+                    let mut date_cols = Vec::new();
+                    let mut value_cols = Vec::new();
+                    for (col, cell) in row.iter().enumerate() {
+                        if let Some(kind) = date_column_kind(&cell.raw_text()) {
+                            date_cols.push((col, kind));
+                        } else if confirmed_value_cols.contains(&col)
+                            && !normalize_header(&cell.raw_text()).is_empty()
+                        {
+                            value_cols.push(col);
+                        }
+                    }
+                    (!date_cols.is_empty() && !value_cols.is_empty())
+                        .then_some((row_idx, date_cols, value_cols))
+                })
+                .max_by_key(|(_, dates, values)| dates.len() + values.len())
+            else {
+                continue;
+            };
+
+            let year_col = date_cols
+                .iter()
+                .find(|(_, kind)| *kind == DateColumn::Year)
+                .map(|(col, _)| *col);
+            let month_col = date_cols
+                .iter()
+                .find(|(_, kind)| *kind == DateColumn::Month)
+                .map(|(col, _)| *col);
+            let date_only_cols: Vec<usize> = date_cols
+                .iter()
+                .filter(|(_, kind)| *kind == DateColumn::Date)
+                .map(|(col, _)| *col)
+                .collect();
+
+            for row in data.rows.iter().skip(header_row + 1) {
+                // 期间必须与至少一个已确认数值列同一行，避免凭说明行制造期间。
+                if !value_cols.iter().any(|col| {
+                    row.get(*col)
+                        .and_then(|cell| crate::store::analysis::cell_value(Some(cell)))
+                        .is_some()
+                }) {
+                    continue;
+                }
+                if let (Some(year_col), Some(month_col)) = (year_col, month_col) {
+                    let year = row
+                        .get(year_col)
+                        .and_then(|cell| parse_component(&cell.raw_text()));
+                    let month = row
+                        .get(month_col)
+                        .and_then(|cell| parse_component(&cell.raw_text()))
+                        .and_then(|value| u32::try_from(value).ok());
+                    if let Some(date) = year
+                        .zip(month)
+                        .and_then(|(year, month)| NaiveDate::from_ymd_opt(year, month, 1))
+                    {
+                        periods.insert((date, date));
+                    }
+                }
+                for col in &date_only_cols {
+                    if let Some(period) = row.get(*col).and_then(|cell| parse_date(&cell.raw_text())) {
+                        periods.insert((period.from, period.to));
+                    }
+                }
+            }
+        }
+    }
+    periods
+}
+
 /// 从企业 source profile 的业务明细映射提取真实发生期间。
 ///
 /// 详细业务单据通常没有规范化的“指标/期间/实际值”表头，扫描阶段会把
@@ -2478,10 +2650,14 @@ fn available_analysis_periods(
     workspace_id: Uuid,
     files: &[ScannedFile],
     profile: &SourceProfileBinding,
+    confirmed_mappings: Option<&[FieldMappingEntry]>,
 ) -> CliResult<(String, Vec<Value>)> {
     let current = current_analysis_calendar(conn, workspace_id)?;
     let mut buckets = BTreeSet::new();
     let mut observed = observed_source_periods(files);
+    if profile.mode == "generic" && observed.is_empty() {
+        observed.extend(observed_generic_detail_periods(files, confirmed_mappings));
+    }
     if profile.mode == "profile" {
         observed.extend(observed_profile_periods(files, profile));
     }
@@ -2676,7 +2852,13 @@ fn scan_summary_internal(
         },
     });
     if desktop_periods {
-        let (policy_id, periods) = available_analysis_periods(conn, workspace_id, &files, profile)?;
+        let (policy_id, periods) = available_analysis_periods(
+            conn,
+            workspace_id,
+            &files,
+            profile,
+            confirmed_mappings.as_deref(),
+        )?;
         summary["available_periods"] = json!(periods);
         summary["available_period_policy_id"] = json!(policy_id);
     }
@@ -2906,6 +3088,58 @@ mod tests {
         assert!(periods.contains(&(
             NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
             NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+        )));
+    }
+
+    #[test]
+    fn generic_detail_columns_require_confirmed_value_column() {
+        let file = ScannedFile {
+            file_label: "销售出库_202610.xlsx".into(),
+            content_hash: "generic-period-hash".into(),
+            kind: "xlsx".into(),
+            sheets: vec![(
+                SheetData {
+                    name: "销售出库".into(),
+                    rows: vec![
+                        vec![
+                            CellValue::Text("业务日期".into()),
+                            CellValue::Text("销售金额/元".into()),
+                        ],
+                        vec![
+                            CellValue::Text("2026-10-12 09:30:00".into()),
+                            CellValue::Number("1234.50".into()),
+                        ],
+                    ],
+                    merged_ranges: vec![],
+                },
+                ScannedSheet {
+                    sheet: Some("销售出库".into()),
+                    role: "generic_table",
+                    header: None,
+                    match_info: None,
+                    rows: 2,
+                    blocked_reason: None,
+                    profile_role_id: None,
+                },
+            )],
+        };
+        assert!(observed_generic_detail_periods(std::slice::from_ref(&file), Some(&[])).is_empty());
+        let mappings = vec![FieldMappingEntry {
+            tool_field: "sales_net".into(),
+            source_label: "销售出库_202610.xlsx".into(),
+            recognized: "B".into(),
+            usage: "销售收入".into(),
+            source_id: Some("销售出库_202610.xlsx".into()),
+            source: None,
+            sheet: Some("销售出库".into()),
+            column: Some("B".into()),
+            header_signature: None,
+            target_role: Some("sales_net".into()),
+        }];
+        let periods = observed_generic_detail_periods(&[file], Some(&mappings));
+        assert!(periods.contains(&(
+            NaiveDate::from_ymd_opt(2026, 10, 12).unwrap(),
+            NaiveDate::from_ymd_opt(2026, 10, 12).unwrap(),
         )));
     }
 }
