@@ -680,3 +680,12 @@ tr:last-child td { border-bottom: 0; }
 .source-tax-confirmation { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 8px; }
 .source-review-editor .field-review-actions { padding: 16px 20px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .period-generation-panel { padding: 16px; }
+
+/* 目标来源与有限精度数字只影响展示，不挤占相邻列。 */
+.target-basis { display: block; margin-top: 5px; color: var(--muted); font-size: .6875rem; line-height: 1.5; font-weight: 400; white-space: normal; overflow-wrap: anywhere; }
+.data-table .target-basis { min-width: 9em; max-width: 19em; }
+.bar-label > * { min-width: 0; overflow-wrap: anywhere; }
+.metric .delta, .metric-sub > span { min-width: 0; overflow-wrap: anywhere; }
+.two-tables-table { table-layout: fixed; }
+.two-tables-table .target-basis { min-width: 0; }
+.two-tables-table td { white-space: normal; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }

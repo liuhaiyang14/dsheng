@@ -3,7 +3,7 @@
 状态：脚本与流程可用；当前已在本机（macOS arm64）产出 DMG、便携版和独立
 CLI 三件产物并生成版本清单。Windows/x64 产物需目标机执行（CI 不再运行 Windows 构建）（见文末覆盖状态）。
 
-当前版本 0.2.0 的 macOS arm64 测试包位于 `target/release-dist/v0.2.0/`；便携版、CLI 包和 SHA-256 见 [版本清单](manifest-v0.2.0.json)。GitHub Release 尚未发布，公开分发需产品验收后另行授权。
+当前版本 0.2.1 的 macOS arm64 测试包按 `target/release-dist/v0.2.1/` 独立交付；便携版、CLI 包和 SHA-256 见 [版本清单](manifest-v0.2.1.json)。本轮修复内容和验证见 [数值显示与目标来源修复](../engineering/numeric-display-v0.2.1.md)。历史 v0.2.0 目录及清单保留。GitHub Release 尚未发布，公开分发需产品验收后另行授权。
 
 边界（必须遵守）：
 
@@ -123,16 +123,11 @@ Windows 部分按系统文档行为编写、待真机走查）。
 
 | 产物 | 状态 |
 | --- | --- |
-| dsheng_0.2.0_macos_arm64.dmg | 本机已产出（2026-11-13） |
-| dsheng_0.2.0_macos_arm64_portable.zip | 本机已产出（2026-11-13） |
-| dsheng-cli_0.2.0_macos_arm64.zip | 本机已产出（2026-11-13） |
+| dsheng_0.2.1_macos_arm64.dmg | 本轮构建待验证（2026-11-20） |
+| dsheng_0.2.1_macos_arm64_portable.zip | 本轮构建待验证（2026-11-20） |
+| dsheng-cli_0.2.1_macos_arm64.zip | 本轮构建待验证（2026-11-20） |
 | macOS x64 两件 | 脚本支持 `--target x86_64-apple-darwin`；未执行（需 rust target + Intel 验证机） |
 | Windows x64 msi/portable/cli | 打包在 Windows 宿主执行（CI 已移除 Windows 构建）；未执行 |
 | Skill ZIP / 手册 | 归属其他工作包；manifest coverage 记 missing |
 
-已知缺口（报告不改配置，详见工作包完成报告）：
-
-1. `tauri.conf.json` 无 `bundle.icon`，.app/.dmg 无应用图标。
-2. `beforeBuildCommand: npm --prefix ../src-ui run build` 的相对路径
-   在 tauri CLI（于仓库根执行钩子）下解析错位；打包脚本用 `--config`
-   覆盖绕开，仓库配置本身建议主 Agent 修正。
+早期图标与构建钩子问题已修复：当前 `tauri.conf.json` 配置了 bundle 图标，`beforeBuildCommand` 从仓库根指向 `src-ui`。本轮仍以实际包内版本、可执行文件及归档校验结果为准。

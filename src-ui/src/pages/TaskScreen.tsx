@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
+import { targetBasisLabel, targetKindLabel } from '../components/TargetValue';
 import { Tag } from '../components/bits';
 import { GenerationDialog } from '../components/GenerationDialog';
 import { useGeneration } from '../components/useGeneration';
@@ -18,6 +19,7 @@ import {
   CYCLE_ROLE_LABELS,
   TASK_CATEGORY_LABELS,
   TASK_STATUS_LABELS,
+  formatMetricValue,
   groupDecimal,
   type Cadence,
   type ConfirmationPreview,
@@ -37,20 +39,6 @@ const DIAGNOSIS_FRAMEWORK_LABELS: Record<string, string> = {
 function cycleRoleOf(task: TaskView, periodEnd: string): 'review' | 'plan' {
   if (!task.target_period) return 'review';
   return task.target_period.from > periodEnd ? 'plan' : 'review';
-}
-
-function humanUnit(value: string | null | undefined): string {
-  if (!value) return '';
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const baseUnit = (parsed as Record<string, unknown>).base_unit;
-      if (typeof baseUnit === 'string' && baseUnit.trim()) return baseUnit;
-    }
-  } catch {
-    // 已经是普通单位文本。
-  }
-  return value;
 }
 
 function friendlyError(err: unknown): string {
@@ -451,7 +439,7 @@ export function TaskScreen() {
                     </td>
                     <td>
                       {task.target_value != null
-                        ? `${groupDecimal(task.target_value)}${task.unit ? ` ${humanUnit(task.unit)}` : ''}`
+                        ? formatMetricValue(task.target_value, task.unit)
                         : '未设目标'}
                       <div className="file-meta">
                         {task.due_date ? `截止 ${task.due_date}` : '未设置截止日期'}
@@ -523,8 +511,8 @@ export function TaskScreen() {
                 <div className="mapping-row" key={m.metric_id}>
                   <label>关联指标</label>
                   <span>
-                    {m.metric_label} · 实绩 {groupDecimal(m.actual_value ?? '')} · 目标{' '}
-                    {m.target_value != null ? groupDecimal(m.target_value) : '未设'}
+                    {m.metric_label} · 实绩 {formatMetricValue(m.actual_value, m.unit, m.unit_signature)} · {targetKindLabel(m)}{' '}
+                    {formatMetricValue(m.target_value, m.unit, m.unit_signature)}（{targetBasisLabel(m)}）
                   </span>
                 </div>
               ))}

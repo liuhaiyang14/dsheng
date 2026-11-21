@@ -13,6 +13,36 @@ fn read_contract(rel: &str) -> String {
 }
 
 #[test]
+fn read_metric_metadata_is_optional_and_closed() {
+    use serde_json::json;
+    let mut schema: serde_json::Value =
+        serde_json::from_str(&read_contract("contracts/v1/read-views.schema.json")).unwrap();
+    schema["$ref"] = json!("#/$defs/metricRowView");
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let mut metric = json!({
+        "metric_id": "00000000-0000-4000-8000-000000000001",
+        "metric_key": "sales_net", "metric_label": "销售额", "unit": "元",
+        "direction": "up", "target_value": "22025.1946", "actual_value": "26218.932",
+        "delta": "4193.7374", "status": "ready", "pending_reasons": [], "mom": null, "yoy": null
+    });
+    assert!(validator.is_valid(&metric), "legacy shape remains valid");
+    metric["unit_signature"] = json!({"dimension":"money","base_unit":"元","currency":"CNY","tax_basis":"exclusive"});
+    for kind in ["explicit_target", "annual_month_plan", "prior_year_actual", "unconfirmed_legacy"] {
+        metric["target_basis"] = json!({"kind":kind,"label":"来源","is_reference":kind != "explicit_target"});
+        assert!(validator.is_valid(&metric), "{kind}");
+        metric["target_basis"]["is_reference"] = json!(kind == "explicit_target");
+        assert!(!validator.is_valid(&metric), "{kind} cannot misstate whether it is a reference");
+    }
+    metric["target_basis"]["is_reference"] = json!(true);
+    metric["target_basis"]["unexpected"] = json!(true);
+    assert!(!validator.is_valid(&metric));
+    metric["target_basis"] = serde_json::Value::Null;
+    assert!(validator.is_valid(&metric));
+    metric["unit_signature"]["dimension"] = json!("unknown");
+    assert!(!validator.is_valid(&metric));
+}
+
+#[test]
 fn metric_catalog_parses_into_frozen_types() {
     let raw = read_contract("contracts/v1/metric-catalog.json");
     let v: serde_json::Value = serde_json::from_str(&raw).unwrap();

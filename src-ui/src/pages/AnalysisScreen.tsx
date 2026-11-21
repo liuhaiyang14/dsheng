@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { Tag } from '../components/bits';
+import { TargetValue, hasConfirmedTarget, targetBasisLabel, targetKindLabel } from '../components/TargetValue';
 import { PERIOD_GRAIN_LABELS as GRAIN_LABELS } from '../components/AnalysisPeriodBar';
 import { LocalAnalysisForm } from '../components/LocalAnalysisForm';
 import { ChartPanel } from '../components/ChartPanel';
@@ -14,41 +15,35 @@ import {
   FIXTURE_DEMO_ANNOTATION,
   formatMetricValue,
   formatRatioPercent,
-  formatSigned,
-  groupDecimal,
+  formatMetricDifference,
+  formatMetricNumber,
+  metricDisplayUnit,
+  isZeroDecimal,
   diffTone,
   favorableOf,
   type MetricRowView,
 } from '../api';
 
-/** 核心不返回 status_tag；按 favorable/可比性本地推导（§1.1 语义）。 */
-function deriveStatusTag(m: MetricRowView): NonNullable<MetricRowView['status_tag']> {
-  if (m.mom == null && m.yoy == null) return 'incomplete';
+function metricStatus(m: MetricRowView): { tone: 'red' | 'gold' | 'green' | 'gray'; label: string } {
+  if (m.actual_value == null) return { tone: 'gray', label: '实绩待补' };
+  if (m.target_value == null) return { tone: 'gray', label: '未设目标' };
+  if (m.delta == null) return { tone: 'gray', label: '差异待补' };
+  if (!hasConfirmedTarget(m)) return { tone: 'gray', label: m.target_basis && m.target_basis.kind !== 'unconfirmed_legacy' ? '参考比较' : '来源待确认' };
+  if (m.status === 'pending') return { tone: 'gray', label: '数据待补' };
+  if (isZeroDecimal(m.delta)) return { tone: 'gray', label: '持平' };
   const favorable = favorableOf(m.direction, m.delta);
-  if (favorable === 'unfavorable') return 'focus';
-  if (m.delta == null || m.target_value == null) return 'watch';
-  return 'ok';
+  if (favorable === 'unfavorable') return { tone: 'red', label: '未达目标' };
+  if (favorable === 'neutral') return { tone: 'gray', label: '仅作比较' };
+  return { tone: 'green', label: '达标' };
 }
 
-const STATUS_TAGS: Record<NonNullable<MetricRowView['status_tag']>, { tone: 'red' | 'gold' | 'green' | 'gray'; label: string }> = {
-  focus: { tone: 'red', label: '重点' },
-  watch: { tone: 'gold', label: '关注' },
-  ok: { tone: 'green', label: '达标' },
-  incomplete: { tone: 'gray', label: '数据不完整' },
-};
-
-function humanUnit(value: string | null | undefined): string {
-  if (!value) return '';
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const baseUnit = (parsed as Record<string, unknown>).base_unit;
-      if (typeof baseUnit === 'string' && baseUnit.trim()) return baseUnit;
-    }
-  } catch {
-    // 已经是普通单位文本。
-  }
-  return value;
+function differenceCaption(m: MetricRowView): string {
+  if (m.target_value == null) return '未设目标';
+  if (m.delta == null) return '差异待补';
+  const kind = targetKindLabel(m);
+  if (isZeroDecimal(m.delta)) return `与${kind}持平`;
+  const amount = formatMetricValue(m.delta.replace(/^-/, ''), m.unit, m.unit_signature, true);
+  return `${m.delta.startsWith('-') ? '↓ 低于' : '↑ 高于'}${kind} ${amount}`;
 }
 
 /** 合同 reason 码 → 用户可读原因（不改合同，仅展示层翻译）。 */
@@ -72,7 +67,9 @@ const REASON_LABELS: Record<string, string> = {
 /** 比较值展示：可比较才显示数值；否则显示 —（原因汇总在表下方说明区）。 */
 function CompareCell({
   compare,
+  direction,
 }: {
+  direction: MetricRowView['direction'];
   compare: MetricRowView['mom'] | MetricRowView['yoy'];
 }) {
   if (compare == null) {
@@ -83,7 +80,7 @@ function CompareCell({
     );
   }
   if (compare.availability_status === 'available' && compare.change_rate != null) {
-    const tone = compare.change_rate.startsWith('-') ? 'bad' : 'good';
+    const tone = diffTone(favorableOf(direction, compare.absolute_change ?? compare.change_rate));
     return <td className={tone}>{formatRatioPercent(compare.change_rate)}</td>;
   }
   return (
@@ -143,15 +140,14 @@ export function AnalysisScreen() {
         {topMetrics.map((m) => (
           <div className="metric" key={m.metric_id}>
             <div className="label">{m.metric_label}</div>
-            <div className="value" title={formatMetricValue(m.actual_value, humanUnit(m.unit))}>
-              <span className="value-number">{m.actual_value == null ? '—' : `${groupDecimal(m.actual_value)}${m.unit === '%' ? '%' : ''}`}</span>
-              {m.unit && m.unit !== '%' && m.actual_value != null ? <span className="metric-unit">{humanUnit(m.unit)}</span> : null}
+            <div className="value" title={formatMetricValue(m.actual_value, m.unit, m.unit_signature)}>
+              <span className="value-number">{formatMetricNumber(m.actual_value, m.unit, m.unit_signature)}</span>
+              {metricDisplayUnit(m.unit, m.unit_signature) !== '%' && m.actual_value != null ? <span className="metric-unit">{metricDisplayUnit(m.unit, m.unit_signature)}</span> : null}
             </div>
             <div className={`delta ${diffTone(favorableOf(m.direction, m.delta))}`}>
-              {m.delta != null && m.target_value != null
-                ? `${m.delta.startsWith('-') ? '↓ 低于' : '↑ 高于'}目标 ${groupDecimal(m.delta.replace('-', ''))}${m.unit === '%' ? 'pp' : ` ${humanUnit(m.unit)}`}`
-                : '未设目标'}
+              {differenceCaption(m)}
             </div>
+            <small className="target-basis">{targetBasisLabel(m)}</small>
             <div className="metric-sub">
               <span>
                 环比{' '}
@@ -173,7 +169,7 @@ export function AnalysisScreen() {
       <div className="analysis-grid">
         <div className="panel">
           <div className="panel-head">
-            <span className="panel-title">核算表 · 预实差异</span>
+            <span className="panel-title">核算表 · 目标/参考差异</span>
             <span className="panel-note">
               {detail.period.from} 至 {detail.period.to} · 已按当前口径核算
             </span>
@@ -183,7 +179,7 @@ export function AnalysisScreen() {
               <thead>
                 <tr>
                   <th>指标</th>
-                  <th>目标</th>
+                  <th>目标 / 参考值</th>
                   <th>实绩</th>
                   <th>差异</th>
                   <th>环比</th>
@@ -193,20 +189,20 @@ export function AnalysisScreen() {
               </thead>
               <tbody>
                 {detail.metrics.map((m) => {
-                  const tag = STATUS_TAGS[m.status_tag ?? deriveStatusTag(m)];
+                  const tag = metricStatus(m);
                   return (
                     <tr key={m.metric_id}>
                       <td>
                         {m.metric_label}
-                        {m.unit ? `（${humanUnit(m.unit)}）` : ''}
+                        {m.unit ? `（${metricDisplayUnit(m.unit, m.unit_signature)}）` : ''}
                       </td>
-                      <td>{formatMetricValue(m.target_value, null)}</td>
-                      <td>{formatMetricValue(m.actual_value, null)}</td>
+                      <td><TargetValue metric={m} /></td>
+                      <td>{formatMetricValue(m.actual_value, m.unit, m.unit_signature)}</td>
                       <td className={diffTone(favorableOf(m.direction, m.delta))}>
-                        {m.delta != null ? formatSigned(m.delta) : '—'}
+                        {formatMetricDifference(m.delta, m.unit, m.unit_signature)}
                       </td>
-                      <CompareCell compare={m.mom} />
-                      <CompareCell compare={m.yoy} />
+                      <CompareCell compare={m.mom} direction={m.direction} />
+                      <CompareCell compare={m.yoy} direction={m.direction} />
                       <td>
                         <Tag tone={tag.tone}>{tag.label}</Tag>
                       </td>
@@ -216,15 +212,15 @@ export function AnalysisScreen() {
               </tbody>
             </table>
             <div className="table-foot">
-              无可比数据时显示原因，不把缺失值当 0；数值按当前口径显示。
+              金额保留 2 位、百分数保留 1 位；pp 表示百分点。参考值不代表已确认目标，缺失值不当作 0。
             </div>
           </div>
         </div>
 
         <div className="panel">
           <div className="panel-head">
-            <span className="panel-title">异常信号</span>
-            <span className="panel-note">按差异贡献排序</span>
+            <span className="panel-title">目标/参考差异</span>
+            <span className="panel-note">按指标顺序展示</span>
           </div>
           {detail.metrics
             .filter((m) => m.delta != null)
@@ -232,21 +228,10 @@ export function AnalysisScreen() {
             .map((m) => (
               <div className="bar-row compact" key={m.metric_id}>
                 <div className="bar-label">
-                  <span>
-                    {m.metric_label}
-                    {m.delta != null && m.delta.startsWith('-') ? '低于目标' : '高于目标'}
-                  </span>
-                  <b className={diffTone(favorableOf(m.direction, m.delta))}>
-                    {formatSigned(m.delta)}
-                    {m.unit === '%' ? 'pp' : ''}
-                  </b>
+                  <span>{m.metric_label}</span>
+                  <b className={diffTone(favorableOf(m.direction, m.delta))}>{differenceCaption(m)}</b>
                 </div>
-                <div className="bar-track">
-                  <div
-                    className={`bar-fill ${(m.status_tag ?? deriveStatusTag(m)) === 'watch' ? 'gold' : ''}`}
-                    style={{ width: (m.status_tag ?? deriveStatusTag(m)) === 'focus' ? '72%' : '40%' }}
-                  />
-                </div>
+                <small className="target-basis">{targetBasisLabel(m)}</small>
               </div>
             ))}
           <div className="root-card">
@@ -330,7 +315,7 @@ export function AnalysisScreen() {
           </div>
         ) : series ? (
           <ChartPanel
-            option={buildChartOption(series, chartType)}
+            option={buildChartOption(series, chartType, detail.metrics.find((metric) => metric.metric_key === series.metric_key)?.direction)}
             ariaLabel={`${series.metric_label}${CHART_TYPE_LABELS[chartType]}（${GRAIN_LABELS[detail.grain]}）`}
           />
         ) : null}
@@ -349,9 +334,9 @@ export function AnalysisScreen() {
                 {series.buckets.map((b, i) => (
                   <tr key={b}>
                     <td>{b}</td>
-                    <td>{series.actual[i] == null ? '缺桶' : groupDecimal(series.actual[i]!)}</td>
-                    <td>{series.plan[i] == null ? '—' : groupDecimal(series.plan[i]!)}</td>
-                    <td>{series.delta ? (series.delta[i] == null ? '缺桶' : groupDecimal(series.delta[i]!)) : '—'}</td>
+                    <td>{series.actual[i] == null ? '缺桶' : formatMetricValue(series.actual[i], series.unit, series.unit_signature)}</td>
+                    <td>{series.plan[i] == null ? '—' : formatMetricValue(series.plan[i], series.unit, series.unit_signature)}</td>
+                    <td>{series.delta ? (series.delta[i] == null ? '缺桶' : formatMetricValue(series.delta[i], series.unit, series.unit_signature, true)) : '—'}</td>
                   </tr>
                 ))}
               </tbody>

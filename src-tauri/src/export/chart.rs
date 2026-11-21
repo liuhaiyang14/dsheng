@@ -3,7 +3,9 @@
 //! PNG 为无文字依赖的纯 Rust 栅格（轴/网格/折线/图例色块；数值与图例文字
 //! 由 CSV/XLSX 变体承载——本实现不内嵌字体，如实声明该限制）。
 
-use super::cells::{csv_row, write_headers, write_text, DecimalTextLog};
+use super::cells::{
+    csv_row, write_headers, write_opt_display_decimal, write_text, DecimalTextLog, DisplayKind,
+};
 use super::{decimal_of, text_of, ExportData, ExportError, ExportResult, SHEET_TREND};
 use rust_xlsxwriter::{Chart, ChartType, Workbook};
 use serde_json::Value;
@@ -91,6 +93,7 @@ pub fn chart_xlsx(
     })?;
     let spec = ChartSpec::from_series(series).ok_or_else(|| ExportError("序列形状非法".into()))?;
     let mut book = Workbook::new();
+    let kind = DisplayKind::for_metric(series);
     let ws = book.add_worksheet();
     ws.set_name(SHEET_TREND)
         .map_err(|e| ExportError(e.to_string()))?;
@@ -102,13 +105,14 @@ pub fn chart_xlsx(
         write_text(ws, row, 0, bucket)?;
         for (col, values) in [(1u16, &spec.actual), (2u16, &spec.plan)] {
             if let Some(v) = values.get(i).cloned().flatten() {
-                super::cells::write_decimal(ws, row, col, SHEET_TREND, &v, log)?;
+                write_opt_display_decimal(ws, row, col, SHEET_TREND, Some(&v), kind, log)?;
             }
         }
     }
     let end = start + spec.buckets.len().saturating_sub(1) as u32;
     if spec.buckets.len() >= 2 {
         let mut chart = Chart::new(ChartType::Line);
+        chart.y_axis().set_num_format(kind.number_format());
         for (col, name) in [(1u16, "实绩"), (2u16, "计划")] {
             chart
                 .add_series()
@@ -119,6 +123,7 @@ pub fn chart_xlsx(
         ws.insert_chart(1, 5, &chart)
             .map_err(|e| ExportError(format!("图表插入失败: {e}")))?;
     }
+    super::workbook::write_precision_metadata(&mut book, data, log)?;
     book.save_to_buffer()
         .map_err(|e| ExportError(e.to_string()))
 }

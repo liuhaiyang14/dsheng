@@ -166,6 +166,194 @@ fn write_file(dir: &std::path::Path, name: &str, content: &str) {
     std::fs::write(dir.join(name), content).expect("写测试文件");
 }
 
+fn analyze_target_fixture(f: &Fixture) -> Value {
+    let (out, code) = run(&[
+        "analyze", "--db", &f.db, "--workspace", &f.workspace,
+        "--dir", &f.dir.to_string_lossy(), "--from", "2026-10-01",
+        "--to", "2026-10-31", "--grain", "auto", "--json",
+    ]);
+    assert_eq!(code, 0, "{out}");
+    ok(&out)
+}
+
+fn replace_target_source(f: &Fixture, explicit: Option<&str>, annual: Option<&str>, prior: Option<&str>) {
+    let mut book = rust_xlsxwriter::Workbook::new();
+    let sheet = book.add_worksheet().set_name("source").unwrap();
+    for (column, title) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"].iter().enumerate() {
+        sheet.write_string(0, column as u16, *title).unwrap();
+    }
+    sheet.write_string(1, 0, "销售额").unwrap();
+    sheet.write_string(1, 1, "元").unwrap();
+    sheet.write_string(1, 3, "26218.932").unwrap();
+    sheet.write_string(1, 5, "2026-10-01").unwrap();
+    if let Some(value) = explicit { sheet.write_string(1, 2, value).unwrap(); }
+    if let Some(value) = annual { sheet.write_string(1, 4, value).unwrap(); }
+    if let Some(value) = prior {
+        sheet.write_string(2, 0, "销售额").unwrap();
+        sheet.write_string(2, 1, "元").unwrap();
+        sheet.write_string(2, 3, value).unwrap();
+        sheet.write_string(2, 5, "2025-10-01").unwrap();
+    }
+    book.save(f.dir.join("source-data.xlsx")).unwrap();
+}
+
+#[test]
+fn target_basis_tracks_selected_role_without_changing_decimal_values() {
+    for (explicit, annual, prior, target, kind) in [
+        (Some("22025.1946"), None, Some("22025.1946"), Some("22025.1946"), Some("explicit_target")),
+        (Some("19000"), Some("24000"), Some("22025.1946"), Some("19000"), Some("explicit_target")),
+        (Some("0"), None, Some("22025.1946"), Some("0"), Some("explicit_target")),
+        (None, Some("24000"), Some("22025.1946"), Some("24000"), Some("annual_month_plan")),
+        (None, Some("22025.1946"), Some("22025.1946"), Some("22025.1946"), Some("annual_month_plan")),
+        (None, Some("21000"), Some("22025.1946"), Some("22025.1946"), Some("prior_year_actual")),
+        (None, None, Some("22025.1946"), Some("22025.1946"), Some("prior_year_actual")),
+        (None, None, None, None, None),
+    ] {
+        let f = Fixture::new("target-basis", false);
+        replace_target_source(&f, explicit, annual, prior);
+        let data = analyze_target_fixture(&f);
+        let metric = &data["metrics"][0];
+        assert_eq!(metric["actual_value"], "26218.932");
+        assert_eq!(metric["target_value"], json!(target));
+        assert_eq!(metric["unit_signature"]["dimension"], "money");
+        assert_eq!(data["series"][0]["unit_signature"], metric["unit_signature"]);
+        if let Some(kind) = kind {
+            assert_eq!(metric["target_basis"]["kind"], kind);
+            assert_eq!(metric["target_basis"]["is_reference"], kind != "explicit_target");
+            assert_eq!(metric["target_basis"]["from"], if kind == "prior_year_actual" { "2025-10-01" } else { "2026-10-01" });
+            assert_eq!(metric["target_basis"]["to"], if kind == "prior_year_actual" { "2025-10-31" } else { "2026-10-31" });
+        } else {
+            assert!(metric["target_basis"].is_null());
+        }
+        let conn = rusqlite::Connection::open(&f.db).unwrap();
+        let stored: String = conn.query_row(
+            "SELECT normalized_metrics_json FROM run_revisions WHERE run_id = ?1 AND revision_no = 1",
+            [data["run_id"].as_str().unwrap()], |r| r.get(0),
+        ).unwrap();
+        let stored: Value = serde_json::from_str(&stored).unwrap();
+        assert_eq!(stored["metrics"][0]["target_basis"], metric["target_basis"]);
+    }
+}
+
+#[test]
+fn legacy_target_basis_projection_preserves_revision_and_uses_frozen_units() {
+    let f = Fixture::new("target-legacy", false);
+    replace_target_source(&f, None, None, Some("22025.1946"));
+    let data = analyze_target_fixture(&f);
+    let run_id = data["run_id"].as_str().unwrap();
+    let workspace = f.workspace.parse().unwrap();
+    let conn = rusqlite::Connection::open(&f.db).unwrap();
+    // Construct an old revision entirely inside this temporary test database.
+    let raw: String = conn.query_row(
+        "SELECT normalized_metrics_json FROM run_revisions WHERE run_id = ?1 AND revision_no = 1",
+        [run_id], |r| r.get(0),
+    ).unwrap();
+    let mut legacy: Value = serde_json::from_str(&raw).unwrap();
+    legacy["metrics"][0].as_object_mut().unwrap().remove("target_basis");
+    let legacy_raw = legacy.to_string();
+    let legacy_fingerprint = "a".repeat(64);
+    conn.execute(
+        "UPDATE run_revisions SET normalized_metrics_json = ?2, analysis_input_fingerprint = ?3 WHERE run_id = ?1 AND revision_no = 1",
+        rusqlite::params![run_id, legacy_raw, legacy_fingerprint],
+    ).unwrap();
+    conn.execute(
+        "UPDATE analysis_runs SET analysis_input_fingerprint = ?2 WHERE run_id = ?1",
+        rusqlite::params![run_id, legacy_fingerprint],
+    ).unwrap();
+    // A mutable current definition must never reinterpret this historical unit.
+    conn.execute(
+        "UPDATE metric_definitions SET unit_signature_json = ?1 WHERE workspace_id = ?2",
+        rusqlite::params![json!({"dimension":"quantity","base_unit":"件","currency":null,"tax_basis":null}).to_string(), f.workspace],
+    ).unwrap();
+    for view in [
+        dsheng_cli::store::analysis::analysis_run_view(&conn, workspace, run_id, 1).unwrap(),
+        dsheng_cli::store::analysis::history_detail(&conn, workspace, run_id, Some(1)).unwrap(),
+    ] {
+        assert_eq!(view["metrics"][0]["target_value"], "22025.1946");
+        assert_eq!(view["metrics"][0]["yoy"]["base_value"], "22025.1946");
+        assert_eq!(view["metrics"][0]["target_basis"]["kind"], "unconfirmed_legacy");
+        assert_eq!(view["metrics"][0]["target_basis"]["is_reference"], true);
+        assert_eq!(view["metrics"][0]["unit_signature"]["dimension"], "money");
+        assert_eq!(view["series"][0]["unit_signature"]["dimension"], "money");
+        assert_eq!(view["analysis_input_fingerprint"], legacy_fingerprint);
+    }
+    let saved: (String, String, u32) = conn.query_row(
+        "SELECT rr.normalized_metrics_json, rr.analysis_input_fingerprint, r.current_revision_no FROM run_revisions rr JOIN analysis_runs r USING (run_id) WHERE run_id = ?1 AND rr.revision_no = 1",
+        [run_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    ).unwrap();
+    assert_eq!(saved, (legacy_raw.clone(), legacy_fingerprint.clone(), 1));
+    // Restore the fixture definition; explicit reanalysis appends accurate
+    // metadata while the original revision remains byte-for-byte unchanged.
+    conn.execute(
+        "UPDATE metric_definitions SET unit_signature_json = ?1 WHERE workspace_id = ?2",
+        rusqlite::params![data["metrics"][0]["unit_signature"].to_string(), f.workspace],
+    ).unwrap();
+    let rebuilt = analyze_target_fixture(&f);
+    assert_eq!(rebuilt["run_id"], run_id);
+    assert_eq!(rebuilt["current_revision_no"], 2);
+    assert_eq!(rebuilt["metrics"][0]["target_basis"]["kind"], "prior_year_actual");
+    assert_ne!(rebuilt["analysis_input_fingerprint"], legacy_fingerprint);
+    let preserved: (String, String) = conn.query_row(
+        "SELECT normalized_metrics_json, analysis_input_fingerprint FROM run_revisions WHERE run_id = ?1 AND revision_no = 1",
+        [run_id], |r| Ok((r.get(0)?, r.get(1)?)),
+    ).unwrap();
+    assert_eq!(preserved, (legacy_raw, legacy_fingerprint));
+}
+
+#[test]
+fn legacy_missing_target_and_unit_metadata_stay_unknown() {
+    let f = Fixture::new("target-absent", false);
+    replace_target_source(&f, None, None, None);
+    let data = analyze_target_fixture(&f);
+    let run_id = data["run_id"].as_str().unwrap();
+    let conn = rusqlite::Connection::open(&f.db).unwrap();
+    let (raw, defs): (String, String) = conn.query_row(
+        "SELECT normalized_metrics_json, metric_definitions_snapshot_json FROM run_revisions WHERE run_id = ?1 AND revision_no = 1",
+        [run_id], |r| Ok((r.get(0)?, r.get(1)?)),
+    ).unwrap();
+    let mut legacy: Value = serde_json::from_str(&raw).unwrap();
+    let mut defs: Value = serde_json::from_str(&defs).unwrap();
+    legacy["metrics"][0].as_object_mut().unwrap().remove("target_basis");
+    defs[0].as_object_mut().unwrap().remove("unit_signature");
+    conn.execute(
+        "UPDATE run_revisions SET normalized_metrics_json = ?2, metric_definitions_snapshot_json = ?3 WHERE run_id = ?1 AND revision_no = 1",
+        rusqlite::params![run_id, legacy.to_string(), defs.to_string()],
+    ).unwrap();
+    let view = dsheng_cli::store::analysis::analysis_run_view(&conn, f.workspace.parse().unwrap(), run_id, 1).unwrap();
+    assert!(view["metrics"][0]["target_basis"].is_null());
+    assert!(view["metrics"][0].get("unit_signature").is_none());
+    assert!(view["series"][0].get("unit_signature").is_none());
+}
+
+#[test]
+fn target_read_metadata_does_not_expand_model_input_contracts() {
+    let f = Fixture::new("target-model-contract", false);
+    let data = analyze_target_fixture(&f);
+    let run_id = data["run_id"].as_str().unwrap();
+    let workspace = f.workspace.parse().unwrap();
+    let conn = rusqlite::Connection::open(&f.db).unwrap();
+    let task = dsheng_cli::store::generation::build_task_payload(
+        &conn, workspace, run_id, "合成契约验证", None,
+    ).unwrap();
+    let diagnosis = dsheng_cli::store::generation::build_diagnosis_payload(
+        &conn, workspace, run_id, dsheng_core::contracts::provider::Framework::Why5,
+        "合成契约验证", &[], &[],
+        dsheng_core::generation::input::SessionStateProjection {
+            accepted_facts: vec![], prior_report_summary: None,
+            unresolved_questions: vec![], pending_clarification: None,
+        }, None, "合成契约验证",
+    ).unwrap();
+    for material in [task, diagnosis] {
+        let payload: Value = serde_json::from_str(&material.payload_json).unwrap();
+        let metric = &payload["metrics"][0];
+        assert!(metric.get("target_basis").is_none());
+        assert!(metric.get("unit_signature").is_none());
+        assert_eq!(metric["target"].to_string(), "12000.5");
+    }
+    let calls: i64 = conn.query_row("SELECT COUNT(*) FROM generation_attempts", [], |r| r.get(0)).unwrap();
+    assert_eq!(calls, 0);
+}
+
 #[test]
 fn s2_metric_list_and_rejections() {
     let f = Fixture::new("metric", false);

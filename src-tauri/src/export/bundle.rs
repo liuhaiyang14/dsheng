@@ -43,7 +43,14 @@ pub fn metadata_json(data: &ExportData, logs: &[(&str, &DecimalTextLog)]) -> ser
             "buckets": s["buckets"],
         })).collect::<Vec<_>>(),
         "number_storage": {
-            "policy": ">15 位有效数写 decimal 文本（decimal_text）；其余数值类型",
+            "policy": "可视金额两位小数、百分数/百分点一位小数（half_even）；比例的绝对差用百分点、同比/环比变化率用百分数；展示值超过 15 位有效数写 decimal 文本；原值保留于 _metadata 和本文件 display_cells；JSON/CSV 不舍入",
+            "display_cells": logs.iter().flat_map(|(book, log)| {
+                log.display_cells.iter().map(move |c| json!({
+                    "workbook": book, "sheet": c.sheet, "cell": c.cell,
+                    "raw_value": c.raw_value, "display_value": c.display_value,
+                    "number_format": c.number_format, "number_storage": c.number_storage,
+                }))
+            }).collect::<Vec<_>>(),
             "decimal_text_cells": logs.iter().flat_map(|(book, log)| {
                 log.cells.iter().map(move |c| json!({
                     "workbook": book, "sheet": c.sheet, "cell": c.cell, "value": c.value,

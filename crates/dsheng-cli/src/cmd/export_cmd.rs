@@ -95,8 +95,8 @@ pub fn build_export_data(
     let mut semantic_types: std::collections::BTreeMap<String, String> = Default::default();
     let mut currency: Option<String> = None;
     let mut tax_basis: Option<String> = None;
-    // 新 revision 快照带有当时的语义；优先使用快照，避免指标升版后旧导出
-    // 被当前定义重新解释。旧快照没有这些可选字段时再走兼容回退。
+    // 仅使用所选 revision 的冻结语义。旧快照缺失时保留未知，不能借用
+    // 现行定义重新解释历史数字、币种或累计规则。
     for def in &defs {
         let Some(key) = def.get("metric_key").and_then(Value::as_str) else {
             continue;
@@ -110,31 +110,6 @@ pub fn build_export_data(
             }
             if tax_basis.is_none() {
                 tax_basis = unit.get("tax_basis").and_then(Value::as_str).map(str::to_string);
-            }
-        }
-    }
-    {
-        let mut stmt = conn.prepare(
-            "SELECT metric_key, semantic_type, unit_signature_json FROM metric_definitions m
-             WHERE workspace_id = ?1 AND version =
-                   (SELECT MAX(version) FROM metric_definitions m2
-                    WHERE m2.workspace_id = m.workspace_id AND m2.metric_key = m.metric_key)",
-        )?;
-        let rows: Vec<(String, String, String)> = stmt
-            .query_map(params![workspace_id.to_string()], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })?
-            .collect::<Result<_, _>>()
-            .map_err(CliError::from)?;
-        for (key, st, unit_json) in rows {
-            semantic_types.entry(key).or_insert(st);
-            if let Ok(u) = serde_json::from_str::<Value>(&unit_json) {
-                if currency.is_none() {
-                    currency = u["currency"].as_str().map(str::to_string);
-                }
-                if tax_basis.is_none() {
-                    tax_basis = u["tax_basis"].as_str().map(str::to_string);
-                }
             }
         }
     }
@@ -184,7 +159,27 @@ pub fn build_export_data(
     let task_ids = views::task_ids_for_revision(conn, workspace_id, run_id, revision)?;
     let tasks: Vec<Value> = task_ids
         .iter()
-        .map(|id| views::task_view(conn, workspace_id, *id))
+        .map(|id| -> CliResult<Value> {
+            let mut task = views::task_view(conn, workspace_id, *id)?;
+            // 只按稳定 metric_id 绑定所选 revision 的单位；标签相同不足以确认语义。
+            if let Some(metric) = task["metric_id"].as_str().and_then(|metric_id| {
+                metrics.iter().find(|m| m["metric_id"].as_str() == Some(metric_id))
+            }) {
+                task["metric_key"] = metric["metric_key"].clone();
+                task["metric_label"] = metric["metric_label"].clone();
+                let signature = &metric["unit_signature"];
+                // 人工任务可能显式填写另一单位；有冲突时保留未知，不能强套指标格式。
+                let compatible = task["unit"].as_str().filter(|unit| !unit.is_empty()).is_none_or(|unit| {
+                    Some(unit) == metric["unit"].as_str()
+                        || Some(unit) == signature["base_unit"].as_str()
+                        || serde_json::from_str::<Value>(unit).ok().as_ref() == Some(signature)
+                });
+                if signature.is_object() && compatible {
+                    task["unit_signature"] = signature.clone();
+                }
+            }
+            Ok(task)
+        })
         .collect::<Result<_, _>>()?;
     let mut evidence: Vec<Value> = Vec::new();
     for m in &metrics {
@@ -198,7 +193,10 @@ pub fn build_export_data(
                 let (file_label, sheet, cell) = split_cell_evidence(&eid);
                 evidence.push(json!({
                     "evidence_id": eid,
+                    "metric_id": m["metric_id"],
+                    "metric_key": m["metric_key"],
                     "metric_label": m["metric_label"],
+                    "unit_signature": m["unit_signature"],
                     "source_period": format!("{}/{}", run_view["period"]["from"].as_str().unwrap_or_default(),
                                               run_view["period"]["to"].as_str().unwrap_or_default()),
                     "target_period": action.as_ref().map(|a| format!("{}/{}",
@@ -222,7 +220,10 @@ pub fn build_export_data(
         for e in t["evidence"].as_array().cloned().unwrap_or_default() {
             evidence.push(json!({
                 "evidence_id": e["evidence_id"],
+                "metric_id": t["metric_id"],
+                "metric_key": t["metric_key"],
                 "metric_label": t["metric_label"],
+                "unit_signature": t["unit_signature"],
                 "source_period": Value::Null,
                 "target_period": t["target_period"]["from"].as_str().map(|f| format!("{f}/{}", t["target_period"]["to"].as_str().unwrap_or_default())),
                 "file_label": e["source_label"],

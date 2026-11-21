@@ -6,13 +6,10 @@
 import { useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
-import { groupDecimal } from '../api';
+import { diffTone, favorableOf, formatMetricDifference, formatMetricValue, formatRatioPercent } from '../api';
+import { TargetValue } from '../components/TargetValue';
 
 type TableTab = 'accounting' | 'trend';
-
-function display(value: string | null | undefined): string {
-  return value == null ? '待补' : groupDecimal(value);
-}
 
 export function TablesScreen() {
   const app = useApp();
@@ -141,24 +138,25 @@ export function TablesScreen() {
 
       {tab === 'accounting' ? (
         <div className="panel" role="tabpanel" id="accounting-table-panel" aria-labelledby="accounting-table-tab" data-testid="accounting-table-panel">
-          <div className="panel-head"><span className="panel-title">核算表 · 期间预实</span><span className="tag green">生成结果</span></div>
+          <div className="panel-head"><span className="panel-title">核算表 · 目标/参考差异</span><span className="tag green">生成结果</span></div>
           <div className="table-wrap">
-            <table className="data-table">
-              <thead><tr><th>指标</th><th>目标</th><th>实绩</th><th>差异</th><th>环比</th><th>同比</th></tr></thead>
+            <table className="data-table two-tables-table">
+              <thead><tr><th>指标</th><th>目标 / 参考值</th><th>实绩</th><th>差异</th><th>环比</th><th>同比</th></tr></thead>
               <tbody>
                 {detail.metrics.map((metric) => (
                   <tr key={metric.metric_id}>
                     <td>{metric.metric_label}</td>
-                    <td>{display(metric.target_value)}</td>
-                    <td>{display(metric.actual_value)}</td>
-                    <td>{display(metric.delta)}</td>
-                    <td>{metric.mom?.change_rate == null ? '不可比/待补' : display(metric.mom.change_rate)}</td>
-                    <td>{metric.yoy?.change_rate == null ? '不可比/待补' : display(metric.yoy.change_rate)}</td>
+                    <td><TargetValue metric={metric} /></td>
+                    <td>{formatMetricValue(metric.actual_value, metric.unit, metric.unit_signature)}</td>
+                    <td className={diffTone(favorableOf(metric.direction, metric.delta))}>{formatMetricDifference(metric.delta, metric.unit, metric.unit_signature)}</td>
+                    <td className={diffTone(favorableOf(metric.direction, metric.mom?.availability_status === 'available' && metric.mom.change_rate != null ? metric.mom.absolute_change ?? metric.mom.change_rate : null))}>{metric.mom?.availability_status !== 'available' || metric.mom.change_rate == null ? '不可比/待补' : formatRatioPercent(metric.mom.change_rate)}</td>
+                    <td className={diffTone(favorableOf(metric.direction, metric.yoy?.availability_status === 'available' && metric.yoy.change_rate != null ? metric.yoy.absolute_change ?? metric.yoy.change_rate : null))}>{metric.yoy?.availability_status !== 'available' || metric.yoy.change_rate == null ? '不可比/待补' : formatRatioPercent(metric.yoy.change_rate)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <div className="panel-footnote">金额保留 2 位、百分数保留 1 位；pp 表示百分点。参考值不代表已确认目标。</div>
           <div className="panel-footnote">附加值与经营收益按不同名称展示；人工费、目标、工时或期初缺失时保留待补，不按 0 计算。</div>
           <div className="panel-actions"><button type="button" className="primary" onClick={() => void download('accounting')} disabled={!ready || busy}>下载核算表</button></div>
         </div>
@@ -166,15 +164,15 @@ export function TablesScreen() {
         <div className="panel" role="tabpanel" id="trend-table-panel" aria-labelledby="trend-table-tab" data-testid="trend-table-panel">
           <div className="panel-head"><span className="panel-title">推移表 · 期间序列</span><span className="tag blue">本地聚合</span></div>
           <div className="table-wrap">
-            <table className="data-table">
+            <table className="data-table two-tables-table">
               <thead><tr><th>指标</th><th>有效桶</th><th>实绩序列</th><th>计划序列</th></tr></thead>
               <tbody>
                 {activeSeries.map((series) => (
                   <tr key={series.metric_key}>
                     <td>{series.metric_label}</td>
                     <td>{series.buckets.length || '待补'}</td>
-                    <td>{series.actual.map((v, i) => `${series.buckets[i] ?? '—'}：${display(v)}`).join('；') || '待补'}</td>
-                    <td>{series.plan.map((v, i) => `${series.buckets[i] ?? '—'}：${display(v)}`).join('；') || '待补'}</td>
+                    <td>{series.actual.map((v, i) => `${series.buckets[i] ?? '—'}：${formatMetricValue(v, series.unit, series.unit_signature)}`).join('；') || '待补'}</td>
+                    <td>{series.plan.map((v, i) => `${series.buckets[i] ?? '—'}：${formatMetricValue(v, series.unit, series.unit_signature)}`).join('；') || '待补'}</td>
                   </tr>
                 ))}
               </tbody>

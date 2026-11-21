@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
+import { targetBasisLabel, targetKindLabel } from '../components/TargetValue';
 import { Tag } from '../components/bits';
 import { GenerationDialog } from '../components/GenerationDialog';
 import { useGeneration } from '../components/useGeneration';
@@ -17,7 +18,7 @@ import {
   DIAGNOSIS_FRAMEWORK_OPTIONS,
   FACT_STATUS_LABELS,
   RESOLUTION_REQUIREMENT_LABELS,
-  groupDecimal,
+  formatMetricValue,
   type ConfirmationPreview,
   type DiagnosisFramework,
   type DiagnosisReport,
@@ -42,20 +43,6 @@ const FRAMEWORK_LABELS: Record<string, string> = {
   '5w': '五W问题界定',
   '5w2h': '五W二H行动分析',
 };
-
-function humanUnit(value: string | null | undefined): string {
-  if (!value) return '';
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      const baseUnit = (parsed as Record<string, unknown>).base_unit;
-      if (typeof baseUnit === 'string' && baseUnit.trim()) return baseUnit;
-    }
-  } catch {
-    // 已经是普通单位文本。
-  }
-  return value;
-}
 
 function FindingBlock({ finding }: { finding: DiagnosisFinding }) {
   const title =
@@ -209,8 +196,7 @@ export function DiagnosisScreen() {
   const defaultProblem = useMemo(() => {
     if (!activeMetric) return '';
     // 默认问题表述：由指标与差异确定性拼接（呈现层组句，不做计算）。
-    const unit = humanUnit(activeMetric.unit);
-    return `${activeMetric.metric_label}本期 ${groupDecimal(activeMetric.actual_value ?? '')}${unit}，目标 ${groupDecimal(activeMetric.target_value ?? '')}${unit}，差异 ${groupDecimal(activeMetric.delta ?? '')}${unit}，需要分析差异原因`;
+    return `${activeMetric.metric_label}本期 ${formatMetricValue(activeMetric.actual_value, activeMetric.unit, activeMetric.unit_signature)}，${targetKindLabel(activeMetric)} ${formatMetricValue(activeMetric.target_value, activeMetric.unit, activeMetric.unit_signature)}（${targetBasisLabel(activeMetric)}），差异 ${formatMetricValue(activeMetric.delta, activeMetric.unit, activeMetric.unit_signature, true)}，需要分析差异原因`;
   }, [activeMetric]);
 
   const problemText = problem || defaultProblem;

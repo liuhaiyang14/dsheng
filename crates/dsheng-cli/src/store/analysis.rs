@@ -1474,6 +1474,53 @@ fn flow_sum_window(obs: &[&Obs]) -> Option<Decimal> {
     dsheng_core::analysis::engine::flow_sum(&values, true).ok()
 }
 
+fn target_basis(kind: &str, period: Option<DateRange>) -> Value {
+    let (label, is_reference) = match kind {
+        "explicit_target" => ("明确本期目标", false),
+        "annual_month_plan" => ("年度当月计划参考下限", true),
+        "prior_year_actual" => ("去年同期参考下限", true),
+        _ => ("历史来源待确认", true),
+    };
+    let mut basis = json!({ "kind": kind, "label": label, "is_reference": is_reference });
+    if let Some(period) = period {
+        basis["from"] = json!(period.from.format("%Y-%m-%d").to_string());
+        basis["to"] = json!(period.to.format("%Y-%m-%d").to_string());
+    }
+    basis
+}
+
+/// Read-only metadata projection. Old snapshots do not retain target policy or
+/// the roles of manual inputs; series also omit cumulative-row provenance.
+/// Equal amounts (including target == yoy) cannot establish an old target's
+/// origin. Preserve its value/fingerprint and expose that uncertainty instead.
+fn project_revision_metadata(normalized: &mut Value, definitions: &Value) {
+    for field in ["metrics", "series"] {
+        let Some(rows) = normalized.get_mut(field).and_then(Value::as_array_mut) else {
+            continue;
+        };
+        for row in rows {
+            if row.get("unit_signature").is_none() {
+                let signature = definitions.as_array().and_then(|defs| {
+                    defs.iter()
+                        .find(|def| def.get("metric_key") == row.get("metric_key"))
+                        .and_then(|def| def.get("unit_signature"))
+                        .filter(|signature| signature.is_object())
+                });
+                if let Some(signature) = signature {
+                    row["unit_signature"] = signature.clone();
+                }
+            }
+            if field == "metrics" {
+                if row.get("target_value").is_none_or(Value::is_null) {
+                    row["target_basis"] = Value::Null;
+                } else if row.get("target_basis").is_none_or(Value::is_null) {
+                    row["target_basis"] = target_basis("unconfirmed_legacy", None);
+                }
+            }
+        }
+    }
+}
+
 fn evaluate_metric_formula(
     key: &str,
     defs: &[MetricDefRow],
@@ -1945,7 +1992,7 @@ pub fn run_analyze_with_profile(
             window,
         ));
         // 目标政策（core targets）
-        let target = if def.target_constraint_scope == "monthly_revenue_floor"
+        let (target, basis) = if def.target_constraint_scope == "monthly_revenue_floor"
             && def.revenue_semantics
             && def.direction == "up"
         {
@@ -1967,9 +2014,25 @@ pub fn run_analyze_with_profile(
                     Granularity::Month,
                 ) && grain == Granularity::Month,
             );
-            outcome.target
+            let basis = if outcome.target.is_none() {
+                Value::Null
+            } else if explicit.is_some() {
+                target_basis("explicit_target", Some(window))
+            } else if annual.is_some() && outcome.target == annual {
+                // Ties prefer the actual plan, with its current-period origin.
+                target_basis("annual_month_plan", Some(window))
+            } else {
+                target_basis("prior_year_actual", yoy_range)
+            };
+            (outcome.target, basis)
         } else {
-            dsheng_core::analysis::targets::explicit_target_only(explicit).ok()
+            let target = dsheng_core::analysis::targets::explicit_target_only(explicit).ok();
+            let basis = if target.is_some() {
+                target_basis("explicit_target", Some(window))
+            } else {
+                Value::Null
+            };
+            (target, basis)
         };
         let delta = match (actual, target) {
             (Some(a), Some(t)) => Some(a - t),
@@ -2067,6 +2130,7 @@ pub fn run_analyze_with_profile(
             "unit": unit_display(&def.unit_json),
             "direction": def.direction,
             "target_value": target.map(to_canonical_string),
+            "target_basis": basis,
             "actual_value": actual.map(to_canonical_string),
             "delta": delta.map(to_canonical_string),
             "status": if pending_for_metric.is_empty() { "ready" } else { "pending" },
@@ -2361,18 +2425,20 @@ pub fn analysis_run_view(
         run_id,
     )
     .map_err(CliError::from)?;
-    let (normalized_raw, fingerprint): (String, String) = conn
+    let (normalized_raw, fingerprint, definitions_raw): (String, String, String) = conn
         .query_row(
-            "SELECT normalized_metrics_json, analysis_input_fingerprint
+            "SELECT normalized_metrics_json, analysis_input_fingerprint, metric_definitions_snapshot_json
              FROM run_revisions WHERE run_id = ?1 AND revision_no = ?2",
             params![run_id, revision as i64],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|_| {
             CliError::new(CliErrorCode::DataValidationFailed, "revision 不存在")
         })?;
-    let normalized: Value = serde_json::from_str(&normalized_raw)
+    let mut normalized: Value = serde_json::from_str(&normalized_raw)
         .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "normalized 快照损坏"))?;
+    let definitions = serde_json::from_str(&definitions_raw).unwrap_or(Value::Null);
+    project_revision_metadata(&mut normalized, &definitions);
     let two_tables_ready: bool = conn
         .query_row(
             "SELECT accounting_ready = 1 AND trend_ready = 1
@@ -2520,16 +2586,18 @@ pub fn history_detail(
     )
     .map_err(CliError::from)?;
     let revision = revision.unwrap_or(current);
-    let (normalized_raw, captured_at, fingerprint): (String, String, String) = conn
+    let (normalized_raw, captured_at, fingerprint, definitions_raw): (String, String, String, String) = conn
         .query_row(
-            "SELECT normalized_metrics_json, created_at, analysis_input_fingerprint FROM run_revisions
+            "SELECT normalized_metrics_json, created_at, analysis_input_fingerprint, metric_definitions_snapshot_json FROM run_revisions
              WHERE run_id = ?1 AND revision_no = ?2",
             params![run_id, revision as i64],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "revision 不存在"))?;
-    let normalized: Value = serde_json::from_str(&normalized_raw)
+    let mut normalized: Value = serde_json::from_str(&normalized_raw)
         .map_err(|_| CliError::new(CliErrorCode::LocalSaveFailed, "normalized 快照损坏"))?;
+    let definitions = serde_json::from_str(&definitions_raw).unwrap_or(Value::Null);
+    project_revision_metadata(&mut normalized, &definitions);
     let two_tables_ready: bool = conn
         .query_row(
             "SELECT accounting_ready = 1 AND trend_ready = 1

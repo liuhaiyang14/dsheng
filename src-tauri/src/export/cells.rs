@@ -3,12 +3,16 @@
 //! 类型决策复用 dsheng-core `analysis::export_layout`（纯逻辑）；本文件只做
 //! rust_xlsxwriter 写入与 CSV 行拼装。数值 ≤15 位有效数时写数值类型——
 //! f64 仅作为 XLSX 数值格的载体（XLSX 数值本身即 IEEE double），写前校验
-//! 最短往返字面量与规范 decimal 字符串逐���相等，否则降级为 decimal 文本，
-//! 保证单元格字面量与业务值一致、不经 f64 算术。
+//! 最短往返字面量与规范 decimal 字符串逐字相等，否则降级为 decimal 文本，
+//! 保证单元格字面量与选定 decimal 展示值一致、不经 f64 算术。
+//! 展示舍入前的业务原值另存元数据，CSV/JSON 始终保留原值。
 
 use super::ExportResult;
 use dsheng_core::analysis::export_layout::{csv_export_text, xlsx_export_kind, XlsxCellKind};
+use rust_decimal::{Decimal, RoundingStrategy};
 use rust_xlsxwriter::{Format, Worksheet};
+use serde::Serialize;
+use serde_json::Value;
 
 /// Excel 单元格文本上限（UTF-16 code units）。长证据串必须保留为可下载文本，
 /// 但不能让一个来源单元格超过 XLSX 的硬限制而使整份核算表导出失败。
@@ -19,6 +23,55 @@ const XLSX_TRUNCATION_MARKER: &str = "…[已截断]";
 #[derive(Debug, Default, Clone)]
 pub struct DecimalTextLog {
     pub cells: Vec<DecimalTextCell>,
+    /// 可视格的原值与展示映射；单工作簿和业务包均保留，舍入不影响业务快照。
+    pub display_cells: Vec<DisplayCell>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DisplayCell {
+    pub sheet: String,
+    pub cell: String,
+    pub raw_value: String,
+    pub display_value: String,
+    pub number_format: String,
+    pub number_storage: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayKind {
+    Raw,
+    Money,
+    Percent,
+    PercentagePoints,
+}
+
+impl DisplayKind {
+    /// 仅使用明确单位语义；数量、时长及旧数据未知单位不套金额格式。
+    pub fn for_metric(metric: &Value) -> Self {
+        match metric["unit_signature"]["dimension"].as_str() {
+            Some("money" | "money_per_time" | "money_per_quantity") => Self::Money,
+            Some("ratio") => Self::Percent,
+            Some(_) => Self::Raw,
+            None => Self::Raw,
+        }
+    }
+
+    pub fn absolute_change(self) -> Self {
+        if self == Self::Percent {
+            Self::PercentagePoints
+        } else {
+            self
+        }
+    }
+
+    pub fn number_format(self) -> &'static str {
+        match self {
+            Self::Money => "#,##0.00",
+            Self::Percent => "0.0%",
+            Self::PercentagePoints => "0.0\" 个百分点\"",
+            Self::Raw => "General",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -123,6 +176,120 @@ pub fn write_opt_decimal(
         Some(v) if !v.is_empty() => write_decimal(ws, row, col, sheet, v, log),
         _ => Ok(()),
     }
+}
+
+/// 可视金额/比例先用 Decimal 半偶舍入，再决定 XLSX 载体；长文本不能靠
+/// number format 缩短。原值另存元数据，CSV/JSON 继续使用业务原值。
+pub fn write_opt_display_decimal(
+    ws: &mut Worksheet,
+    row: u32,
+    col: u16,
+    sheet: &str,
+    value: Option<&str>,
+    kind: DisplayKind,
+    log: &mut DecimalTextLog,
+) -> ExportResult<()> {
+    let Some(raw) = value.filter(|v| !v.is_empty()) else {
+        return Ok(());
+    };
+    if kind == DisplayKind::Raw {
+        return write_decimal(ws, row, col, sheet, raw, log);
+    }
+    let Ok(decimal) = Decimal::from_str_exact(raw) else {
+        return write_decimal(ws, row, col, sheet, raw, log);
+    };
+    let places = match kind {
+        DisplayKind::Percent | DisplayKind::PercentagePoints => 3,
+        _ => 2,
+    };
+    let rounded = decimal.round_dp_with_strategy(places, RoundingStrategy::MidpointNearestEven);
+    let canonical = dsheng_core::contracts::decimal::to_canonical_string(rounded);
+    let display = display_text(&canonical, kind);
+    // Excel 的 % 格式会自动乘 100；百分点使用字面单位，因此载体显式移位。
+    // 以字符串完成移位，避免 Decimal 最大值乘 100 时溢出。
+    let stored = if kind == DisplayKind::PercentagePoints {
+        percent_magnitude(&canonical)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_owned()
+    } else {
+        canonical
+    };
+    let number = stored.parse::<f64>().ok().filter(|f| {
+        xlsx_export_kind(&stored, true) == XlsxCellKind::Number && shortest_literal(*f) == stored
+    });
+    log.display_cells.push(DisplayCell {
+        sheet: sheet.to_owned(),
+        cell: a1(row, col),
+        raw_value: raw.to_owned(),
+        display_value: display.clone(),
+        number_format: kind.number_format().to_owned(),
+        number_storage: if number.is_some() {
+            "number"
+        } else {
+            "decimal_text"
+        }
+        .into(),
+    });
+    if let Some(number) = number {
+        ws.write_number_with_format(
+            row,
+            col,
+            number,
+            &Format::new().set_num_format(kind.number_format()),
+        )
+        .map(|_| ())
+        .map_err(|e| super::ExportError(format!("写展示数值失败 {}: {e}", a1(row, col))))
+    } else {
+        log.cells.push(DecimalTextCell {
+            sheet: sheet.to_owned(),
+            cell: a1(row, col),
+            value: raw.to_owned(),
+        });
+        write_text(ws, row, col, &display)
+    }
+}
+
+/// 不经浮点计算；字符串移位也避免极大比例乘 100 时 Decimal 溢出。
+fn display_text(canonical: &str, kind: DisplayKind) -> String {
+    if matches!(kind, DisplayKind::Percent | DisplayKind::PercentagePoints) {
+        let suffix = if kind == DisplayKind::Percent {
+            "%"
+        } else {
+            " 个百分点"
+        };
+        return format!("{}{suffix}", percent_magnitude(canonical));
+    }
+    let (sign, unsigned) = if let Some(rest) = canonical.strip_prefix('-') {
+        ("-", rest)
+    } else {
+        ("", canonical)
+    };
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let mut grouped = String::new();
+    for (i, ch) in whole.chars().enumerate() {
+        if i > 0 && (whole.len() - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(ch);
+    }
+    format!("{sign}{grouped}.{fraction:0<2}")
+}
+
+/// 比例转成百分数大小（固定一位小数），不使用浮点或可能溢出的 Decimal 乘法。
+fn percent_magnitude(canonical: &str) -> String {
+    let (sign, unsigned) = canonical
+        .strip_prefix('-')
+        .map_or(("", canonical), |s| ("-", s));
+    let (whole, fraction) = unsigned.split_once('.').unwrap_or((unsigned, ""));
+    let fraction = format!("{fraction:0<3}");
+    let digits = format!("{whole}{}", &fraction[..2]);
+    let integer = digits.trim_start_matches('0');
+    format!(
+        "{sign}{}.{}",
+        if integer.is_empty() { "0" } else { integer },
+        &fraction[2..3]
+    )
 }
 
 /// f64 最短往返字面量（与 XLSX XML 写出一致的形式；整数去 `.0`）。

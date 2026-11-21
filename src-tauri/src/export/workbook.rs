@@ -7,7 +7,10 @@
 //! 第 5 行空；第 6 行列名；第 7 行起数据。任务 sheet 名固定（完整期间放第 3 行）；
 //! 多步骤按永久 task_id 分组展开行；task_id/step_id 技术列（隐藏）。
 
-use super::cells::{write_decimal, write_headers, write_opt_decimal, write_text, DecimalTextLog};
+use super::cells::{
+    write_headers, write_opt_decimal, write_opt_display_decimal, write_text, DecimalTextLog,
+    DisplayKind,
+};
 use super::{
     decimal_of, text_of, ExportData, ExportError, ExportResult, SHEET_ACCOUNTING, SHEET_CHART,
     SHEET_DIFF, SHEET_TASK_EVIDENCE, SHEET_TASK_PLAN, SHEET_TASK_REVIEW, SHEET_TREND,
@@ -242,38 +245,73 @@ fn accounting_sheet(
     write_headers(ws, HEADER_ROW, &ACCOUNTING_HEADERS)?;
     for (i, m) in data.metrics.iter().enumerate() {
         let row = DATA_ROW + i as u32;
+        let kind = DisplayKind::for_metric(m);
         write_text(ws, row, 0, &text_of(&m["metric_label"]))?;
         write_text(ws, row, 1, &text_of(&m["unit"]))?;
-        write_text(ws, row, 2, &text_of(&m["source_note"]))?;
+        let mut source_note = text_of(&m["source_note"]);
+        if let Some(label) = m["target_basis"]["label"].as_str() {
+            if !source_note.is_empty() {
+                source_note.push('；');
+            }
+            source_note.push_str(&format!("月度预定来源：{label}"));
+            if m["target_basis"]["is_reference"].as_bool() == Some(true) {
+                source_note.push_str("（参考值，非已确认目标）");
+            }
+        }
+        if kind == DisplayKind::Percent {
+            if !source_note.is_empty() {
+                source_note.push('；');
+            }
+            source_note.push_str("预实差异额以百分点表示");
+        }
+        write_text(ws, row, 2, &source_note)?;
         write_text(ws, row, 3, &text_of(&m["mp_label"]))?;
-        write_opt_decimal(
+        write_opt_display_decimal(
             ws,
             row,
             4,
             SHEET_ACCOUNTING,
             decimal_of(&m["annual_month_plan"]).as_deref(),
+            kind,
             log,
         )?;
         let target = decimal_of(&m["target_value"]);
         let actual = decimal_of(&m["actual_value"]);
-        write_opt_decimal(ws, row, 5, SHEET_ACCOUNTING, target.as_deref(), log)?;
-        write_opt_decimal(ws, row, 6, SHEET_ACCOUNTING, actual.as_deref(), log)?;
-        write_opt_decimal(
+        write_opt_display_decimal(ws, row, 5, SHEET_ACCOUNTING, target.as_deref(), kind, log)?;
+        write_opt_display_decimal(ws, row, 6, SHEET_ACCOUNTING, actual.as_deref(), kind, log)?;
+        write_opt_display_decimal(
             ws,
             row,
             7,
             SHEET_ACCOUNTING,
             decimal_of(&m["delta"]).as_deref(),
+            kind.absolute_change(),
             log,
         )?;
         // 派生值写已计算字面量（不写公式）
         let plan_ratio = ratio_text(actual.as_deref(), target.as_deref());
-        write_opt_decimal(ws, row, 8, SHEET_ACCOUNTING, plan_ratio.as_deref(), log)?;
+        write_opt_display_decimal(
+            ws,
+            row,
+            8,
+            SHEET_ACCOUNTING,
+            plan_ratio.as_deref(),
+            DisplayKind::Percent,
+            log,
+        )?;
         let annual_ratio = ratio_text(
             actual.as_deref(),
             decimal_of(&m["annual_month_plan"]).as_deref(),
         );
-        write_opt_decimal(ws, row, 9, SHEET_ACCOUNTING, annual_ratio.as_deref(), log)?;
+        write_opt_display_decimal(
+            ws,
+            row,
+            9,
+            SHEET_ACCOUNTING,
+            annual_ratio.as_deref(),
+            DisplayKind::Percent,
+            log,
+        )?;
     }
     Ok(())
 }
@@ -305,6 +343,7 @@ fn trend_sheet(
     write_headers(ws, HEADER_ROW, &header_refs)?;
     for (i, s) in data.series.iter().enumerate() {
         let row = DATA_ROW + i as u32;
+        let kind = DisplayKind::for_metric(s);
         write_text(ws, row, 0, &text_of(&s["metric_label"]))?;
         write_text(ws, row, 1, &text_of(&s["unit"]))?;
         write_text(ws, row, 2, &text_of(&s["source_note"]))?;
@@ -334,7 +373,7 @@ fn trend_sheet(
                         }
                         None => sum = None,
                     }
-                    write_opt_decimal(ws, row, col, SHEET_TREND, v.as_deref(), log)?;
+                    write_opt_display_decimal(ws, row, col, SHEET_TREND, v.as_deref(), kind, log)?;
                 }
                 None => sum = None,
             }
@@ -345,12 +384,13 @@ fn trend_sheet(
             .map(|t| t == "flow")
             .unwrap_or(false);
         match (is_flow, sum) {
-            (true, Some(total)) if !buckets.is_empty() => write_decimal(
+            (true, Some(total)) if !buckets.is_empty() => write_opt_display_decimal(
                 ws,
                 row,
                 cumulative_col,
                 SHEET_TREND,
-                &dsheng_core::contracts::decimal::to_canonical_string(total),
+                Some(&dsheng_core::contracts::decimal::to_canonical_string(total)),
+                kind,
                 log,
             )?,
             _ => write_text(ws, row, cumulative_col, "")?,
@@ -375,48 +415,87 @@ fn diff_sheet(ws: &mut Worksheet, data: &ExportData, log: &mut DecimalTextLog) -
     write_headers(ws, HEADER_ROW, &DIFF_HEADERS)?;
     for (i, m) in data.metrics.iter().enumerate() {
         let row = DATA_ROW + i as u32;
+        let kind = DisplayKind::for_metric(m);
         write_text(ws, row, 0, &text_of(&m["metric_label"]))?;
         write_text(ws, row, 1, &text_of(&m["unit"]))?;
-        write_opt_decimal(
+        write_opt_display_decimal(
             ws,
             row,
             2,
             SHEET_DIFF,
             decimal_of(&m["target_value"]).as_deref(),
+            kind,
             log,
         )?;
-        write_opt_decimal(
+        write_opt_display_decimal(
             ws,
             row,
             3,
             SHEET_DIFF,
             decimal_of(&m["actual_value"]).as_deref(),
+            kind,
             log,
         )?;
-        write_opt_decimal(
+        write_opt_display_decimal(
             ws,
             row,
             4,
             SHEET_DIFF,
             decimal_of(&m["delta"]).as_deref(),
+            kind.absolute_change(),
             log,
         )?;
         write_text(ws, row, 5, &text_of(&m["direction"]))?;
         let (yoy_base, yoy_abs, yoy_rate, yoy_reason) = comparison_cells(&m["yoy"]);
         let (mom_base, mom_abs, mom_rate, mom_reason) = comparison_cells(&m["mom"]);
         write_text(ws, row, 6, &yoy_base)?;
-        write_opt_decimal(ws, row, 7, SHEET_DIFF, yoy_abs.as_deref(), log)?;
-        write_opt_decimal(ws, row, 8, SHEET_DIFF, yoy_rate.as_deref(), log)?;
+        write_opt_display_decimal(
+            ws,
+            row,
+            7,
+            SHEET_DIFF,
+            yoy_abs.as_deref(),
+            kind.absolute_change(),
+            log,
+        )?;
+        write_opt_display_decimal(
+            ws,
+            row,
+            8,
+            SHEET_DIFF,
+            yoy_rate.as_deref(),
+            DisplayKind::Percent,
+            log,
+        )?;
         write_text(ws, row, 9, &mom_base)?;
-        write_opt_decimal(ws, row, 10, SHEET_DIFF, mom_abs.as_deref(), log)?;
-        write_opt_decimal(ws, row, 11, SHEET_DIFF, mom_rate.as_deref(), log)?;
-        let reasons: Vec<String> = [
+        write_opt_display_decimal(
+            ws,
+            row,
+            10,
+            SHEET_DIFF,
+            mom_abs.as_deref(),
+            kind.absolute_change(),
+            log,
+        )?;
+        write_opt_display_decimal(
+            ws,
+            row,
+            11,
+            SHEET_DIFF,
+            mom_rate.as_deref(),
+            DisplayKind::Percent,
+            log,
+        )?;
+        let mut reasons: Vec<String> = [
             yoy_reason.map(|r| format!("yoy:{r}")),
             mom_reason.map(|r| format!("mom:{r}")),
         ]
         .into_iter()
         .flatten()
         .collect();
+        if kind == DisplayKind::Percent {
+            reasons.push("绝对差异为百分点差；同比/环比变化率为相对变化率".into());
+        }
         write_text(ws, row, 12, &reasons.join("；"))?;
         let evidence: Vec<String> = ["mom", "yoy"]
             .iter()
@@ -488,25 +567,28 @@ fn task_review_sheet(
     write_headers(ws, HEADER_ROW, &TASK_REVIEW_HEADERS)?;
     let mut row = DATA_ROW;
     for task in data.tasks.iter().filter(|t| task_in_review(t, &data.meta)) {
+        let kind = DisplayKind::for_metric(task);
         for step in step_rows(task) {
             write_text(ws, row, 0, category_label(&task["category"]))?;
             write_text(ws, row, 1, &text_of(&task["title"]))?;
             write_text(ws, row, 2, &text_of(&task["metric_label"]))?;
             write_text(ws, row, 3, &text_of(&task["unit"]))?;
-            write_opt_decimal(
+            write_opt_display_decimal(
                 ws,
                 row,
                 4,
                 SHEET_TASK_REVIEW,
                 decimal_of(&task["target_value"]).as_deref(),
+                kind,
                 log,
             )?;
-            write_opt_decimal(
+            write_opt_display_decimal(
                 ws,
                 row,
                 5,
                 SHEET_TASK_REVIEW,
                 decimal_of(&task["actual_value"]).as_deref(),
+                kind,
                 log,
             )?;
             write_text(ws, row, 6, &text_of(&step["action"]))?;
@@ -565,17 +647,19 @@ fn task_plan_sheet(
     write_headers(ws, HEADER_ROW, &TASK_PLAN_HEADERS)?;
     let mut row = DATA_ROW;
     for task in data.tasks.iter().filter(|t| !task_in_review(t, &data.meta)) {
+        let kind = DisplayKind::for_metric(task);
         for step in step_rows(task) {
             write_text(ws, row, 0, category_label(&task["category"]))?;
             write_text(ws, row, 1, &text_of(&task["title"]))?;
             write_text(ws, row, 2, &text_of(&task["metric_label"]))?;
             write_text(ws, row, 3, &text_of(&task["unit"]))?;
-            write_opt_decimal(
+            write_opt_display_decimal(
                 ws,
                 row,
                 4,
                 SHEET_TASK_PLAN,
                 decimal_of(&task["target_value"]).as_deref(),
+                kind,
                 log,
             )?;
             write_text(ws, row, 5, &text_of(&step["action"]))?;
@@ -630,6 +714,7 @@ fn evidence_sheet(
     write_headers(ws, HEADER_ROW, &EVIDENCE_HEADERS)?;
     for (i, e) in data.evidence.iter().enumerate() {
         let row = DATA_ROW + i as u32;
+        let kind = DisplayKind::for_metric(e);
         write_text(ws, row, 0, &text_of(&e["evidence_id"]))?;
         write_text(ws, row, 1, &text_of(&e["metric_label"]))?;
         write_text(ws, row, 2, &text_of(&e["source_period"]))?;
@@ -639,36 +724,40 @@ fn evidence_sheet(
         write_text(ws, row, 6, &text_of(&e["cell_or_row"]))?;
         write_text(ws, row, 7, &text_of(&e["comparison_type"]))?;
         write_text(ws, row, 8, &text_of(&e["base_period"]))?;
-        write_opt_decimal(
+        write_opt_display_decimal(
             ws,
             row,
             9,
             SHEET_TASK_EVIDENCE,
             decimal_of(&e["base_value"]).as_deref(),
+            kind,
             log,
         )?;
-        write_opt_decimal(
+        write_opt_display_decimal(
             ws,
             row,
             10,
             SHEET_TASK_EVIDENCE,
             decimal_of(&e["current_value"]).as_deref(),
+            kind,
             log,
         )?;
-        write_opt_decimal(
+        write_opt_display_decimal(
             ws,
             row,
             11,
             SHEET_TASK_EVIDENCE,
             decimal_of(&e["absolute_change"]).as_deref(),
+            kind.absolute_change(),
             log,
         )?;
-        write_opt_decimal(
+        write_opt_display_decimal(
             ws,
             row,
             12,
             SHEET_TASK_EVIDENCE,
             decimal_of(&e["change_rate"]).as_deref(),
+            DisplayKind::Percent,
             log,
         )?;
         write_text(ws, row, 13, &text_of(&e["pending_reason"]))?;
@@ -704,6 +793,92 @@ fn category_label(v: &Value) -> &'static str {
     }
 }
 
+/// 原值追溯只扩展元数据，不改 two_tables_v1 业务表列与固定单元格位置。
+pub fn write_precision_metadata(
+    book: &mut Workbook,
+    data: &ExportData,
+    log: &DecimalTextLog,
+) -> ExportResult<()> {
+    // 固定两位/百分点标签比原始数字长；仅按数值展示内容扩列，避免 Excel
+    // 默认窄列显示 ####，也避免 autofit 把长来源说明扩成不可读的整屏宽列。
+    let mut widths: std::collections::BTreeMap<(&str, u16), usize> = Default::default();
+    for cell in &log.display_cells {
+        let col = cell
+            .cell
+            .bytes()
+            .take_while(u8::is_ascii_alphabetic)
+            .fold(0u16, |n, c| n * 26 + u16::from(c - b'A' + 1))
+            - 1;
+        let width = cell
+            .display_value
+            .chars()
+            .map(|c| if c.is_ascii() { 1 } else { 2 })
+            .sum::<usize>()
+            + 2;
+        widths
+            .entry((&cell.sheet, col))
+            .and_modify(|w| *w = (*w).max(width))
+            .or_insert(width.max(14));
+    }
+    for ((sheet, col), width) in widths {
+        book.worksheet_from_name(sheet)
+            .and_then(|ws| ws.set_column_width(col, width as f64))
+            .map_err(|e| ExportError(format!("设置展示数值列宽失败: {e}")))?;
+    }
+    let ws = book.add_worksheet();
+    ws.set_name("_metadata")
+        .map_err(|e| ExportError(e.to_string()))?;
+    write_text(ws, 0, 0, "display_precision")?;
+    write_text(
+        ws,
+        0,
+        1,
+        "金额两位小数；百分数/百分点一位小数；half_even；raw_value 为未经展示舍入的原值",
+    )?;
+    write_text(ws, 1, 0, "output_contract_id")?;
+    write_text(ws, 1, 1, &data.meta.output_contract_id)?;
+    write_headers(
+        ws,
+        3,
+        &[
+            "record_type",
+            "sheet",
+            "cell_or_metric_key",
+            "raw_value",
+            "display_value",
+            "number_format",
+            "number_storage",
+        ],
+    )?;
+    let mut row = 4;
+    for cell in &log.display_cells {
+        for (col, text) in [
+            "display_decimal",
+            cell.sheet.as_str(),
+            cell.cell.as_str(),
+            cell.raw_value.as_str(),
+            cell.display_value.as_str(),
+            cell.number_format.as_str(),
+            cell.number_storage.as_str(),
+        ]
+        .iter()
+        .enumerate()
+        {
+            write_text(ws, row, col as u16, text)?;
+        }
+        row += 1;
+    }
+    for metric in &data.metrics {
+        if !metric["target_basis"].is_null() {
+            write_text(ws, row, 0, "target_basis")?;
+            write_text(ws, row, 2, &text_of(&metric["metric_key"]))?;
+            write_text(ws, row, 3, &metric["target_basis"].to_string())?;
+            row += 1;
+        }
+    }
+    Ok(())
+}
+
 /// 构建单工作簿字节（含 decimal_text 记录）。
 pub fn build_workbook(
     kind: WorkbookKind,
@@ -727,6 +902,7 @@ pub fn build_workbook(
             evidence_sheet(book.add_worksheet(), data, &mut log)?;
         }
     }
+    write_precision_metadata(&mut book, data, &log)?;
     let bytes = book
         .save_to_buffer()
         .map_err(|e| ExportError(format!("工作簿序列化失败: {e}")))?;

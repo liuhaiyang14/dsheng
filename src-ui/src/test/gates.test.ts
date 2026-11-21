@@ -27,7 +27,7 @@ describe('S8 静态门禁：decimal 字符串不经 Number/parseFloat', () => {
     const offenders: string[] = [];
     for (const file of listSourceFiles(SRC_ROOT)) {
       const text = readFileSync(file, 'utf8');
-      if (/parseFloat\(/.test(text)) {
+      if (/\bparseFloat\(/.test(text)) {
         offenders.push(file);
       }
     }
@@ -38,7 +38,7 @@ describe('S8 静态门禁：decimal 字符串不经 Number/parseFloat', () => {
     const offenders: string[] = [];
     for (const file of listSourceFiles(SRC_ROOT)) {
       const text = readFileSync(file, 'utf8');
-      const uses = text.match(/Number\(/g)?.length ?? 0;
+      const uses = text.match(/\bNumber\(/g)?.length ?? 0;
       if (uses === 0) continue;
       if (file.endsWith('SystemSettingsScreen.tsx') || file.endsWith('ProviderScreen.tsx')) {
         // 周起始日、财年起始月、月度起始日均为离散整数，Provider 为输入预算。

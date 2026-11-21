@@ -1,5 +1,5 @@
 // 测试层次：UI 纯组件/状态测试（FixtureClient 注入，无网络、无 Tauri、无 canvas）。
-// S4 经营分析屏：指标呈现、decimal 字符串原样展示、不可比原因、缺桶断线、系统设置粒度与显式分析。
+// S4 经营分析屏：指标展示精度、不可比原因、缺桶断线、系统设置粒度与显式分析。
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
@@ -39,14 +39,15 @@ async function openAnalysis() {
 }
 
 describe('S4 经营分析屏', () => {
-  it('渲染指标卡/预实差异表，数值为核心返回的十进制字符串原样展示', async () => {
+  it('渲染指标卡/目标参考差异表，仅在显示时舍入核心返回的十进制字符串', async () => {
     await openAnalysis();
     const cards = screen.getByTestId('metric-cards');
-    expect(within(cards).getByText('184,600')).toBeTruthy();
+    expect(within(cards).getByText('184,600.00')).toBeTruthy();
     expect(Array.from(cards.querySelectorAll('.value')).map((node) => node.textContent)).toContain('92.4%');
     const table = screen.getByTestId('metric-table');
-    // 表内保留目标 210000 → 分组展示，不重算
-    expect(within(table).getAllByText('210,000').length).toBeGreaterThan(0);
+    // 旧快照未带来源证据，显示数值但不假定已确认目标。
+    expect(within(table).getAllByText('210,000.00 元').length).toBeGreaterThan(0);
+    expect(within(table).getAllByText('来源待确认').length).toBeGreaterThan(0);
     // 演示数据标注存在
     expect(screen.getByTestId('analysis-demo-note').textContent).toContain(
       '虚构演示数据',

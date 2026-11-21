@@ -9,8 +9,10 @@ import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { currentPeriodPolicy, periodLabel, savedPeriods } from '../state/periods';
 import { Tag } from '../components/bits';
+import { TargetValue } from '../components/TargetValue';
 import {
   TASK_STATUS_LABELS,
+  formatMetricValue,
   groupDecimal,
 } from '../api';
 
@@ -129,7 +131,7 @@ export function HistoryScreen() {
               <thead>
                 <tr>
                   <th>指标</th>
-                  <th>目标</th>
+                  <th>目标 / 参考值</th>
                   <th>实绩</th>
                   <th>差异</th>
                 </tr>
@@ -138,9 +140,9 @@ export function HistoryScreen() {
                 {detail.metrics.map((m) => (
                   <tr key={m.metric_id}>
                     <td>{m.metric_label}</td>
-                    <td>{m.target_value != null ? groupDecimal(m.target_value) : '—'}</td>
-                    <td>{m.actual_value != null ? groupDecimal(m.actual_value) : '—'}</td>
-                    <td>{m.delta != null ? groupDecimal(m.delta) : '—'}</td>
+                    <td><TargetValue metric={m} /></td>
+                    <td>{formatMetricValue(m.actual_value, m.unit, m.unit_signature)}</td>
+                    <td>{formatMetricValue(m.delta, m.unit, m.unit_signature, true)}</td>
                   </tr>
                 ))}
               </tbody>

@@ -840,8 +840,25 @@ export interface ComparisonView {
   evidence_ids: string[];
 }
 
+export interface UnitSignature {
+  dimension: string;
+  base_unit: string;
+  currency?: string | null;
+  tax_basis?: string | null;
+}
+
+export interface TargetBasis {
+  kind: 'explicit_target' | 'annual_month_plan' | 'prior_year_actual' | 'unconfirmed_legacy';
+  label: string;
+  is_reference: boolean;
+  from?: IsoDate;
+  to?: IsoDate;
+}
+
 /** 指标行：目标/实绩/差异等数值全部为 DecimalString。 */
 export interface MetricRowView {
+  unit_signature?: UnitSignature | null;
+  target_basis?: TargetBasis | null;
   metric_id: string;
   metric_key: string;
   metric_label: string;
@@ -878,6 +895,7 @@ export interface AnalysisRunView {
 }
 
 export interface MetricSeriesView {
+  unit_signature?: UnitSignature | null;
   metric_key: string;
   metric_label: string;
   unit: string;

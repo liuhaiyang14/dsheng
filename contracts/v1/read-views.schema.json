@@ -125,6 +125,47 @@
         "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
       }
     },
+    "unitSignature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimension", "base_unit", "currency", "tax_basis"],
+      "properties": {
+        "dimension": { "enum": ["money", "time", "quantity", "ratio", "money_per_quantity", "money_per_time"] },
+        "base_unit": { "type": "string", "minLength": 1 },
+        "currency": { "type": ["string", "null"], "pattern": "^[A-Z]{3}$" },
+        "tax_basis": { "enum": ["inclusive", "exclusive", "not_applicable", null] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "dimension": { "enum": ["money", "money_per_quantity", "money_per_time"] } } },
+          "then": { "properties": { "currency": { "type": "string" }, "tax_basis": { "enum": ["inclusive", "exclusive", "not_applicable"] } } },
+          "else": { "properties": { "currency": { "type": "null" }, "tax_basis": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "dimension": { "const": "ratio" } } },
+          "then": { "properties": { "base_unit": { "const": "1" } } }
+        },
+        {
+          "if": { "properties": { "dimension": { "const": "time" } } },
+          "then": { "properties": { "base_unit": { "const": "hour" } } }
+        }
+      ]
+    },
+    "targetBasisView": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "label", "is_reference"],
+      "properties": {
+        "kind": { "enum": ["explicit_target", "annual_month_plan", "prior_year_actual", "unconfirmed_legacy"] },
+        "label": { "type": "string", "minLength": 1 },
+        "is_reference": { "type": "boolean", "description": "参考下限和历史来源待确认均为 true；不表示已经批准的本期目标" },
+        "from": { "type": "string", "format": "date" },
+        "to": { "type": "string", "format": "date" }
+      },
+      "if": { "properties": { "kind": { "const": "explicit_target" } } },
+      "then": { "properties": { "is_reference": { "const": false } } },
+      "else": { "properties": { "is_reference": { "const": true } } }
+    },
     "metricRowView": {
       "type": "object",
       "additionalProperties": false,
@@ -134,8 +175,10 @@
         "metric_key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
         "metric_label": { "type": "string", "minLength": 1 },
         "unit": { "type": "string", "minLength": 1 },
+        "unit_signature": { "$ref": "#/$defs/unitSignature", "description": "来自所选 revision 的定义快照；旧快照无记录时省略，不读取当前定义猜测" },
         "direction": { "$ref": "#/$defs/direction" },
         "target_value": { "$ref": "#/$defs/decimalString" },
+        "target_basis": { "oneOf": [{ "$ref": "#/$defs/targetBasisView" }, { "type": "null" }], "description": "目标/参考值的来源；无目标时 null，旧快照无法证明来源时标记 unconfirmed_legacy" },
         "actual_value": { "$ref": "#/$defs/decimalString" },
         "delta": { "$ref": "#/$defs/decimalString", "description": "actual - target；缺任一操作数为 null" },
         "status": { "enum": ["ready", "pending"] },
@@ -152,6 +195,7 @@
         "metric_key": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
         "metric_label": { "type": "string", "minLength": 1 },
         "unit": { "type": "string", "minLength": 1 },
+        "unit_signature": { "$ref": "#/$defs/unitSignature" },
         "buckets": { "type": "array", "items": { "type": "string" } },
         "actual": { "type": "array", "items": { "$ref": "#/$defs/decimalString" }, "description": "与 buckets 对齐；缺桶 null，不插值" },
         "plan": { "type": "array", "items": { "$ref": "#/$defs/decimalString" } },
