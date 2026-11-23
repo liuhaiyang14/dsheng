@@ -92,7 +92,7 @@ describe('经营数值与目标来源回归', () => {
     expect(accounting).toHaveTextContent('-2.0pp');
     fireEvent.click(screen.getByRole('tab', { name: '推移表' }));
     expect(screen.getByTestId('trend-table-panel')).toHaveTextContent('2026-10-01：455,022.79 元');
-    expect(screen.getByTestId('trend-table-panel')).toHaveTextContent('2026-10-02：—');
+    expect(screen.getByTestId('trend-table-panel')).toHaveTextContent('1 个期间待补');
     fireEvent.click(within(screen.getByRole('navigation')).getByRole('button', { name: /历史查询/ }));
     await screen.findByTestId('history-table');
     expect(screen.getByText('455,022.79 元')).toBeTruthy();

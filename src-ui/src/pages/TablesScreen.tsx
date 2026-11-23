@@ -7,9 +7,27 @@ import { useState } from 'react';
 import { useApp, workspaceHasData } from '../state/store';
 import { EmptyState } from '../components/EmptyState';
 import { diffTone, favorableOf, formatMetricDifference, formatMetricValue, formatRatioPercent } from '../api';
+import type { MetricSeriesView } from '../api';
 import { TargetValue } from '../components/TargetValue';
 
 type TableTab = 'accounting' | 'trend';
+
+function valueCount(values: Array<string | null>): number {
+  return values.filter((value) => value != null && value !== '').length;
+}
+
+function seriesText(
+  series: MetricSeriesView,
+  values: Array<string | null>,
+  label: string,
+): string {
+  const entries = values
+    .map((value, index) => value == null || value === '' ? null : `${series.buckets[index] ?? '—'}：${formatMetricValue(value, series.unit, series.unit_signature)}`)
+    .filter((entry): entry is string => entry != null);
+  if (!entries.length) return `待补（未识别${label}值）`;
+  const missing = Math.max(0, series.buckets.length - entries.length);
+  return `${entries.join('；')}${missing ? `；${missing} 个期间待补` : ''}`;
+}
 
 export function TablesScreen() {
   const app = useApp();
@@ -117,7 +135,10 @@ export function TablesScreen() {
   }
 
   const ready = detail.two_tables_ready === true;
-  const activeSeries = detail.series;
+  const activeSeries = [...detail.series].sort((a, b) => {
+    const valueDifference = (valueCount(b.actual) + valueCount(b.plan)) - (valueCount(a.actual) + valueCount(a.plan));
+    return valueDifference || a.metric_label.localeCompare(b.metric_label, 'zh-CN');
+  });
   const scan = app.data.scan;
   const sourceChangedSinceAnalysis = Boolean(
     scan?.scanned_at && detail.captured_at && scan.scanned_at > detail.captured_at,
@@ -204,20 +225,20 @@ export function TablesScreen() {
           <div className="panel-head"><span className="panel-title">推移表 · 期间序列</span><span className="tag blue">本地聚合</span></div>
           <div className="table-wrap">
             <table className="data-table two-tables-table">
-              <thead><tr><th>指标</th><th>有效桶</th><th>实绩序列</th><th>计划序列</th></tr></thead>
+              <thead><tr><th>指标</th><th>实绩/计划桶</th><th>实绩序列</th><th>计划序列</th></tr></thead>
               <tbody>
                 {activeSeries.map((series) => (
                   <tr key={series.metric_key}>
                     <td>{series.metric_label}</td>
-                    <td>{series.buckets.length || '待补'}</td>
-                    <td>{series.actual.map((v, i) => `${series.buckets[i] ?? '—'}：${formatMetricValue(v, series.unit, series.unit_signature)}`).join('；') || '待补'}</td>
-                    <td>{series.plan.map((v, i) => `${series.buckets[i] ?? '—'}：${formatMetricValue(v, series.unit, series.unit_signature)}`).join('；') || '待补'}</td>
+                    <td>{valueCount(series.actual)}/{valueCount(series.plan)}</td>
+                    <td>{seriesText(series, series.actual, '实绩')}</td>
+                    <td>{seriesText(series, series.plan, '计划')}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <div className="panel-footnote">金额按期间累计；比率与单位时间指标使用累计分子、分母重算。有效桶不足时显示不可计算原因。</div>
+          <div className="panel-footnote">“实绩/计划桶”只统计已识别数值，不是日期桶数量；显示“待补”时，请到数据源确认文件用途和关键值列。金额按期间累计；比率与单位时间指标使用累计分子、分母重算。</div>
           <div className="panel-actions"><button type="button" className="primary" onClick={() => void download('trend')} disabled={!ready || busy}>下载推移表</button></div>
         </div>
       )}

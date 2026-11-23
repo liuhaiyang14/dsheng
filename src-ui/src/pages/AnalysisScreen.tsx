@@ -99,7 +99,13 @@ export function AnalysisScreen() {
   const [showDataTable, setShowDataTable] = useState(false);
   const series = useMemo(() => {
     if (!detail) return null;
-    return detail.series.find((s) => s.metric_key === metricKey) ?? detail.series[0] ?? null;
+    const selected = detail.series.find((s) => s.metric_key === metricKey);
+    if (selected) return selected;
+    return [...detail.series].sort((a, b) => {
+      const aValues = a.actual.filter((value) => value != null).length + a.plan.filter((value) => value != null).length;
+      const bValues = b.actual.filter((value) => value != null).length + b.plan.filter((value) => value != null).length;
+      return bValues - aValues;
+    })[0] ?? null;
   }, [detail, metricKey]);
 
   const chartUnavailable =
