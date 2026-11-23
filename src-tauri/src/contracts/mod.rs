@@ -34,7 +34,11 @@ pub fn ping() -> serde_json::Value {
 #[tauri::command(async)]
 pub fn js_log(message: String) {
     use std::io::Write as _;
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open("/tmp/dsheng-cmd.log") {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/tmp/dsheng-cmd.log")
+    {
         let _ = writeln!(f, "[js] {message}");
     }
 }

@@ -582,11 +582,13 @@ fn decimal_rows_with_formula_text_in_source_column_are_observed() {
     );
     // 单位时间附加值需要企业确认有效工时与公式；来源同名直取不能绕过待确认门禁。
     assert_eq!(actual(data, "value_added_per_hour"), None);
-    assert!(metric(data, "value_added_per_hour").unwrap()["pending_reasons"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|reason| reason == "configuration_required"));
+    assert!(
+        metric(data, "value_added_per_hour").unwrap()["pending_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reason| reason == "configuration_required")
+    );
     // C 列写“直接取数”的小数行同理（根因是数值字面量，不是 C 列）
     assert_eq!(actual(data, "payments_amount").as_deref(), Some("76543.21"));
     // `合计` 行是合法范围观察（§4.2），不因关键词或 C 列公式文本被排除
@@ -613,7 +615,10 @@ fn invalid_period_is_not_assigned_to_current_analysis_window() {
     let source = sheet_xml(
         &[
             (1, vec![T("A1", "指标"), T("B1", "期间"), T("C1", "实际值")]),
-            (2, vec![T("A2", "总销售额"), T("B2", "不是日期"), N("C2", "99")]),
+            (
+                2,
+                vec![T("A2", "总销售额"), T("B2", "不是日期"), N("C2", "99")],
+            ),
         ],
         &[],
     );
@@ -624,11 +629,13 @@ fn invalid_period_is_not_assigned_to_current_analysis_window() {
     let (out, code) = env.analyze(None);
     assert_eq!(code, 0, "{out}");
     assert_eq!(actual(&out["data"], "sales_net"), None);
-    assert!(metric(&out["data"], "sales_net").unwrap()["pending_reasons"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|reason| reason == "actual_missing"));
+    assert!(
+        metric(&out["data"], "sales_net").unwrap()["pending_reasons"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|reason| reason == "actual_missing")
+    );
     std::fs::remove_dir_all(&env.dir).ok();
 }
 
@@ -1092,6 +1099,11 @@ fn transposed_trend_and_accounting_same_metric_same_period_candidates() {
         "冲突未解决时经营值 null"
     );
     let conn = rusqlite::Connection::open(&env.db).unwrap();
-    assert_eq!(conn.query_row("SELECT COUNT(*) FROM source_conflicts", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    assert_eq!(
+        conn.query_row("SELECT COUNT(*) FROM source_conflicts", [], |r| r
+            .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
     std::fs::remove_dir_all(&env.dir).ok();
 }

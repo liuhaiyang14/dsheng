@@ -135,7 +135,12 @@ pub fn mark_two_tables_materialized(
             params![run_id, revision_no as i64],
             |row| row.get(0),
         )
-        .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "analysis revision 不存在"))?;
+        .map_err(|_| {
+            CliError::new(
+                CliErrorCode::DataValidationFailed,
+                "analysis revision 不存在",
+            )
+        })?;
     let normalized: Value = serde_json::from_str(&normalized)
         .map_err(|_| CliError::new(CliErrorCode::DataValidationFailed, "normalized result 无效"))?;
     let has_accounting_rows = normalized
@@ -475,8 +480,12 @@ fn builtin_profile(id: &str) -> Option<(Value, &'static str)> {
         "manufacturing_demo" | "manufacturing_erp_v1" => {
             include_str!("../../../../contracts/v1/source-profiles/manufacturing_demo.json")
         }
-        "service_demo" => include_str!("../../../../contracts/v1/source-profiles/service_demo.json"),
-        "xsd_trade_v1" => include_str!("../../../../contracts/v1/source-profiles/xsd_trade_v1.json"),
+        "service_demo" => {
+            include_str!("../../../../contracts/v1/source-profiles/service_demo.json")
+        }
+        "xsd_trade_v1" => {
+            include_str!("../../../../contracts/v1/source-profiles/xsd_trade_v1.json")
+        }
         _ => return None,
     };
     let value = serde_json::from_str(bytes).ok()?;
@@ -512,7 +521,9 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
     if profile.get("schema_version").and_then(Value::as_str) != Some("1")
         || profile.get("output_contract_id").and_then(Value::as_str) != Some("two_tables_v1")
     {
-        return Err(CliError::invalid("source profile schema_version/output_contract_id 无效"));
+        return Err(CliError::invalid(
+            "source profile schema_version/output_contract_id 无效",
+        ));
     }
     reject_unknown_keys(
         profile
@@ -520,20 +531,43 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
             .ok_or_else(|| CliError::invalid("source profile 根对象无效"))?,
         "root",
         &[
-            "schema_version", "profile_id", "version", "enterprise_type", "display_name",
-            "source_template_version", "template", "output_contract_id", "file_roles",
-            "field_aliases", "row_rules", "normalization", "dedupe", "record_mappings", "notes",
+            "schema_version",
+            "profile_id",
+            "version",
+            "enterprise_type",
+            "display_name",
+            "source_template_version",
+            "template",
+            "output_contract_id",
+            "file_roles",
+            "field_aliases",
+            "row_rules",
+            "normalization",
+            "dedupe",
+            "record_mappings",
+            "notes",
         ],
     )?;
     let profile_id = nonempty("profile_id")?;
-    if !profile_id.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-        || !profile_id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    if !profile_id
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase())
+        || !profile_id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
     {
         return Err(CliError::invalid("source profile profile_id 格式无效"));
     }
     for name in ["version", "source_template_version"] {
-        if profile.get(name).and_then(Value::as_u64).is_none_or(|v| v == 0) {
-            return Err(CliError::invalid(format!("source profile {name} 必须是正整数")));
+        if profile
+            .get(name)
+            .and_then(Value::as_u64)
+            .is_none_or(|v| v == 0)
+        {
+            return Err(CliError::invalid(format!(
+                "source profile {name} 必须是正整数"
+            )));
         }
     }
     for name in ["enterprise_type", "display_name"] {
@@ -541,29 +575,42 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
     }
     let template = object("template")?;
     reject_unknown_keys(template, "template", &["files", "sheet_name", "columns"])?;
-    let strings = |obj: &serde_json::Map<String, Value>, name: &str, min: usize| -> CliResult<Vec<String>> {
+    let strings = |obj: &serde_json::Map<String, Value>,
+                   name: &str,
+                   min: usize|
+     -> CliResult<Vec<String>> {
         let values = obj
             .get(name)
             .and_then(Value::as_array)
             .ok_or_else(|| CliError::invalid(format!("source profile template.{name} 无效")))?;
         if values.len() < min {
-            return Err(CliError::invalid(format!("source profile template.{name} 数量不足")));
+            return Err(CliError::invalid(format!(
+                "source profile template.{name} 数量不足"
+            )));
         }
         let mut out = Vec::with_capacity(values.len());
         for value in values {
             let item = value
                 .as_str()
                 .filter(|v| !v.trim().is_empty())
-                .ok_or_else(|| CliError::invalid(format!("source profile template.{name} 必须是非空字符串")))?;
+                .ok_or_else(|| {
+                    CliError::invalid(format!("source profile template.{name} 必须是非空字符串"))
+                })?;
             if out.iter().any(|seen| seen == item) {
-                return Err(CliError::invalid(format!("source profile template.{name} 不能重复")));
+                return Err(CliError::invalid(format!(
+                    "source profile template.{name} 不能重复"
+                )));
             }
             out.push(item.to_string());
         }
         Ok(out)
     };
     strings(template, "files", 1)?;
-    if template.get("sheet_name").and_then(Value::as_str).is_none_or(|v| v.trim().is_empty()) {
+    if template
+        .get("sheet_name")
+        .and_then(Value::as_str)
+        .is_none_or(|v| v.trim().is_empty())
+    {
         return Err(CliError::invalid("source profile template.sheet_name 无效"));
     }
     strings(template, "columns", 2)?;
@@ -579,16 +626,22 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
         let values = values
             .as_array()
             .filter(|values| !values.is_empty())
-            .ok_or_else(|| CliError::invalid(format!("source profile field_aliases.{field} 无效")))?;
+            .ok_or_else(|| {
+                CliError::invalid(format!("source profile field_aliases.{field} 无效"))
+            })?;
         let mut local = BTreeSet::new();
         for alias in values.iter().filter_map(Value::as_str) {
             if alias.trim().is_empty() || !local.insert(normalize_header(alias)) {
-                return Err(CliError::invalid(format!("source profile field_aliases.{field} 含空值或重复别名")));
+                return Err(CliError::invalid(format!(
+                    "source profile field_aliases.{field} 含空值或重复别名"
+                )));
             }
             let key = normalize_header(alias);
             if let Some(previous) = alias_owner.insert(key.clone(), field.clone()) {
                 if previous != *field {
-                    return Err(CliError::invalid(format!("source profile 跨字段重复别名：{key}")));
+                    return Err(CliError::invalid(format!(
+                        "source profile 跨字段重复别名：{key}"
+                    )));
                 }
             }
         }
@@ -600,37 +653,78 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
         .ok_or_else(|| CliError::invalid("source profile 缺少或无效 file_roles"))?;
     let mut role_ids = BTreeSet::new();
     for role in roles {
-        let role = role.as_object().ok_or_else(|| CliError::invalid("source profile file_role 无效"))?;
+        let role = role
+            .as_object()
+            .ok_or_else(|| CliError::invalid("source profile file_role 无效"))?;
         reject_unknown_keys(
             role,
             "file_roles[]",
-            &["role_id", "required", "file_matchers", "sheet_matchers", "field_map"],
+            &[
+                "role_id",
+                "required",
+                "file_matchers",
+                "sheet_matchers",
+                "field_map",
+            ],
         )?;
-        let id = role.get("role_id").and_then(Value::as_str).unwrap_or_default();
-        if id.is_empty() || !role_ids.insert(id.to_string())
+        let id = role
+            .get("role_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if id.is_empty()
+            || !role_ids.insert(id.to_string())
             || !id.chars().next().is_some_and(|c| c.is_ascii_lowercase())
-            || !id.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            || !id
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
         {
-            return Err(CliError::invalid(format!("source profile role_id 重复或为空：{id}")));
+            return Err(CliError::invalid(format!(
+                "source profile role_id 重复或为空：{id}"
+            )));
         }
         if role.get("required").and_then(Value::as_bool).is_none()
-            || role.get("file_matchers").and_then(Value::as_array).is_none()
-            || role.get("sheet_matchers").and_then(Value::as_array).is_none()
+            || role
+                .get("file_matchers")
+                .and_then(Value::as_array)
+                .is_none()
+            || role
+                .get("sheet_matchers")
+                .and_then(Value::as_array)
+                .is_none()
             || role.get("field_map").and_then(Value::as_object).is_none()
         {
-            return Err(CliError::invalid(format!("source profile role {id} 缺少 required/file_matchers/sheet_matchers/field_map")));
+            return Err(CliError::invalid(format!(
+                "source profile role {id} 缺少 required/file_matchers/sheet_matchers/field_map"
+            )));
         }
     }
     let row_rules = object("row_rules")?;
     reject_unknown_keys(
         row_rules,
         "row_rules",
-        &["header_rows_max", "detail_key_fields", "date_field", "amount_fields"],
+        &[
+            "header_rows_max",
+            "detail_key_fields",
+            "date_field",
+            "amount_fields",
+        ],
     )?;
-    if row_rules.get("header_rows_max").and_then(Value::as_u64).is_none_or(|v| !(1..=20).contains(&v))
-        || row_rules.get("date_field").and_then(Value::as_str).is_none_or(|v| v.trim().is_empty())
-        || row_rules.get("detail_key_fields").and_then(Value::as_array).is_none_or(|v| v.is_empty())
-        || row_rules.get("amount_fields").and_then(Value::as_array).is_none_or(|v| v.is_empty())
+    if row_rules
+        .get("header_rows_max")
+        .and_then(Value::as_u64)
+        .is_none_or(|v| !(1..=20).contains(&v))
+        || row_rules
+            .get("date_field")
+            .and_then(Value::as_str)
+            .is_none_or(|v| v.trim().is_empty())
+        || row_rules
+            .get("detail_key_fields")
+            .and_then(Value::as_array)
+            .is_none_or(|v| v.is_empty())
+        || row_rules
+            .get("amount_fields")
+            .and_then(Value::as_array)
+            .is_none_or(|v| v.is_empty())
     {
         return Err(CliError::invalid("source profile row_rules 无效"));
     }
@@ -640,11 +734,24 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
         "normalization",
         &["currency", "tax_basis", "timezone", "status_map"],
     )?;
-    let currency = normalization.get("currency").and_then(Value::as_str).unwrap_or_default();
-    if currency.len() != 3 || !currency.chars().all(|c| c.is_ascii_uppercase())
-        || normalization.get("timezone").and_then(Value::as_str).is_none_or(|v| v.trim().is_empty())
-        || normalization.get("status_map").and_then(Value::as_object).is_none()
-        || !matches!(normalization.get("tax_basis").and_then(Value::as_str), Some("inclusive" | "exclusive" | "not_applicable" | "confirm_at_runtime"))
+    let currency = normalization
+        .get("currency")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if currency.len() != 3
+        || !currency.chars().all(|c| c.is_ascii_uppercase())
+        || normalization
+            .get("timezone")
+            .and_then(Value::as_str)
+            .is_none_or(|v| v.trim().is_empty())
+        || normalization
+            .get("status_map")
+            .and_then(Value::as_object)
+            .is_none()
+        || !matches!(
+            normalization.get("tax_basis").and_then(Value::as_str),
+            Some("inclusive" | "exclusive" | "not_applicable" | "confirm_at_runtime")
+        )
     {
         return Err(CliError::invalid("source profile normalization 无效"));
     }
@@ -654,10 +761,16 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
         "dedupe",
         &["same_content", "different_content", "detail_and_total"],
     )?;
-    if !matches!(dedupe.get("same_content").and_then(Value::as_str), Some("dedupe" | "conflict"))
-        || !matches!(dedupe.get("different_content").and_then(Value::as_str), Some("conflict" | "latest_revision" | "manual_review"))
-        || !matches!(dedupe.get("detail_and_total").and_then(Value::as_str), Some("select_authoritative" | "manual_review" | "reject"))
-    {
+    if !matches!(
+        dedupe.get("same_content").and_then(Value::as_str),
+        Some("dedupe" | "conflict")
+    ) || !matches!(
+        dedupe.get("different_content").and_then(Value::as_str),
+        Some("conflict" | "latest_revision" | "manual_review")
+    ) || !matches!(
+        dedupe.get("detail_and_total").and_then(Value::as_str),
+        Some("select_authoritative" | "manual_review" | "reject")
+    ) {
         return Err(CliError::invalid("source profile dedupe 无效"));
     }
     if let Some(record_mappings) = profile.get("record_mappings") {
@@ -671,15 +784,29 @@ fn validate_profile_config(profile: &Value) -> CliResult<()> {
                     .ok_or_else(|| CliError::invalid("source profile record_mapping 无效"))?,
                 "record_mappings[]",
                 &[
-                    "mapping_id", "file_matchers", "sheet_matchers", "metric_key", "value_fields",
-                    "date_fields", "status_field", "accepted_statuses", "requires_confirmation",
-                    "period_kind", "scope_field", "source_tax_basis",
+                    "mapping_id",
+                    "file_matchers",
+                    "sheet_matchers",
+                    "metric_key",
+                    "value_fields",
+                    "date_fields",
+                    "status_field",
+                    "accepted_statuses",
+                    "requires_confirmation",
+                    "period_kind",
+                    "scope_field",
+                    "source_tax_basis",
                 ],
             )?;
             if mapping.get("source_tax_basis").is_some()
-                && !matches!(mapping["source_tax_basis"].as_str(), Some("inclusive" | "exclusive" | "not_applicable" | "confirm_at_runtime"))
+                && !matches!(
+                    mapping["source_tax_basis"].as_str(),
+                    Some("inclusive" | "exclusive" | "not_applicable" | "confirm_at_runtime")
+                )
             {
-                return Err(CliError::invalid("source profile record_mapping.source_tax_basis 无效"));
+                return Err(CliError::invalid(
+                    "source profile record_mapping.source_tax_basis 无效",
+                ));
             }
         }
     }
@@ -695,7 +822,15 @@ fn profile_aliases(profile: &SourceProfileBinding) -> Option<BTreeMap<String, Ve
         .map(|obj| {
             obj.iter()
                 .filter_map(|(field, aliases)| {
-                    Some((field.clone(), aliases.as_array()?.iter().filter_map(Value::as_str).map(str::to_string).collect()))
+                    Some((
+                        field.clone(),
+                        aliases
+                            .as_array()?
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect(),
+                    ))
                 })
                 .collect()
         })?;
@@ -706,7 +841,9 @@ fn profile_aliases(profile: &SourceProfileBinding) -> Option<BTreeMap<String, Ve
                     for (canonical, source_name) in field_map {
                         if let Some(source_name) = source_name.as_str() {
                             let values = aliases.entry(canonical.clone()).or_default();
-                            if !values.iter().any(|value| normalize_header(value) == normalize_header(source_name)) {
+                            if !values.iter().any(|value| {
+                                normalize_header(value) == normalize_header(source_name)
+                            }) {
                                 values.push(source_name.to_string());
                             }
                         }
@@ -771,7 +908,9 @@ fn file_mapping_ready(
     let requires_source_match = profile.mode == "profile"
         || (profile.mode == "generic" && mappings.is_some_and(|entries| !entries.is_empty()));
     if requires_source_match {
-        let Some(entries) = mappings else { return false };
+        let Some(entries) = mappings else {
+            return false;
+        };
         let file_confirmed = entries.iter().any(|entry| {
             entry.source_id.as_deref() == source_id
                 || entry.source.as_deref() == Some(file.file_label.as_str())
@@ -782,9 +921,10 @@ fn file_mapping_ready(
         }
     }
     file.sheets.iter().any(|(_, sheet)| {
-        sheet.blocked_reason.is_none() && (profile.mode != "generic"
-            || mappings.is_some_and(|entries| !entries.is_empty())
-            || sheet.header.is_some())
+        sheet.blocked_reason.is_none()
+            && (profile.mode != "generic"
+                || mappings.is_some_and(|entries| !entries.is_empty())
+                || sheet.header.is_some())
     })
 }
 
@@ -857,7 +997,8 @@ pub fn scan_directory_with_profile_config(
                 .map(|s| {
                     let (sheet, mut scanned) = analyze_sheet_with_aliases(s, metric_names, aliases);
                     if let Some(profile) = profile {
-                        scanned.profile_role_id = profile_role_for_sheet(profile, &label, scanned.sheet.as_deref());
+                        scanned.profile_role_id =
+                            profile_role_for_sheet(profile, &label, scanned.sheet.as_deref());
                     }
                     (sheet, scanned)
                 })
@@ -871,12 +1012,19 @@ pub fn scan_directory_with_profile_config(
             .and_then(|config| config.get("file_roles"))
             .and_then(Value::as_array)
         {
-            for role in roles.iter().filter(|role| role.get("required").and_then(Value::as_bool) == Some(true)) {
-                let Some(role_id) = role.get("role_id").and_then(Value::as_str) else { continue };
-                let found = files.iter().any(|file| file.sheets.iter().any(|(_, sheet)| {
-                    sheet.profile_role_id.as_deref() == Some(role_id)
-                        && sheet.blocked_reason.is_none()
-                }));
+            for role in roles
+                .iter()
+                .filter(|role| role.get("required").and_then(Value::as_bool) == Some(true))
+            {
+                let Some(role_id) = role.get("role_id").and_then(Value::as_str) else {
+                    continue;
+                };
+                let found = files.iter().any(|file| {
+                    file.sheets.iter().any(|(_, sheet)| {
+                        sheet.profile_role_id.as_deref() == Some(role_id)
+                            && sheet.blocked_reason.is_none()
+                    })
+                });
                 if !found {
                     pending.push(format!("required_profile_role_missing:{role_id}"));
                 }
@@ -922,7 +1070,9 @@ fn analyze_sheet_with_aliases(
         } else {
             role.as_str()
         },
-        header: profile_header.clone().or_else(|| match_info.as_ref().and_then(|m| m.header.clone())),
+        header: profile_header
+            .clone()
+            .or_else(|| match_info.as_ref().and_then(|m| m.header.clone())),
         match_info,
         rows: sheet.rows.len().saturating_sub(header_rows_end),
         blocked_reason: generated.then_some("generated_output_input_not_allowed"),
@@ -936,8 +1086,18 @@ fn profile_header_block(
     aliases: &BTreeMap<String, Vec<String>>,
 ) -> Option<HeaderBlock> {
     let known = [
-        "period", "metric_label", "unit", "planned", "actual", "annual_month_plan",
-        "owner", "due_date", "category", "source", "amount", "business_date",
+        "period",
+        "metric_label",
+        "unit",
+        "planned",
+        "actual",
+        "annual_month_plan",
+        "owner",
+        "due_date",
+        "category",
+        "source",
+        "amount",
+        "business_date",
     ];
     let mut alias_to_field: BTreeMap<String, String> = BTreeMap::new();
     for field in known {
@@ -992,11 +1152,21 @@ fn profile_role_for_sheet(
     roles.iter().find_map(|role| {
         let file_matchers = role.get("file_matchers")?.as_array()?;
         let sheet_matchers = role.get("sheet_matchers")?.as_array()?;
-        let file_ok = file_matchers.is_empty() || file_matchers.iter().filter_map(Value::as_str).any(|m| file_label.to_lowercase().contains(&m.to_lowercase()));
+        let file_ok = file_matchers.is_empty()
+            || file_matchers
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|m| file_label.to_lowercase().contains(&m.to_lowercase()));
         let sheet = sheet_name.unwrap_or_default();
-        let sheet_ok = sheet_matchers.is_empty() || sheet_matchers.iter().filter_map(Value::as_str).any(|m| sheet.to_lowercase().contains(&m.to_lowercase()));
+        let sheet_ok = sheet_matchers.is_empty()
+            || sheet_matchers
+                .iter()
+                .filter_map(Value::as_str)
+                .any(|m| sheet.to_lowercase().contains(&m.to_lowercase()));
         if file_ok && sheet_ok {
-            role.get("role_id").and_then(Value::as_str).map(str::to_string)
+            role.get("role_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
         } else {
             None
         }
@@ -1069,13 +1239,14 @@ pub fn register_sources_with_profile(
         // A versioned profile supplies candidates, but the user must still
         // confirm which business field each file represents. Keep every
         // profile file pending until scan_summary applies the saved mapping.
-        let mapped = profile.mode != "profile" && file.sheets.iter().any(|(_, s)| {
-            matches!(s.role, "accounting" | "trend" | "task_review" | "task_plan")
-                || (profile.mode != "generic"
-                    && s.role == "generic_table"
-                    && s.header.is_some()
-                    && s.blocked_reason.is_none())
-        });
+        let mapped = profile.mode != "profile"
+            && file.sheets.iter().any(|(_, s)| {
+                matches!(s.role, "accounting" | "trend" | "task_review" | "task_plan")
+                    || (profile.mode != "generic"
+                        && s.role == "generic_table"
+                        && s.header.is_some()
+                        && s.blocked_reason.is_none())
+            });
         // 严格 scanFileInfo（additionalProperties:false：file_id/file_label/row_count/
         // sheet_count/mapping_status/note；来源哈希等审计信息不进该视图）
         let note = file
@@ -1086,7 +1257,10 @@ pub fn register_sources_with_profile(
                     format!(
                         "{}:{}{}({}行)",
                         s.sheet.clone().unwrap_or_default(),
-                        s.profile_role_id.as_deref().map(|id| format!("/profile:{id}")).unwrap_or_default(),
+                        s.profile_role_id
+                            .as_deref()
+                            .map(|id| format!("/profile:{id}"))
+                            .unwrap_or_default(),
                         reason,
                         s.rows
                     )
@@ -1095,7 +1269,10 @@ pub fn register_sources_with_profile(
                         "{}:{}{}({}行)",
                         s.sheet.clone().unwrap_or_default(),
                         s.role,
-                        s.profile_role_id.as_deref().map(|id| format!("/profile:{id}")).unwrap_or_default(),
+                        s.profile_role_id
+                            .as_deref()
+                            .map(|id| format!("/profile:{id}"))
+                            .unwrap_or_default(),
                         s.rows
                     )
                 }
@@ -1145,7 +1322,11 @@ impl FieldMappingEntry {
     /// A file acknowledgement is not a column override, even if an older
     /// client happens to include a column alongside its file-level role.
     pub(super) fn column_override(&self) -> Option<(&str, &str)> {
-        let role = self.target_role.as_deref().unwrap_or(&self.tool_field).trim();
+        let role = self
+            .target_role
+            .as_deref()
+            .unwrap_or(&self.tool_field)
+            .trim();
         if role.is_empty() || matches!(role, "profile_mapping" | "reference_only") {
             return None;
         }
@@ -1214,13 +1395,24 @@ pub fn source_mapping_set(
     }
     for (index, entry) in mappings.iter().enumerate() {
         if let Some(treatments) = &entry.tax_treatments {
-            for treatment in treatments.values() { treatment.validate()?; }
-            for previous in mappings[..index].iter().filter(|old| mapping_targets_same_source(old, entry)) {
+            for treatment in treatments.values() {
+                treatment.validate()?;
+            }
+            for previous in mappings[..index]
+                .iter()
+                .filter(|old| mapping_targets_same_source(old, entry))
+            {
                 if let Some(saved) = &previous.tax_treatments {
-                    if saved.len() != treatments.len() || !saved.iter().all(|(key, tax)| {
-                        treatments.get(key).is_some_and(|other| tax.equivalent(other))
-                    }) {
-                        return Err(CliError::invalid("同一文件的税口径确认不一致，请统一后保存"));
+                    if saved.len() != treatments.len()
+                        || !saved.iter().all(|(key, tax)| {
+                            treatments
+                                .get(key)
+                                .is_some_and(|other| tax.equivalent(other))
+                        })
+                    {
+                        return Err(CliError::invalid(
+                            "同一文件的税口径确认不一致，请统一后保存",
+                        ));
                     }
                 }
             }
@@ -1235,24 +1427,36 @@ pub fn source_mapping_set(
         // Taxes belong to the file, not an individual column correction. Omitted
         // values retain its latest confirmation; an explicit empty map clears it.
         if entry.tax_treatments.is_none() {
-            entry.tax_treatments = merged.iter().rev()
+            entry.tax_treatments = merged
+                .iter()
+                .rev()
                 .filter(|old| mapping_targets_same_source(old, &entry))
                 .find_map(|old| old.tax_treatments.clone());
         }
-        for old in merged.iter_mut().filter(|old| mapping_targets_same_source(old, &entry)) {
+        for old in merged
+            .iter_mut()
+            .filter(|old| mapping_targets_same_source(old, &entry))
+        {
             old.tax_treatments = entry.tax_treatments.clone();
         }
         merged.retain(|old| !mapping_replaced_by(old, &entry));
         merged.push(entry);
     }
-    let mapping_json = serde_json::to_string(&merged).map_err(|e| CliError::invalid(e.to_string()))?;
+    let mapping_json =
+        serde_json::to_string(&merged).map_err(|e| CliError::invalid(e.to_string()))?;
     conn.execute(
         "INSERT INTO cli_source_mapping_sets
          (workspace_id, directory_label, profile_hash, mapping_json, updated_at)
          VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(workspace_id, directory_label, profile_hash) DO UPDATE SET
            mapping_json=excluded.mapping_json, updated_at=excluded.updated_at",
-        params![workspace_id.to_string(), directory_label, profile_hash, mapping_json, now_iso()],
+        params![
+            workspace_id.to_string(),
+            directory_label,
+            profile_hash,
+            mapping_json,
+            now_iso()
+        ],
     )
     .map_err(CliError::from)?;
     Ok(json!({
@@ -1284,8 +1488,9 @@ fn mapping_replaced_by(old: &FieldMappingEntry, new: &FieldMappingEntry) -> bool
         return true;
     }
     match (old.column_override(), new.column_override()) {
-        (Some((old_role, _)), Some((new_role, _))) =>
-            old.sheet == new.sheet && old_role == new_role,
+        (Some((old_role, _)), Some((new_role, _))) => {
+            old.sheet == new.sheet && old_role == new_role
+        }
         // A legacy acknowledgement with no column must not undo corrections.
         (Some(_), None) => false,
         // A column edit supersedes the old file acknowledgement, including
@@ -2290,10 +2495,21 @@ fn observed_source_periods(
         for (data, sheet) in &file.sheets {
             // As in extraction, a matching record adapter owns this sheet even
             // when its amount/date columns are missing or currently blank.
-            if profile.config.as_ref().and_then(|config| config.get("record_mappings"))
-                .and_then(Value::as_array).is_some_and(|mappings| mappings.iter().any(|mapping| {
-                    super::source_review::matches(mapping, &file.file_label, sheet.sheet.as_deref().unwrap_or_default())
-                })) {
+            if profile
+                .config
+                .as_ref()
+                .and_then(|config| config.get("record_mappings"))
+                .and_then(Value::as_array)
+                .is_some_and(|mappings| {
+                    mappings.iter().any(|mapping| {
+                        super::source_review::matches(
+                            mapping,
+                            &file.file_label,
+                            sheet.sheet.as_deref().unwrap_or_default(),
+                        )
+                    })
+                })
+            {
                 continue;
             }
             // 企业 source profile 通常把原始表识别为 generic_table；只要有
@@ -2323,10 +2539,14 @@ fn observed_source_periods(
             let columns = if sheet.role == "generic_table" {
                 super::analysis::effective_generic_columns(confirmed_mappings, file, sheet, data)
             } else {
-                let Some(header) = &sheet.header else { continue };
-                header.columns.iter().map(|(column, role)| {
-                    (*column, (*role).to_string(), (*role).to_string())
-                }).collect()
+                let Some(header) = &sheet.header else {
+                    continue;
+                };
+                header
+                    .columns
+                    .iter()
+                    .map(|(column, role)| (*column, (*role).to_string(), (*role).to_string()))
+                    .collect()
             };
             let col_of = |field: &str| {
                 columns
@@ -2337,8 +2557,11 @@ fn observed_source_periods(
             let Some(label_col) = col_of("metric_label") else {
                 continue;
             };
-            let (header_row, header_count) = sheet.header.as_ref()
-                .map(|header| (header.row, header.row_count)).unwrap_or((1, 1));
+            let (header_row, header_count) = sheet
+                .header
+                .as_ref()
+                .map(|header| (header.row, header.row_count))
+                .unwrap_or((1, 1));
             let rows = || {
                 data.rows
                     .iter()
@@ -2425,7 +2648,6 @@ fn observed_profile_periods(
         .unwrap_or(20) as usize;
     let norm = |value: &str| normalize_header(value);
 
-
     for file in files {
         let file_lower = file.file_label.to_lowercase();
         for (data, sheet) in &file.sheets {
@@ -2439,9 +2661,10 @@ fn observed_profile_periods(
                     .and_then(Value::as_array)
                     .map(|items| {
                         items.is_empty()
-                            || items.iter().filter_map(Value::as_str).any(|matcher| {
-                                file_lower.contains(&matcher.to_lowercase())
-                            })
+                            || items
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .any(|matcher| file_lower.contains(&matcher.to_lowercase()))
                     })
                     .unwrap_or(false);
                 let sheet_match = mapping
@@ -2449,9 +2672,10 @@ fn observed_profile_periods(
                     .and_then(Value::as_array)
                     .map(|items| {
                         items.is_empty()
-                            || items.iter().filter_map(Value::as_str).any(|matcher| {
-                                sheet_lower.contains(&matcher.to_lowercase())
-                            })
+                            || items
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .any(|matcher| sheet_lower.contains(&matcher.to_lowercase()))
                     })
                     .unwrap_or(false);
                 if !file_match || !sheet_match {
@@ -2482,8 +2706,12 @@ fn observed_profile_periods(
                 if value_fields.is_empty() || date_fields.is_empty() {
                     continue;
                 }
-                let accepted: Vec<&str> = mapping["accepted_statuses"].as_array()
-                    .into_iter().flatten().filter_map(Value::as_str).collect();
+                let accepted: Vec<&str> = mapping["accepted_statuses"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .collect();
                 let status_field = mapping["status_field"].as_str();
                 let mut header_row = None;
                 let mut field_cols = BTreeMap::<String, usize>::new();
@@ -2517,9 +2745,14 @@ fn observed_profile_periods(
                     .unwrap_or("date");
                 for row in data.rows.iter().skip(header_row + 1) {
                     if !accepted.is_empty() {
-                        let status = status_field.and_then(|field| field_cols.get(field))
-                            .and_then(|column| row.get(*column)).map(|cell| cell.raw_text());
-                        if !status.as_deref().is_some_and(|value| accepted.contains(&value.trim())) {
+                        let status = status_field
+                            .and_then(|field| field_cols.get(field))
+                            .and_then(|column| row.get(*column))
+                            .map(|cell| cell.raw_text());
+                        if !status
+                            .as_deref()
+                            .is_some_and(|value| accepted.contains(&value.trim()))
+                        {
                             continue;
                         }
                     }
@@ -2534,7 +2767,10 @@ fn observed_profile_periods(
                         continue;
                     }
                     let period = crate::store::analysis::profile_record_period(
-                        period_kind, &date_fields, &field_cols, row,
+                        period_kind,
+                        &date_fields,
+                        &field_cols,
+                        row,
                     );
                     if let Some(period) = period {
                         periods.insert((period.from, period.to));
@@ -2553,10 +2789,19 @@ fn effective_source_periods(
 ) -> BTreeSet<(NaiveDate, NaiveDate)> {
     let mut observed = BTreeSet::new();
     for file in files {
-        if super::source_review::reference_only(confirmed_mappings.unwrap_or(&[]), file) { continue; }
-        observed.extend(observed_source_periods(std::slice::from_ref(file), confirmed_mappings.unwrap_or(&[]), profile));
+        if super::source_review::reference_only(confirmed_mappings.unwrap_or(&[]), file) {
+            continue;
+        }
+        observed.extend(observed_source_periods(
+            std::slice::from_ref(file),
+            confirmed_mappings.unwrap_or(&[]),
+            profile,
+        ));
         if profile.mode == "profile" {
-            observed.extend(observed_profile_periods(std::slice::from_ref(file), profile));
+            observed.extend(observed_profile_periods(
+                std::slice::from_ref(file),
+                profile,
+            ));
         }
     }
     observed
@@ -2645,12 +2890,8 @@ fn scan_summary_internal(
     ensure_sidecar_tables(conn)?;
     let metric_names = metric_label_names(conn, workspace_id)?;
     let aliases = profile_aliases(profile);
-    let (files, mut pending_inputs) = scan_directory_with_profile_config(
-        dir,
-        &metric_names,
-        aliases.as_ref(),
-        Some(profile),
-    )?;
+    let (files, mut pending_inputs) =
+        scan_directory_with_profile_config(dir, &metric_names, aliases.as_ref(), Some(profile))?;
     for file in &files {
         for (_, sheet) in &file.sheets {
             if let Some(reason) = sheet.blocked_reason {
@@ -2678,7 +2919,9 @@ fn scan_summary_internal(
         "generic" => confirmed_mappings.is_some(),
         // Profile mappings are per-file; an empty set must not acknowledge
         // every detailed workbook.
-        "profile" => confirmed_mappings.as_ref().is_some_and(|entries| !entries.is_empty()),
+        "profile" => confirmed_mappings
+            .as_ref()
+            .is_some_and(|entries| !entries.is_empty()),
         _ => true,
     };
     if mapping_confirmed {
@@ -2765,7 +3008,8 @@ fn scan_summary_internal(
     if desktop_periods {
         if let Some(views) = summary["files"].as_array_mut() {
             for (view, file) in views.iter_mut().zip(files.iter()) {
-                view["review"] = super::source_review::file_review(file, profile, confirmed_mappings.as_deref());
+                view["review"] =
+                    super::source_review::file_review(file, profile, confirmed_mappings.as_deref());
             }
         }
         let (policy_id, periods) = available_analysis_periods(
@@ -2778,8 +3022,16 @@ fn scan_summary_internal(
         // Display the same effective source dates used for period discovery,
         // including manual date corrections and excluding reference-only files.
         let observed = effective_source_periods(&files, profile, confirmed_mappings.as_deref());
-        summary["coverage"]["from"] = json!(observed.iter().map(|(from, _)| from).min().map(ToString::to_string));
-        summary["coverage"]["to"] = json!(observed.iter().map(|(_, to)| to).max().map(ToString::to_string));
+        summary["coverage"]["from"] = json!(observed
+            .iter()
+            .map(|(from, _)| from)
+            .min()
+            .map(ToString::to_string));
+        summary["coverage"]["to"] = json!(observed
+            .iter()
+            .map(|(_, to)| to)
+            .max()
+            .map(ToString::to_string));
         summary["available_periods"] = json!(periods);
         summary["available_period_policy_id"] = json!(policy_id);
     }
@@ -2808,7 +3060,10 @@ mod tests {
 
     #[test]
     fn source_profile_selection_is_explicit_and_hashed() {
-        assert_eq!(resolve_source_profile(None, false).unwrap().mode, "generic_implicit");
+        assert_eq!(
+            resolve_source_profile(None, false).unwrap().mode,
+            "generic_implicit"
+        );
         assert_eq!(resolve_source_profile(None, true).unwrap().mode, "generic");
         assert!(resolve_source_profile(Some("manufacturing_erp_v1"), true).is_err());
         let built_in = resolve_source_profile(Some("manufacturing_demo"), false).unwrap();
@@ -2824,26 +3079,30 @@ mod tests {
             file_label: "工资条_202610.xlsx".into(),
             content_hash: "hash".into(),
             kind: "xlsx".into(),
-            sheets: vec![
-                (
-                    SheetData {
-                        name: "工资条".into(),
-                        rows: vec![],
-                        merged_ranges: vec![],
-                    },
-                    ScannedSheet {
-                        sheet: Some("工资条".into()),
-                        role: "generic_table",
-                        header: None,
-                        match_info: None,
-                        rows: 0,
-                        blocked_reason: None,
-                        profile_role_id: Some("salary".into()),
-                    },
-                ),
-            ],
+            sheets: vec![(
+                SheetData {
+                    name: "工资条".into(),
+                    rows: vec![],
+                    merged_ranges: vec![],
+                },
+                ScannedSheet {
+                    sheet: Some("工资条".into()),
+                    role: "generic_table",
+                    header: None,
+                    match_info: None,
+                    rows: 0,
+                    blocked_reason: None,
+                    profile_role_id: Some("salary".into()),
+                },
+            )],
         };
-        assert!(!file_mapping_ready(&file, Some("source-1"), &profile, false, None));
+        assert!(!file_mapping_ready(
+            &file,
+            Some("source-1"),
+            &profile,
+            false,
+            None
+        ));
         let confirmed = vec![FieldMappingEntry {
             tool_field: "labor_cost".into(),
             source_label: "工资条字段确认".into(),
@@ -2900,7 +3159,13 @@ mod tests {
                 },
             )],
         };
-        assert!(file_mapping_ready(&generic_file, None, &generic, true, Some(&[])));
+        assert!(file_mapping_ready(
+            &generic_file,
+            None,
+            &generic,
+            true,
+            Some(&[])
+        ));
     }
 
     #[test]
@@ -2937,28 +3202,65 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         let workspace = Uuid::new_v4();
         let save = |entries: Value| {
-            source_mapping_set(&conn, workspace, "source", "profile", serde_json::from_value(entries).unwrap()).unwrap();
-            source_mapping_confirmed(&conn, workspace, "source", "profile").unwrap().unwrap()
+            source_mapping_set(
+                &conn,
+                workspace,
+                "source",
+                "profile",
+                serde_json::from_value(entries).unwrap(),
+            )
+            .unwrap();
+            source_mapping_confirmed(&conn, workspace, "source", "profile")
+                .unwrap()
+                .unwrap()
         };
-        let entry = |role: &str, column: &str, sheet: Option<&str>| json!({
-            "source":"source.xlsx", "source_label":"source.xlsx", "tool_field":role,
-            "recognized":column, "column":column, "target_role":role, "sheet":sheet, "usage":"确认列"
-        });
+        let entry = |role: &str, column: &str, sheet: Option<&str>| {
+            json!({
+                "source":"source.xlsx", "source_label":"source.xlsx", "tool_field":role,
+                "recognized":column, "column":column, "target_role":role, "sheet":sheet, "usage":"确认列"
+            })
+        };
         save(json!([entry("actual", "D", Some("first"))]));
         save(json!([entry("date", "E", Some("first"))]));
         save(json!([entry("actual", "F", Some("second"))]));
-        let updated = save(json!([entry("period", "B", Some("first")), entry("actual", "C", Some("first"))]));
+        let updated = save(json!([
+            entry("period", "B", Some("first")),
+            entry("actual", "C", Some("first"))
+        ]));
         assert_eq!(updated.len(), 3);
-        assert!(updated.iter().any(|item| item.sheet.as_deref() == Some("first") && item.column_override() == Some(("period", "B"))));
-        assert!(updated.iter().any(|item| item.sheet.as_deref() == Some("first") && item.column_override() == Some(("actual", "C"))));
-        assert!(updated.iter().any(|item| item.sheet.as_deref() == Some("second") && item.column_override() == Some(("actual", "F"))));
+        assert!(updated
+            .iter()
+            .any(|item| item.sheet.as_deref() == Some("first")
+                && item.column_override() == Some(("period", "B"))));
+        assert!(updated
+            .iter()
+            .any(|item| item.sheet.as_deref() == Some("first")
+                && item.column_override() == Some(("actual", "C"))));
+        assert!(updated
+            .iter()
+            .any(|item| item.sheet.as_deref() == Some("second")
+                && item.column_override() == Some(("actual", "F"))));
         assert_eq!(save(json!([])).len(), 3);
-        let legacy = save(json!([{"source":"source.xlsx", "source_label":"source.xlsx", "tool_field":"source",
-            "recognized":"已确认", "usage":"旧客户端确认"}]));
-        assert_eq!(legacy.iter().filter(|entry| entry.column_override().is_some()).count(), 3);
+        let legacy = save(
+            json!([{"source":"source.xlsx", "source_label":"source.xlsx", "tool_field":"source",
+            "recognized":"已确认", "usage":"旧客户端确认"}]),
+        );
+        assert_eq!(
+            legacy
+                .iter()
+                .filter(|entry| entry.column_override().is_some())
+                .count(),
+            3
+        );
         // An unscoped role is distinct from a worksheet-specific role.
         let unscoped = save(json!([entry("actual", "G", None)]));
-        assert_eq!(unscoped.iter().filter(|entry| entry.column_override().is_some()).count(), 4);
+        assert_eq!(
+            unscoped
+                .iter()
+                .filter(|entry| entry.column_override().is_some())
+                .count(),
+            4
+        );
     }
 
     #[test]
@@ -2966,19 +3268,39 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         let workspace = Uuid::new_v4();
         let save = |entries: Value| {
-            source_mapping_set(&conn, workspace, "source", "profile", serde_json::from_value(entries).unwrap()).unwrap();
-            source_mapping_confirmed(&conn, workspace, "source", "profile").unwrap().unwrap()
+            source_mapping_set(
+                &conn,
+                workspace,
+                "source",
+                "profile",
+                serde_json::from_value(entries).unwrap(),
+            )
+            .unwrap();
+            source_mapping_confirmed(&conn, workspace, "source", "profile")
+                .unwrap()
+                .unwrap()
         };
-        let file_entry = |role: &str| json!({"source":"source.xlsx", "source_label":"source.xlsx",
-            "tool_field":role, "target_role":role, "recognized":"已确认", "usage":"确认用途"});
+        let file_entry = |role: &str| {
+            json!({"source":"source.xlsx", "source_label":"source.xlsx",
+            "tool_field":role, "target_role":role, "recognized":"已确认", "usage":"确认用途"})
+        };
         let mut confirmed = file_entry("profile_mapping");
-        confirmed["tax_treatments"] = json!({"sales_net":{"basis":"inclusive", "rate_percent":"13"}});
+        confirmed["tax_treatments"] =
+            json!({"sales_net":{"basis":"inclusive", "rate_percent":"13"}});
         save(json!([confirmed]));
         let retained = save(json!([file_entry("profile_mapping")]));
-        assert_eq!(retained[0].tax_treatments.as_ref().unwrap()["sales_net"].rate_percent.as_deref(), Some("13"));
+        assert_eq!(
+            retained[0].tax_treatments.as_ref().unwrap()["sales_net"]
+                .rate_percent
+                .as_deref(),
+            Some("13")
+        );
         let column = json!({"source":"source.xlsx", "source_label":"source.xlsx", "tool_field":"actual",
             "target_role":"actual", "column":"D", "recognized":"D", "usage":"修正金额"});
-        assert_eq!(save(json!([column]))[0].column_override(), Some(("actual", "D")));
+        assert_eq!(
+            save(json!([column]))[0].column_override(),
+            Some(("actual", "D"))
+        );
         let reference = save(json!([file_entry("reference_only")]));
         assert_eq!(reference.len(), 1);
         assert_eq!(reference[0].target_role.as_deref(), Some("reference_only"));
@@ -3073,6 +3395,4 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 10, 31).unwrap(),
         )));
     }
-
-
 }

@@ -101,9 +101,16 @@ impl Fixture {
         let mut book = Workbook::new();
         let sheet = book.add_worksheet();
         sheet.set_name("source").unwrap();
-        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"]
-            .iter()
-            .enumerate()
+        for (c, h) in [
+            "科目",
+            "单位",
+            "月度预定",
+            "月度实绩",
+            "年度计划·当月目标",
+            "期间",
+        ]
+        .iter()
+        .enumerate()
         {
             sheet.write_string(0, c as u16, *h).unwrap();
         }

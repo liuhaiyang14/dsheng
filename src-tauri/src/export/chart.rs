@@ -6,6 +6,7 @@
 use super::cells::{
     csv_row, write_headers, write_opt_display_decimal, write_text, DecimalTextLog, DisplayKind,
 };
+use super::workbook::WorkbookKind;
 use super::{decimal_of, text_of, ExportData, ExportError, ExportResult, SHEET_TREND};
 use rust_xlsxwriter::{Chart, ChartType, Workbook};
 use serde_json::Value;
@@ -97,7 +98,7 @@ pub fn chart_xlsx(
     let ws = book.add_worksheet();
     ws.set_name(SHEET_TREND)
         .map_err(|e| ExportError(e.to_string()))?;
-    super::workbook::write_metadata(ws, data)?;
+    super::workbook::write_sheet_heading(ws, data, WorkbookKind::Trend, 2, 1)?;
     write_headers(ws, super::workbook::HEADER_ROW, &["期间", "实绩", "计划"])?;
     let start = super::workbook::DATA_ROW;
     for (i, bucket) in spec.buckets.iter().enumerate() {
@@ -120,7 +121,7 @@ pub fn chart_xlsx(
                 .set_categories((SHEET_TREND, start, 0, end, 0))
                 .set_values((SHEET_TREND, start, col, end, col));
         }
-        ws.insert_chart(1, 5, &chart)
+        ws.insert_chart(3, 5, &chart)
             .map_err(|e| ExportError(format!("图表插入失败: {e}")))?;
     }
     super::workbook::write_precision_metadata(&mut book, data, log)?;

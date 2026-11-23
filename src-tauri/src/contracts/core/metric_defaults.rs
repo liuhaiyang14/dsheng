@@ -463,15 +463,36 @@ pub(super) fn ensure_defaults(conn: &mut rusqlite::Connection, ws: uuid::Uuid) -
         let input = dsheng_cli::store::sources::MetricDefinitionSet {
             metric_key: def["metric_key"].as_str().unwrap_or_default().to_string(),
             label: def["label"].as_str().unwrap_or_default().to_string(),
-            label_aliases: def.get("label_aliases").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()),
-            semantic_type: def["semantic_type"].as_str().unwrap_or_default().to_string(),
+            label_aliases: def
+                .get("label_aliases")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                }),
+            semantic_type: def["semantic_type"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
             unit_signature: def["unit_signature"].clone(),
             direction: def["direction"].as_str().unwrap_or_default().to_string(),
-            target_constraint_scope: def["target_constraint_scope"].as_str().unwrap_or_default().to_string(),
+            target_constraint_scope: def["target_constraint_scope"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
             revenue_semantics: def["revenue_semantics"].as_bool().unwrap_or(false),
             aggregation: def["aggregation"].as_str().unwrap_or_default().to_string(),
             formula: def.get("formula").filter(|v| !v.is_null()).cloned(),
-            required_inputs: def.get("required_inputs").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default(),
+            required_inputs: def
+                .get("required_inputs")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default(),
             denominator_policy: "positive_only".into(),
             comparison_policy: def["comparison_policy"].clone(),
             effective_from: today.clone(),
@@ -481,8 +502,9 @@ pub(super) fn ensure_defaults(conn: &mut rusqlite::Connection, ws: uuid::Uuid) -
         };
         match dsheng_cli::store::sources::metric_set(conn, ws, input) {
             Ok(v) => registered.push(v),
-            Err(e) if e.code == CliErrorCode::RevisionConflict =>
-                skipped.push(def["metric_key"].as_str().unwrap_or_default().to_string()),
+            Err(e) if e.code == CliErrorCode::RevisionConflict => {
+                skipped.push(def["metric_key"].as_str().unwrap_or_default().to_string())
+            }
             Err(e) => return Err(e),
         }
     }

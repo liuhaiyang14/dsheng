@@ -77,8 +77,10 @@ fn s4_template_zip_layout() {
     let (stdout, code) = run(&[
         "template",
         "download",
-        "--package", "source",
-        "--profile", "manufacturing_demo",
+        "--package",
+        "source",
+        "--profile",
+        "manufacturing_demo",
         "--out",
         out.to_string_lossy().as_ref(),
         "--json",
@@ -88,7 +90,7 @@ fn s4_template_zip_layout() {
     let names: Vec<&str> = entries.iter().map(|(n, _)| n.as_str()).collect();
     assert!(names.contains(&"manufacturing-source.xlsx"), "{names:?}");
     assert!(names.contains(&"字段说明.md"));
-    // source profile 空白布局：A1 键、B1=1、第 6 行列名、第 7 行起无数据
+    // source profile 空白布局：A1 键、B1=1；列名位于生成模板的表头行，后续无数据。
     let acc = tmp.path().join("manufacturing-source.xlsx");
     std::fs::write(
         &acc,
@@ -105,9 +107,12 @@ fn s4_template_zip_layout() {
     assert_eq!(grid[0][1], "1");
     assert_eq!(grid[2][0], "source_from");
     assert_eq!(grid[3][6], "coverage_status");
-    assert_eq!(grid[5][0], "期间");
-    assert_eq!(grid[5][4], "月度实绩");
-    assert!(grid.len() == 6, "空白模板第 7 行起无数据: {}", grid.len());
+    let source_header = grid
+        .iter()
+        .position(|row| row.first().map(String::as_str) == Some("期间"))
+        .expect("source header");
+    assert_eq!(grid[source_header][4], "月度实绩");
+    assert_eq!(grid.len(), source_header + 1, "空白模板表头后无数据");
     // 字段说明含技术列与防护规则
     let md = String::from_utf8(
         entries
@@ -147,35 +152,36 @@ fn s4_roundtrip_template_fill_import_export() {
     assert_eq!(data_of(&stdout)["kind"], "bundle");
     let entries = unzip(&std::fs::read(bundle).unwrap());
     let by_name = |n: &str| -> Vec<u8> { entries.iter().find(|(k, _)| k == n).expect(n).1.clone() };
-    // 2) 布局核对：核算表 sheet 元数据/列名/数据行
+    // 2) 布局核对：核算表标题/列名/数据行
     let acc_path = out_dir.join("核算表.xlsx");
     std::fs::write(&acc_path, by_name("核算表.xlsx")).unwrap();
     let grid = read_sheet(&acc_path, "核算表");
-    assert_eq!(grid[0][0], "dsheng_template_version");
-    assert_eq!(grid[1][0], "workspace_name");
-    assert_eq!(grid[2][0], "source_from");
-    assert_eq!(grid[2][1], "2026-10-01");
-    assert_eq!(grid[2][5], "month");
-    assert_eq!(grid[3][0], "timezone");
-    assert_eq!(grid[5][6], "月度实绩");
-    assert_eq!(grid[6][0], "销售额", "第 7 行数据");
-    assert_eq!(grid[6][6], "24100.5", "两桶累计值保持十进制词法");
-    // 空值保留：年度计划·当月目标列为空（视图无年度分解时不造值）
-    assert_eq!(grid[6][4], "");
-    // 3) 推移 sheet：双桶＋flow 累计
+    let accounting_header = header_row(&grid, "序号");
+    assert_eq!(grid[accounting_header].len(), 12);
+    let sales_row = grid
+        .iter()
+        .position(|row| row.get(1).map(String::as_str) == Some("销售额"))
+        .expect("销售额行");
+    let actual_col = column_of(&grid, accounting_header, "月度实绩");
+    assert_eq!(grid[sales_row][actual_col], "24100.5");
+    // 空值保留：视图无年度分解时不造值
+    let annual_col = column_of(&grid, accounting_header, "年度计划·当月目标");
+    assert_eq!(grid[sales_row][annual_col], "");
+    // 3) 推移 sheet：月份按行＋flow 累计
     let trend = read_sheet(&acc_path, "推移表");
-    assert_eq!(trend[5][0], "科目");
-    let data_rows: Vec<&Vec<String>> = trend
+    let trend_header = header_row(&trend, "月份");
+    assert_eq!(trend[trend_header].len(), 14);
+    assert_eq!(trend[trend_header + 1][0], "2026-10");
+    let cumulative_row = trend
         .iter()
-        .skip(6)
-        .filter(|r| !r[0].is_empty() && !r[0].starts_with("注："))
-        .collect();
-    assert_eq!(data_rows[0][0], "销售额");
-    let last_non_empty = data_rows[0]
-        .iter()
-        .rfind(|c| !c.is_empty())
-        .expect("累计列非空");
-    assert_eq!(last_non_empty, "24100.5", "flow 双桶累计=两桶之和");
+        .position(|row| row.first().is_some_and(|value| value.contains("累计")))
+        .expect("累计行");
+    assert_eq!(cumulative_row, 20, "累计固定在模板第21行");
+    let sales_col = column_of(&trend, trend_header, "总销售额");
+    assert_eq!(
+        trend[cumulative_row][sales_col], "24100.5",
+        "flow 双桶累计=两桶之和"
+    );
     // 4) metadata.json：结构/指纹/decimal_text 政策；无 Key；无本机绝对路径
     let metadata: Value = serde_json::from_slice(&by_name("metadata.json")).expect("metadata json");
     assert_eq!(metadata["run_id"], f.run_id);
@@ -210,7 +216,17 @@ fn s4_roundtrip_template_fill_import_export() {
         let mut book = Workbook::new();
         let ws = book.add_worksheet();
         ws.set_name("source").unwrap();
-        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"].iter().enumerate() {
+        for (c, h) in [
+            "科目",
+            "单位",
+            "月度预定",
+            "月度实绩",
+            "年度计划·当月目标",
+            "期间",
+        ]
+        .iter()
+        .enumerate()
+        {
             ws.write_string(0, c as u16, *h).unwrap();
         }
         ws.write_string(1, 0, "销售额").unwrap();
@@ -255,7 +271,17 @@ fn s4_roundtrip_template_fill_import_export() {
         let mut book = Workbook::new();
         let ws = book.add_worksheet();
         ws.set_name("source").unwrap();
-        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"].iter().enumerate() {
+        for (c, h) in [
+            "科目",
+            "单位",
+            "月度预定",
+            "月度实绩",
+            "年度计划·当月目标",
+            "期间",
+        ]
+        .iter()
+        .enumerate()
+        {
             ws.write_string(0, c as u16, *h).unwrap();
         }
         ws.write_string(1, 0, "销售额").unwrap();
@@ -324,7 +350,17 @@ fn s4_roundtrip_template_fill_import_export() {
         let mut book = Workbook::new();
         let ws = book.add_worksheet();
         ws.set_name("source").unwrap();
-        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"].iter().enumerate() {
+        for (c, h) in [
+            "科目",
+            "单位",
+            "月度预定",
+            "月度实绩",
+            "年度计划·当月目标",
+            "期间",
+        ]
+        .iter()
+        .enumerate()
+        {
             ws.write_string(0, c as u16, *h).unwrap();
         }
         ws.write_string(1, 0, "销售额").unwrap();
@@ -418,48 +454,388 @@ fn s4_roundtrip_template_fill_import_export() {
         "17 位有效数须标记 decimal_text"
     );
     let grid = read_sheet(&big_wb, "核算表");
-    assert_eq!(grid[6][5], "1,234,567,890,123,456.50", "超安全精度金额以展示文本保存");
+    let big_header = header_row(&grid, "序号");
+    let big_row = row_with_value(&grid, 1, "销售额");
+    let big_actual_col = column_of(&grid, big_header, "月度实绩");
+    assert_eq!(
+        grid[big_row][big_actual_col], "1,234,567,890,123,456.50",
+        "超安全精度金额以展示文本保存"
+    );
     let metadata = read_sheet(&big_wb, "_metadata");
-    assert!(metadata.iter().any(|row| row.get(1).is_some_and(|v| v == "核算表")
-        && row.get(2).is_some_and(|v| v == "F7")
-        && row.get(3).is_some_and(|v| v == "1234567890123456.5")), "完整原值保留在元数据");
+    assert!(
+        metadata
+            .iter()
+            .any(|row| row.get(1).is_some_and(|v| v == "核算表")
+                && row.get(3).is_some_and(|v| v == "1234567890123456.5")),
+        "完整原值保留在元数据"
+    );
 }
 
 fn xlsx_xml(bytes: &[u8], path: &str) -> String {
-    String::from_utf8(unzip(bytes).into_iter().find(|(name, _)| name == path).unwrap().1).unwrap()
+    String::from_utf8(
+        unzip(bytes)
+            .into_iter()
+            .find(|(name, _)| name == path)
+            .unwrap()
+            .1,
+    )
+    .unwrap()
 }
 
 /// 读取真实 XLSX XML：不能只给文本格附 number format，必须验证数值载体和样式绑定。
 fn assert_numeric_cell_format(bytes: &[u8], sheet: u32, cell: &str, value: &str, format: &str) {
     let xml = xlsx_xml(bytes, &format!("xl/worksheets/sheet{sheet}.xml"));
-    let re = regex::Regex::new(&format!(r#"<c r="{cell}" s="(\d+)"[^>]*><v>{}</v></c>"#, regex::escape(value))).unwrap();
-    let capture = re.captures(&xml).unwrap_or_else(|| panic!("{cell} 数值/样式错误: {xml}"));
+    let re = regex::Regex::new(&format!(
+        r#"<c r="{cell}" s="(\d+)"[^>]*><v>{}</v></c>"#,
+        regex::escape(value)
+    ))
+    .unwrap();
+    let capture = re
+        .captures(&xml)
+        .unwrap_or_else(|| panic!("{cell} 数值/样式错误: {xml}"));
     assert!(!capture[0].contains("t=\"s\""), "展示值必须是数值类型");
     let style: usize = capture[1].parse().unwrap();
     let styles = xlsx_xml(bytes, "xl/styles.xml");
-    let xfs = styles.split("<cellXfs").nth(1).unwrap().split("</cellXfs>").next().unwrap();
+    let xfs = styles
+        .split("<cellXfs")
+        .nth(1)
+        .unwrap()
+        .split("</cellXfs>")
+        .next()
+        .unwrap();
     let xf = xfs.split("<xf ").nth(style + 1).unwrap();
-    let format_id = xf.split("numFmtId=\"").nth(1).unwrap().split('"').next().unwrap();
+    let format_id = xf
+        .split("numFmtId=\"")
+        .nth(1)
+        .unwrap()
+        .split('"')
+        .next()
+        .unwrap();
     let encoded_format = format.replace('&', "&amp;").replace('"', "&quot;");
-    assert!(styles.contains(&format!(r#"numFmtId="{format_id}" formatCode="{encoded_format}""#)), "{cell} 样式须为 {format}: {styles}");
+    assert!(
+        styles.contains(&format!(
+            r#"numFmtId="{format_id}" formatCode="{encoded_format}""#
+        )),
+        "{cell} 样式须为 {format}: {styles}"
+    );
 }
 
 fn assert_column_min_width(bytes: &[u8], sheet: u32, column: u16, width: f64) {
     let xml = xlsx_xml(bytes, &format!("xl/worksheets/sheet{sheet}.xml"));
     let re = regex::Regex::new(r#"<col min="(\d+)" max="(\d+)" width="([\d.]+)""#).unwrap();
-    assert!(re.captures_iter(&xml).any(|c| {
-        c[1].parse::<u16>().unwrap() <= column && c[2].parse::<u16>().unwrap() >= column
-            && c[3].parse::<f64>().unwrap() >= width
-    }), "列 {column} 须至少 {width} 宽，避免展示为 ####：{xml}");
+    assert!(
+        re.captures_iter(&xml).any(|c| {
+            c[1].parse::<u16>().unwrap() <= column
+                && c[2].parse::<u16>().unwrap() >= column
+                && c[3].parse::<f64>().unwrap() >= width
+        }),
+        "列 {column} 须至少 {width} 宽，避免展示为 ####：{xml}"
+    );
+}
+
+/// Return the XML payload for a worksheet in a generated XLSX.  The export
+/// tests intentionally inspect the package rather than opening Excel, so
+/// panes, merged ranges and chart parts remain observable in CI.
+fn worksheet_xml(bytes: &[u8], sheet: u32) -> String {
+    xlsx_xml(bytes, &format!("xl/worksheets/sheet{sheet}.xml"))
+}
+
+fn assert_merge(xml: &str, range: &str) {
+    assert!(
+        xml.contains(&format!(r#"<mergeCell ref="{range}""#)),
+        "expected merged range {range}; xml: {xml}"
+    );
+}
+
+fn assert_frozen_at(xml: &str, cell: &str) {
+    assert!(
+        xml.contains(&format!(r#"topLeftCell="{cell}""#)) && xml.contains("state=\"frozen\""),
+        "expected frozen pane at {cell}; xml: {xml}"
+    );
+}
+
+fn chart_part_count(bytes: &[u8]) -> usize {
+    unzip(bytes)
+        .iter()
+        .filter(|(name, _)| name.starts_with("xl/charts/chart") && name.ends_with(".xml"))
+        .count()
+}
+
+fn header_row(grid: &[Vec<String>], first: &str) -> usize {
+    grid.iter()
+        .position(|row| row.first().map(String::as_str) == Some(first))
+        .expect("header row")
+}
+
+fn column_of(grid: &[Vec<String>], row: usize, header: &str) -> usize {
+    grid[row]
+        .iter()
+        .position(|value| value == header)
+        .or_else(|| grid[row].iter().position(|value| value.starts_with(header)))
+        .unwrap_or_else(|| {
+            panic!(
+                "header {header:?} not found in row {}: {:?}",
+                row + 1,
+                grid[row]
+            )
+        })
+}
+
+fn row_with_value(grid: &[Vec<String>], column: usize, value: &str) -> usize {
+    grid.iter()
+        .position(|row| row.get(column).map(String::as_str) == Some(value))
+        .unwrap_or_else(|| panic!("value {value:?} not found in column {column}"))
+}
+
+fn col_letters(mut col: usize) -> String {
+    let mut out = String::new();
+    loop {
+        out.insert(0, (b'A' + (col % 26) as u8) as char);
+        if col < 26 {
+            break out;
+        }
+        col = col / 26 - 1;
+    }
+}
+
+fn cell_ref(row: usize, col: usize) -> String {
+    format!("{}{row}", col_letters(col))
+}
+
+fn template_fixture_data() -> dsheng_cli::export::ExportData {
+    use dsheng_cli::export::{
+        ExportData, ExportMeta, MetricHashMeta, PolicyMeta, SourceManifestMeta,
+    };
+    use serde_json::json;
+
+    let months: Vec<String> = (1..=16)
+        .map(|month| {
+            let year = 2025 + (month - 1) / 12;
+            let month = (month - 1) % 12 + 1;
+            format!("{year:04}-{month:02}-01")
+        })
+        .collect();
+    let series = [
+        ("sales_net", "synthetic sales", "flow", "10"),
+        ("settlement_income", "synthetic settlement", "flow", "2"),
+        ("settlement_margin", "synthetic margin", "ratio", "0.2"),
+        (
+            "value_added_per_hour",
+            "synthetic efficiency",
+            "ratio",
+            "0.5",
+        ),
+    ]
+    .into_iter()
+    .map(|(key, label, semantic_type, value)| {
+        json!({
+            "metric_key": key,
+            "metric_label": label,
+            "unit": if semantic_type == "ratio" { "1" } else { "元" },
+            "semantic_type": semantic_type,
+            "buckets": months,
+            "actual": (0..16).map(|_| value).collect::<Vec<_>>(),
+            "plan": (0..16).map(|_| value).collect::<Vec<_>>(),
+        })
+    })
+    .collect();
+    let metrics = vec![
+        json!({"metric_key":"sales_net", "metric_label":"synthetic sales", "unit":"元", "semantic_type":"flow", "revenue_semantics":true, "target_value":"10", "actual_value":"9", "delta":"-1", "annual_month_plan":"12", "source_note":"synthetic"}),
+        json!({"metric_key":"settlement_income", "metric_label":"synthetic settlement", "unit":"元", "semantic_type":"flow", "target_value":"2", "actual_value":"", "delta":null, "annual_month_plan":null}),
+        json!({"metric_key":"settlement_margin", "metric_label":"synthetic margin", "unit":"1", "semantic_type":"ratio", "target_value":"0.2", "actual_value":"0.1", "delta":"-0.1", "annual_month_plan":null}),
+        json!({"metric_key":"value_added_per_hour", "metric_label":"synthetic efficiency", "unit":"1", "semantic_type":"ratio", "target_value":"0.5", "actual_value":"0.4", "delta":"-0.1", "annual_month_plan":null}),
+    ];
+    ExportData {
+        meta: ExportMeta {
+            output_contract_id: "two_tables_v1".into(),
+            workspace_id: "synthetic-workspace".into(),
+            workspace_name: "synthetic workspace".into(),
+            run_id: "synthetic-run".into(),
+            revision_no: 1,
+            as_of: "2026-05-01T00:00:00Z".into(),
+            analysis_input_fingerprint: "f".repeat(64),
+            policy: PolicyMeta {
+                version: "1".into(),
+                cadence: "month".into(),
+                timezone_id: "Asia/Shanghai".into(),
+                week_start_day: 1,
+                month_start_day: 1,
+                fiscal_year_start_month: 1,
+            },
+            currency: Some("CNY".into()),
+            tax_basis: Some("exclusive".into()),
+            source_from: "2025-01-01".into(),
+            source_to: "2026-04-30".into(),
+            target_from: None,
+            target_to: None,
+            grain: "month".into(),
+            coverage_status: "complete".into(),
+            empty_days_are_zero: false,
+            metric_hashes: vec![MetricHashMeta {
+                metric_key: "sales_net".into(),
+                version: 1,
+                semantic_hash: "synthetic".into(),
+            }],
+            source_manifests: vec![SourceManifestMeta {
+                source_id: "synthetic-source".into(),
+                file_label: "synthetic.xlsx".into(),
+                sheet: Some("source".into()),
+                selected_range: "A1:D17".into(),
+                content_hash: "synthetic".into(),
+            }],
+            base_refs: vec![],
+            filters: json!({"synthetic": true}),
+        },
+        metrics,
+        series,
+        tasks: vec![],
+        evidence: vec![],
+        diagnosis: None,
+    }
+}
+
+#[test]
+fn s4_template_layout_orientation_merges_freeze_and_missing_semantics() {
+    use dsheng_cli::export::workbook::{self, WorkbookKind};
+
+    let data = template_fixture_data();
+    let (accounting, _) = workbook::build_workbook(WorkbookKind::Accounting, &data).unwrap();
+    let accounting_path = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(accounting_path.path(), &accounting).unwrap();
+    let accounting_grid = read_sheet(accounting_path.path(), "核算表");
+    let accounting_header = header_row(&accounting_grid, "序号");
+    assert_eq!(
+        accounting_grid[accounting_header].len(),
+        12,
+        "核算表固定 12 列"
+    );
+    assert_eq!(
+        accounting_grid[accounting_header][..12],
+        workbook::ACCOUNTING_HEADERS.map(str::to_string)
+    );
+    let accounting_xml = worksheet_xml(&accounting, 1);
+    for range in [
+        "A1:L1", "A2:L2", "A5:L5", "A10:L10", "A13:L13", "A22:L22", "A26:L26", "A29:L29",
+        "A35:L35", "A42:L42", "A43:L43", "A44:L44", "A45:L45", "A46:L46", "A47:L47", "A48:L48",
+    ] {
+        assert_merge(&accounting_xml, range);
+    }
+    assert_frozen_at(&accounting_xml, "A5");
+    for row in 41..=47 {
+        assert!(
+            accounting_grid[row][0].starts_with("备注"),
+            "核算表备注行 {} 缺失",
+            row + 1
+        );
+    }
+    let sales_row = accounting_grid
+        .iter()
+        .position(|row| row.get(1).map(String::as_str) == Some("synthetic sales"))
+        .expect("synthetic sales row");
+    let actual_col = column_of(&accounting_grid, accounting_header, "月度实绩");
+    assert_eq!(accounting_grid[sales_row][actual_col], "9");
+    let missing_row = accounting_grid
+        .iter()
+        .position(|row| row.get(1).map(String::as_str) == Some("synthetic settlement"))
+        .expect("synthetic missing row");
+    assert_eq!(
+        accounting_grid[missing_row][actual_col], "",
+        "缺失值不能伪造成 0"
+    );
+    let styles = xlsx_xml(&accounting, "xl/styles.xml");
+    assert!(styles.contains("#,##0.00"), "金额格式应保留两位小数");
+    assert!(styles.contains("0.0%"), "比例格式应为百分比");
+    let diff_path = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(diff_path.path(), &accounting).unwrap();
+    let diff_grid = read_sheet(diff_path.path(), "差异分析");
+    let diff_header = header_row(&diff_grid, "分析维度");
+    assert_eq!(diff_grid[diff_header].len(), 6, "差异分析固定 6 列");
+    let diff_xml = worksheet_xml(&accounting, 3);
+    for range in ["A1:F1", "A2:F2"] {
+        assert_merge(&diff_xml, range);
+    }
+    assert_frozen_at(&diff_xml, "A5");
+
+    let (trend, _) = workbook::build_workbook(WorkbookKind::Trend, &data).unwrap();
+    let trend_path = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(trend_path.path(), &trend).unwrap();
+    let trend_grid = read_sheet(trend_path.path(), "推移表");
+    let trend_header = header_row(&trend_grid, "月份");
+    assert_eq!(trend_grid[trend_header].len(), 14, "推移表固定 14 列");
+    assert_eq!(
+        trend_grid[trend_header][..14],
+        workbook::TREND_HEADERS.map(str::to_string)
+    );
+    assert_eq!(trend_grid[trend_header + 1][0], "2025-01", "期间按行排列");
+    let cumulative_row = trend_grid
+        .iter()
+        .position(|row| row.first().is_some_and(|value| value.contains("累计")))
+        .expect("累计行");
+    assert_eq!(cumulative_row, trend_header + 1 + 16, "累计紧随月度数据");
+    let sales_col = column_of(&trend_grid, trend_header, "总销售额");
+    assert_eq!(
+        trend_grid[cumulative_row][sales_col], "160",
+        "flow 累计按月求和"
+    );
+    assert_numeric_cell_format(&trend, 1, "J5", "0.5", "#,##0.00");
+    assert_numeric_cell_format(&trend, 1, "L5", "0", "#,##0.00");
+    let trend_xml = worksheet_xml(&trend, 1);
+    assert_merge(&trend_xml, "A1:N1");
+    assert_merge(&trend_xml, "A2:N2");
+    assert_frozen_at(&trend_xml, "B5");
+    for row in 23..=27 {
+        assert_merge(&trend_xml, &format!("A{row}:N{row}"));
+    }
+    for row in 22..=26 {
+        assert!(
+            trend_grid[row][0].starts_with("备注"),
+            "推移表备注行 {} 缺失",
+            row + 1
+        );
+    }
+    let chart_xml = worksheet_xml(&trend, 2);
+    assert_merge(&chart_xml, "A1:H1");
+    assert_merge(&chart_xml, "A2:H2");
+    assert_eq!(chart_part_count(&trend), 4, "图表工作表嵌入四个折线图");
+    let drawing = xlsx_xml(&trend, "xl/drawings/drawing1.xml");
+    let anchor_re = regex::Regex::new(
+        r"(?s)<xdr:from>.*?<xdr:col>(\d+)</xdr:col>.*?<xdr:row>(\d+)</xdr:row>.*?</xdr:from>",
+    )
+    .unwrap();
+    let anchors: Vec<(u32, u32)> = anchor_re
+        .captures_iter(&drawing)
+        .map(|capture| (capture[1].parse().unwrap(), capture[2].parse().unwrap()))
+        .collect();
+    assert!(
+        anchors.contains(&(1, 3)) && anchors.contains(&(10, 3)),
+        "unexpected chart anchors: {anchors:?}; drawing xml: {drawing}"
+    );
+    assert!(
+        anchors.contains(&(1, 21)) && anchors.contains(&(10, 21)),
+        "chart anchors should be B4/K4/B22/K22: {anchors:?}"
+    );
+    let chart_parts: Vec<String> = unzip(&trend)
+        .into_iter()
+        .filter(|(name, _)| name.starts_with("xl/charts/chart") && name.ends_with(".xml"))
+        .map(|(_, bytes)| String::from_utf8(bytes).unwrap())
+        .collect();
+    assert!(chart_parts.iter().all(|xml| xml.contains("lineChart")));
 }
 
 #[test]
 fn s4_visual_decimal_rounding_keeps_raw_metadata_and_machine_exports() {
-    use dsheng_cli::export::{bundle, cells::DecimalTextLog, chart, workbook::{self, WorkbookKind}};
+    use dsheng_cli::export::{
+        bundle,
+        cells::DecimalTextLog,
+        chart,
+        workbook::{self, WorkbookKind},
+    };
     use serde_json::json;
     let f = Fixture::new("s4-display-precision");
     let conn = rusqlite::Connection::open(&f.db).unwrap();
-    let mut data = dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, None).unwrap();
+    let mut data =
+        dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, None)
+            .unwrap();
     let raw_money = "455022.79220779220779220779221";
     data.metrics = vec![
         json!({"metric_key":"money", "metric_label":"金额", "unit":"元", "unit_signature":{"dimension":"money"},
@@ -487,63 +863,112 @@ fn s4_visual_decimal_rounding_keeps_raw_metadata_and_machine_exports() {
         json!({"metric_key":"ratio", "metric_label":"比率", "unit":"1", "unit_signature":{"dimension":"ratio"}, "semantic_type":"ratio",
             "buckets":["2026-10-01","2026-10-02"], "actual":["0.94485",null], "plan":["0.1225","-0.1235"]}),
     ];
-    data.tasks = vec![json!({"task_id":"ratio-review", "unit_signature":{"dimension":"ratio"},
-        "target_value":"0.1225", "actual_value":"0.94485", "progress":"99.99"})];
-    data.evidence = vec![json!({"evidence_id":"ratio-comparison", "unit_signature":{"dimension":"ratio"},
-        "base_value":"0.1225", "current_value":"0.94485", "absolute_change":"-0.1235", "change_rate":"0.1225"})];
+    data.tasks = vec![
+        json!({"task_id":"ratio-review", "unit_signature":{"dimension":"ratio"},
+        "target_value":"0.1225", "actual_value":"0.94485", "progress":"99.99"}),
+    ];
+    data.evidence = vec![
+        json!({"evidence_id":"ratio-comparison", "unit_signature":{"dimension":"ratio"},
+        "base_value":"0.1225", "current_value":"0.94485", "absolute_change":"-0.1235", "change_rate":"0.1225"}),
+    ];
     let unchanged = data.clone();
     let (bytes, log) = workbook::build_workbook(WorkbookKind::Accounting, &data).unwrap();
     let path = f.dir.join("precision.xlsx");
     std::fs::write(&path, &bytes).unwrap();
     let grid = read_sheet(&path, "核算表");
-    assert_eq!(grid[5][..10], workbook::ACCOUNTING_HEADERS.map(str::to_string), "固定业务列不变");
-    assert_eq!(grid[6][6], "455022.79");
-    assert_eq!(grid[7][6], "0.945");
-    assert_eq!(grid[8][6], "1,234,567,890,123,456.56");
-    assert_eq!(grid[9][6], "1.234567", "工时保留原精度");
-    assert_eq!(grid[10][6], "", "缺失值不能变成零");
-    assert_eq!(grid[11][6], "0");
-    assert_eq!(grid[12][6], "1.234567", "旧记录无冻结单位语义时不猜金额");
-    assert_eq!(grid[13][6], "-1.24", "货币/时间保留两位，负数半偶舍入");
-    assert_eq!(grid[14][6], "1.22", "货币/数量保留两位，正数半偶舍入");
-    assert_eq!(grid[15][6], "1.234567", "数量保留原精度");
-    assert_eq!(grid[16][7], "123456789012345655.5 个百分点", "大百分点必须文本回退");
-    assert!(grid[6][2].contains("月度预定来源：去年同期参考下限"));
-    assert!(grid[6][2].contains("参考值，非已确认目标"));
-    assert_numeric_cell_format(&bytes, 1, "G7", "455022.79", "#,##0.00");
-    assert_numeric_cell_format(&bytes, 1, "G8", "0.945", "0.0%");
-    assert_numeric_cell_format(&bytes, 1, "H7", "-1.22", "#,##0.00");
-    assert_numeric_cell_format(&bytes, 1, "H8", "12.2", "0.0\" 个百分点\"");
-    assert_numeric_cell_format(&bytes, 2, "D7", "455022.79", "#,##0.00");
-    assert_numeric_cell_format(&bytes, 2, "E7", "1.22", "#,##0.00");
-    assert_numeric_cell_format(&bytes, 3, "H7", "1.24", "#,##0.00");
-    assert_numeric_cell_format(&bytes, 3, "I7", "0.945", "0.0%");
-    assert_numeric_cell_format(&bytes, 3, "K7", "-1.24", "#,##0.00");
-    assert_numeric_cell_format(&bytes, 3, "L7", "-0.122", "0.0%");
-    assert_numeric_cell_format(&bytes, 3, "E8", "12.2", "0.0\" 个百分点\"");
-    assert_numeric_cell_format(&bytes, 3, "H8", "-12.4", "0.0\" 个百分点\"");
-    assert_numeric_cell_format(&bytes, 3, "I8", "-0.122", "0.0%");
-    assert_numeric_cell_format(&bytes, 3, "K8", "12.2", "0.0\" 个百分点\"");
-    assert_numeric_cell_format(&bytes, 3, "L8", "0.124", "0.0%");
-    assert_column_min_width(&bytes, 1, 7, 26.0);
-    assert_column_min_width(&bytes, 1, 8, 31.0);
+    let header = header_row(&grid, "序号");
+    assert_eq!(
+        grid[header][..12],
+        workbook::ACCOUNTING_HEADERS.map(str::to_string),
+        "固定业务列不变"
+    );
+    let actual_col = column_of(&grid, header, "月度实绩");
+    let source_col = column_of(&grid, header, "计算公式 / 取数来源");
+    let money_row = row_with_value(&grid, 1, "金额");
+    let ratio_row = row_with_value(&grid, 1, "比率");
+    let huge_row = row_with_value(&grid, 1, "大金额");
+    let hours_row = row_with_value(&grid, 1, "工时");
+    let empty_row = row_with_value(&grid, 1, "空值");
+    let zero_row = row_with_value(&grid, 1, "零值");
+    let legacy_row = row_with_value(&grid, 1, "旧记录未确认单位");
+    let hour_cost_row = row_with_value(&grid, 1, "每小时费用");
+    let unit_cost_row = row_with_value(&grid, 1, "单价");
+    let quantity_row = row_with_value(&grid, 1, "数量");
+    assert_eq!(grid[money_row][actual_col], "455022.79");
+    assert_eq!(grid[ratio_row][actual_col], "0.945");
+    assert_eq!(grid[huge_row][actual_col], "1,234,567,890,123,456.56");
+    assert_eq!(grid[hours_row][actual_col], "1.234567", "工时保留原精度");
+    assert_eq!(grid[empty_row][actual_col], "", "缺失值不能变成零");
+    assert_eq!(grid[zero_row][actual_col], "0");
+    assert_eq!(
+        grid[legacy_row][actual_col], "1.234567",
+        "旧记录无冻结单位语义时不猜金额"
+    );
+    assert_eq!(
+        grid[hour_cost_row][actual_col], "-1.24",
+        "货币/时间保留两位，负数半偶舍入"
+    );
+    assert_eq!(grid[unit_cost_row][actual_col], "1.22", "货币/数量半偶舍入");
+    assert_eq!(grid[quantity_row][actual_col], "1.234567", "数量保留原精度");
+    let huge_ratio_row = row_with_value(&grid, 1, "大比例");
+    let delta_col = column_of(&grid, header, "预实差异额");
+    assert_eq!(
+        grid[huge_ratio_row][delta_col], "123456789012345655.5 个百分点",
+        "大百分点必须文本回退"
+    );
+    assert!(grid[money_row][source_col].contains("月度预定来源：去年同期参考下限"));
+    assert!(grid[money_row][source_col].contains("参考值，非已确认目标"));
+    assert_numeric_cell_format(
+        &bytes,
+        1,
+        &cell_ref(money_row + 1, actual_col),
+        "455022.79",
+        "#,##0.00",
+    );
+    assert_numeric_cell_format(
+        &bytes,
+        1,
+        &cell_ref(ratio_row + 1, actual_col),
+        "0.945",
+        "0.0%",
+    );
+    assert_numeric_cell_format(
+        &bytes,
+        1,
+        &cell_ref(hour_cost_row + 1, actual_col),
+        "-1.24",
+        "#,##0.00",
+    );
+    assert_column_min_width(&bytes, 1, 8, 26.0);
+    assert_column_min_width(&bytes, 1, 10, 31.0);
     let metadata = read_sheet(&path, "_metadata");
-    assert!(metadata.iter().any(|row| row.get(2).is_some_and(|v| v == "G7")
-        && row.get(3).is_some_and(|v| v == raw_money)
-        && row.get(4).is_some_and(|v| v == "455,022.79")));
-    assert!(metadata.iter().any(|row| row.get(2).is_some_and(|v| v == "G8")
-        && row.get(3).is_some_and(|v| v == "0.94485")
-        && row.get(4).is_some_and(|v| v == "94.5%")));
-    assert!(metadata.iter().any(|row| row.get(0).is_some_and(|v| v == "target_basis")
-        && row.get(3).is_some_and(|v| v.contains("prior_year_actual"))));
-    assert!(metadata.iter().any(|row| row.get(2).is_some_and(|v| v == "H8")
-        && row.get(3).is_some_and(|v| v == "0.1225")
-        && row.get(4).is_some_and(|v| v == "12.2 个百分点")));
-    assert!(log.cells.iter().any(|cell| cell.cell == "G9" && cell.value == "1234567890123456.555"));
+    assert!(metadata.iter().any(|row| {
+        row.get(0).is_some_and(|v| v == "display_decimal")
+            && row.get(3).is_some_and(|v| v == raw_money)
+            && row.get(4).is_some_and(|v| v == "455,022.79")
+    }));
+    assert!(metadata.iter().any(|row| {
+        row.get(0).is_some_and(|v| v == "display_decimal")
+            && row.get(3).is_some_and(|v| v == "0.94485")
+            && row.get(4).is_some_and(|v| v == "94.5%")
+    }));
+    assert!(metadata
+        .iter()
+        .any(|row| row.get(0).is_some_and(|v| v == "target_basis")
+            && row.get(3).is_some_and(|v| v.contains("prior_year_actual"))));
+    assert!(metadata.iter().any(|row| {
+        row.get(0).is_some_and(|v| v == "display_decimal")
+            && row.get(3).is_some_and(|v| v == "0.1225")
+            && row.get(4).is_some_and(|v| v == "12.2 个百分点")
+    }));
+    assert!(log
+        .cells
+        .iter()
+        .any(|cell| cell.value == "1234567890123456.555"));
     let chart = chart::chart_xlsx(&data, "ratio", &mut DecimalTextLog::default()).unwrap();
-    assert_numeric_cell_format(&chart, 1, "B7", "0.945", "0.0%");
-    assert_numeric_cell_format(&chart, 1, "C7", "0.122", "0.0%");
-    assert_numeric_cell_format(&chart, 1, "C8", "-0.124", "0.0%");
+    assert_numeric_cell_format(&chart, 1, "B5", "0.945", "0.0%");
+    assert_numeric_cell_format(&chart, 1, "C5", "0.122", "0.0%");
+    assert_numeric_cell_format(&chart, 1, "C6", "-0.124", "0.0%");
     assert!(xlsx_xml(&chart, "xl/charts/chart1.xml").contains(r#"formatCode="0.0%""#));
     let (tasks, _) = workbook::build_workbook(WorkbookKind::Task, &data).unwrap();
     assert_numeric_cell_format(&tasks, 1, "E7", "0.122", "0.0%");
@@ -552,12 +977,22 @@ fn s4_visual_decimal_rounding_keeps_raw_metadata_and_machine_exports() {
     assert_numeric_cell_format(&tasks, 3, "K7", "0.945", "0.0%");
     assert_numeric_cell_format(&tasks, 3, "L7", "-12.4", "0.0\" 个百分点\"");
     assert_numeric_cell_format(&tasks, 3, "M7", "0.122", "0.0%");
-    assert!(xlsx_xml(&tasks, "xl/worksheets/sheet1.xml").contains(r#"<c r="L7"><v>99.99</v></c>"#), "任务进度不因舍入显示为100");
+    assert!(
+        xlsx_xml(&tasks, "xl/worksheets/sheet1.xml").contains(r#"<c r="L7"><v>99.99</v></c>"#),
+        "任务进度不因舍入显示为100"
+    );
     let csv = String::from_utf8(chart::chart_csv(&data, "money").unwrap()).unwrap();
     assert!(csv.contains(raw_money), "机器 CSV 原值不变");
     let bundle = bundle::build_bundle(&data).unwrap();
     let entries = unzip(&bundle);
-    let analysis: Value = serde_json::from_slice(&entries.iter().find(|(name, _)| name == "analysis.json").unwrap().1).unwrap();
+    let analysis: Value = serde_json::from_slice(
+        &entries
+            .iter()
+            .find(|(name, _)| name == "analysis.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
     assert_eq!(analysis["metrics"][0]["actual_value"], raw_money);
     assert_eq!(data, unchanged, "所有导出都不能改写业务快照");
 }
@@ -596,23 +1031,52 @@ fn s4_legacy_export_projects_only_selected_revision_metadata_without_writes() {
         params![f.workspace.to_string(), json!({"dimension":"money","base_unit":"USD","currency":"USD","tax_basis":"inclusive"}).to_string()],
     ).unwrap();
     let before = read_snapshot();
-    let data = dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, Some(1)).unwrap();
+    let data =
+        dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, Some(1))
+            .unwrap();
     assert_eq!(data.metrics[0]["unit_signature"]["dimension"], "money");
     assert_eq!(data.metrics[0]["unit_signature"]["currency"], "CNY");
     assert_eq!(data.series[0]["unit_signature"]["currency"], "CNY");
     assert_eq!(data.series[0]["semantic_type"], "flow");
     assert_eq!(data.meta.currency.as_deref(), Some("CNY"));
-    assert_eq!(data.metrics[0]["target_basis"]["kind"], "unconfirmed_legacy");
+    assert_eq!(
+        data.metrics[0]["target_basis"]["kind"],
+        "unconfirmed_legacy"
+    );
     let (book, _) = build_workbook(WorkbookKind::Accounting, &data).unwrap();
-    assert_numeric_cell_format(&book, 1, "G7", "1.23", "#,##0.00");
     let path = f.dir.join("legacy-frozen.xlsx");
     std::fs::write(&path, &book).unwrap();
-    assert!(read_sheet(&path, "核算表")[6][2].contains("历史来源待确认"));
+    let legacy_grid = read_sheet(&path, "核算表");
+    let legacy_header = header_row(&legacy_grid, "序号");
+    let legacy_row = row_with_value(&legacy_grid, 1, "销售额");
+    let legacy_actual_col = column_of(&legacy_grid, legacy_header, "月度实绩");
+    assert_numeric_cell_format(
+        &book,
+        1,
+        &cell_ref(legacy_row + 1, legacy_actual_col),
+        "1.23",
+        "#,##0.00",
+    );
+    assert!(legacy_grid[legacy_row][2].contains("历史来源待确认"));
     let entries = unzip(&dsheng_cli::export::bundle::build_bundle(&data).unwrap());
-    let analysis: Value = serde_json::from_slice(&entries.iter().find(|(name, _)| name == "analysis.json").unwrap().1).unwrap();
+    let analysis: Value = serde_json::from_slice(
+        &entries
+            .iter()
+            .find(|(name, _)| name == "analysis.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
     assert_eq!(analysis["metrics"][0]["actual_value"], "1.234567");
-    assert_eq!(analysis["metrics"][0]["target_basis"]["kind"], "unconfirmed_legacy");
-    assert_eq!(read_snapshot(), before, "只读 projection 不能改写历史快照或指纹");
+    assert_eq!(
+        analysis["metrics"][0]["target_basis"]["kind"],
+        "unconfirmed_legacy"
+    );
+    assert_eq!(
+        read_snapshot(),
+        before,
+        "只读 projection 不能改写历史快照或指纹"
+    );
 
     // 更老的定义快照本身没有单位/累计语义时保留未知，不能借用现行定义。
     let mut legacy_defs: Value = serde_json::from_str(&defs).unwrap();
@@ -625,14 +1089,20 @@ fn s4_legacy_export_projects_only_selected_revision_metadata_without_writes() {
         params![f.run_id, legacy_defs.to_string()],
     ).unwrap();
     let before = read_snapshot();
-    let unknown = dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, Some(1)).unwrap();
+    let unknown =
+        dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, Some(1))
+            .unwrap();
     assert!(unknown.metrics[0]["unit_signature"].is_null());
     assert!(unknown.series[0]["unit_signature"].is_null());
     assert!(unknown.series[0]["semantic_type"].is_null());
     assert_eq!(unknown.meta.currency, None);
     let (book, _) = build_workbook(WorkbookKind::Accounting, &unknown).unwrap();
     std::fs::write(&path, &book).unwrap();
-    assert_eq!(read_sheet(&path, "核算表")[6][6], "1.234567");
+    let unknown_grid = read_sheet(&path, "核算表");
+    let unknown_header = header_row(&unknown_grid, "序号");
+    let unknown_row = row_with_value(&unknown_grid, 1, "销售额");
+    let unknown_actual_col = column_of(&unknown_grid, unknown_header, "月度实绩");
+    assert_eq!(unknown_grid[unknown_row][unknown_actual_col], "1.234567");
     assert_eq!(read_snapshot(), before);
 }
 
@@ -655,10 +1125,28 @@ fn s4_task_and_evidence_display_bind_frozen_metric_identity() {
     conn.execute("UPDATE run_revisions SET normalized_metrics_json = ?2 WHERE run_id = ?1 AND revision_no = 1",
         params![f.run_id, normalized.to_string()]).unwrap();
     for (role, title, metric_id, target, unit) in [
-        ("review", "关联指标检视", Some(f.metric_id.as_str()), "1.225", "元"),
-        ("plan", "关联指标计划", Some(f.metric_id.as_str()), "1.235", "元"),
+        (
+            "review",
+            "关联指标检视",
+            Some(f.metric_id.as_str()),
+            "1.225",
+            "元",
+        ),
+        (
+            "plan",
+            "关联指标计划",
+            Some(f.metric_id.as_str()),
+            "1.235",
+            "元",
+        ),
         ("review", "未关联指标检视", None, "1.234567", "元"),
-        ("review", "单位冲突检视", Some(f.metric_id.as_str()), "1.234567", "hour"),
+        (
+            "review",
+            "单位冲突检视",
+            Some(f.metric_id.as_str()),
+            "1.234567",
+            "hour",
+        ),
     ] {
         let input = json!({"schema_version":"1", "workspace_id":f.workspace, "run_id":f.run_id,
             "analysis_revision_no":1, "input_fingerprint":fingerprint, "mutation_id":uuid::Uuid::new_v4(),
@@ -667,26 +1155,47 @@ fn s4_task_and_evidence_display_bind_frozen_metric_identity() {
             "steps":[{"action":"合成核对", "owner":null, "start_date":null, "due_date":null, "done_criteria":"核对完成"}]});
         let path = f.dir.join("task-display.json");
         std::fs::write(&path, input.to_string()).unwrap();
-        let (stdout, code) = run(&["task", "create", "--db", &f.db, "--workspace", &f.workspace.to_string(),
-            "--input-json", &path.to_string_lossy(), "--json"]);
+        let (stdout, code) = run(&[
+            "task",
+            "create",
+            "--db",
+            &f.db,
+            "--workspace",
+            &f.workspace.to_string(),
+            "--input-json",
+            &path.to_string_lossy(),
+            "--json",
+        ]);
         assert_eq!(code, 0, "{stdout}");
     }
     conn.execute("UPDATE metric_definitions SET label = '现行标签', unit_signature_json = ?2 WHERE workspace_id = ?1",
         params![f.workspace.to_string(), json!({"dimension":"ratio","base_unit":"1","currency":null,"tax_basis":null}).to_string()]).unwrap();
-    let data = dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, Some(1)).unwrap();
+    let data =
+        dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, Some(1))
+            .unwrap();
     for task in &data.tasks {
         assert_eq!(task["actual_value"], raw_money);
         if task["metric_id"].is_null() || task["unit"] == "hour" {
-            assert!(task["unit_signature"].is_null(), "缺少指标关联或明确单位冲突时保留未知");
+            assert!(
+                task["unit_signature"].is_null(),
+                "缺少指标关联或明确单位冲突时保留未知"
+            );
         } else {
             assert_eq!(task["metric_label"], "销售额");
             assert_eq!(task["unit_signature"]["dimension"], "money");
             assert_eq!(task["unit_signature"]["currency"], "CNY");
         }
     }
-    let evidence_index = data.evidence.iter().position(|e| e["evidence_id"] == "fixture-money-evidence").unwrap();
+    let evidence_index = data
+        .evidence
+        .iter()
+        .position(|e| e["evidence_id"] == "fixture-money-evidence")
+        .unwrap();
     assert_eq!(data.evidence[evidence_index]["metric_id"], f.metric_id);
-    assert_eq!(data.evidence[evidence_index]["unit_signature"]["dimension"], "money");
+    assert_eq!(
+        data.evidence[evidence_index]["unit_signature"]["dimension"],
+        "money"
+    );
     let (book, _) = build_workbook(WorkbookKind::Task, &data).unwrap();
     let path = f.dir.join("task-display.xlsx");
     std::fs::write(&path, &book).unwrap();
@@ -694,8 +1203,14 @@ fn s4_task_and_evidence_display_bind_frozen_metric_identity() {
     let row = review.iter().position(|r| r[1] == "关联指标检视").unwrap() + 1;
     assert_numeric_cell_format(&book, 1, &format!("E{row}"), "1.22", "#,##0.00");
     assert_numeric_cell_format(&book, 1, &format!("F{row}"), "455022.79", "#,##0.00");
-    assert_eq!(review.iter().find(|r| r[1] == "未关联指标检视").unwrap()[4], "1.234567");
-    assert_eq!(review.iter().find(|r| r[1] == "单位冲突检视").unwrap()[4], "1.234567");
+    assert_eq!(
+        review.iter().find(|r| r[1] == "未关联指标检视").unwrap()[4],
+        "1.234567"
+    );
+    assert_eq!(
+        review.iter().find(|r| r[1] == "单位冲突检视").unwrap()[4],
+        "1.234567"
+    );
     assert_numeric_cell_format(&book, 2, "E7", "1.24", "#,##0.00");
     let row = evidence_index + 7;
     assert_numeric_cell_format(&book, 3, &format!("J{row}"), "1.22", "#,##0.00");
@@ -703,8 +1218,19 @@ fn s4_task_and_evidence_display_bind_frozen_metric_identity() {
     assert_numeric_cell_format(&book, 3, &format!("L{row}"), "1.24", "#,##0.00");
     assert_numeric_cell_format(&book, 3, &format!("M{row}"), "0.122", "0.0%");
     let entries = unzip(&dsheng_cli::export::bundle::build_bundle(&data).unwrap());
-    let tasks: Value = serde_json::from_slice(&entries.iter().find(|(name, _)| name == "tasks.json").unwrap().1).unwrap();
-    assert!(tasks["tasks"].as_array().unwrap().iter().all(|t| t["actual_value"] == raw_money));
+    let tasks: Value = serde_json::from_slice(
+        &entries
+            .iter()
+            .find(|(name, _)| name == "tasks.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    assert!(tasks["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|t| t["actual_value"] == raw_money));
     let persisted: String = conn.query_row("SELECT normalized_metrics_json FROM run_revisions WHERE run_id = ?1 AND revision_no = 1",
         params![f.run_id], |r| r.get(0)).unwrap();
     assert_eq!(persisted, normalized.to_string(), "导出不回写原始快照");
@@ -729,9 +1255,16 @@ fn historical_revision_keeps_its_own_input_fingerprint() {
         let mut book = Workbook::new();
         let ws = book.add_worksheet();
         ws.set_name("source").unwrap();
-        for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"]
-            .iter()
-            .enumerate()
+        for (c, h) in [
+            "科目",
+            "单位",
+            "月度预定",
+            "月度实绩",
+            "年度计划·当月目标",
+            "期间",
+        ]
+        .iter()
+        .enumerate()
         {
             ws.write_string(0, c as u16, *h).unwrap();
         }
@@ -774,22 +1307,13 @@ fn historical_revision_keeps_its_own_input_fingerprint() {
         .unwrap();
     assert_ne!(rev1_fingerprint, rev2_fingerprint);
 
-    let view = dsheng_cli::store::analysis::analysis_run_view(
-        &conn,
-        f.workspace,
-        &f.run_id,
-        1,
-    )
-    .unwrap();
+    let view =
+        dsheng_cli::store::analysis::analysis_run_view(&conn, f.workspace, &f.run_id, 1).unwrap();
     assert_eq!(view["current_revision_no"], 2);
     assert_eq!(view["analysis_input_fingerprint"], rev1_fingerprint);
-    let exported = dsheng_cli::cmd::export_cmd::build_export_data(
-        &conn,
-        f.workspace,
-        &f.run_id,
-        Some(1),
-    )
-    .unwrap();
+    let exported =
+        dsheng_cli::cmd::export_cmd::build_export_data(&conn, f.workspace, &f.run_id, Some(1))
+            .unwrap();
     assert_eq!(exported.meta.analysis_input_fingerprint, rev1_fingerprint);
 }
 

@@ -26,12 +26,22 @@ fn read_metric_metadata_is_optional_and_closed() {
         "delta": "4193.7374", "status": "ready", "pending_reasons": [], "mom": null, "yoy": null
     });
     assert!(validator.is_valid(&metric), "legacy shape remains valid");
-    metric["unit_signature"] = json!({"dimension":"money","base_unit":"元","currency":"CNY","tax_basis":"exclusive"});
-    for kind in ["explicit_target", "annual_month_plan", "prior_year_actual", "unconfirmed_legacy"] {
-        metric["target_basis"] = json!({"kind":kind,"label":"来源","is_reference":kind != "explicit_target"});
+    metric["unit_signature"] =
+        json!({"dimension":"money","base_unit":"元","currency":"CNY","tax_basis":"exclusive"});
+    for kind in [
+        "explicit_target",
+        "annual_month_plan",
+        "prior_year_actual",
+        "unconfirmed_legacy",
+    ] {
+        metric["target_basis"] =
+            json!({"kind":kind,"label":"来源","is_reference":kind != "explicit_target"});
         assert!(validator.is_valid(&metric), "{kind}");
         metric["target_basis"]["is_reference"] = json!(kind == "explicit_target");
-        assert!(!validator.is_valid(&metric), "{kind} cannot misstate whether it is a reference");
+        assert!(
+            !validator.is_valid(&metric),
+            "{kind} cannot misstate whether it is a reference"
+        );
     }
     metric["target_basis"]["is_reference"] = json!(true);
     metric["target_basis"]["unexpected"] = json!(true);

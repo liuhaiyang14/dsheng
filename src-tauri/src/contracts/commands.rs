@@ -96,7 +96,13 @@ pub fn scan(
     source_profile: Option<String>,
     generic: Option<bool>,
 ) -> Value {
-    core::data::scan_with_profile(&state, workspace_id, directory_label, source_profile, generic.unwrap_or(false))
+    core::data::scan_with_profile(
+        &state,
+        workspace_id,
+        directory_label,
+        source_profile,
+        generic.unwrap_or(false),
+    )
 }
 
 #[tauri::command(async)]
@@ -351,7 +357,13 @@ pub fn source_mapping_set(
     profile_hash: String,
     mappings: Value,
 ) -> Value {
-    core::data::source_mapping_set(&state, workspace_id, directory_label, profile_hash, mappings)
+    core::data::source_mapping_set(
+        &state,
+        workspace_id,
+        directory_label,
+        profile_hash,
+        mappings,
+    )
 }
 
 #[tauri::command(async)]

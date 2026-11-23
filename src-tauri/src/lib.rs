@@ -20,7 +20,11 @@ fn install_flight_recorder() {
             .open("/tmp/dsheng-cmd.log")
             .ok();
         if let Some(f) = f.as_mut() {
-            let _ = writeln!(f, "[panic] {info}\n[backtrace]\n{}", std::backtrace::Backtrace::force_capture());
+            let _ = writeln!(
+                f,
+                "[panic] {info}\n[backtrace]\n{}",
+                std::backtrace::Backtrace::force_capture()
+            );
         }
         default(info);
     }));

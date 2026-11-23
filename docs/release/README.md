@@ -1,9 +1,10 @@
 # 发布与打包（docs/release）
 
-状态：脚本与流程可用；当前已在本机（macOS arm64）产出 DMG、便携版和独立
-CLI 三件产物并生成版本清单。Windows/x64 产物需目标机执行（CI 不再运行 Windows 构建）（见文末覆盖状态）。
+状态：脚本与流程可用；当前版本为 **v0.3.0**。本轮已完成版本同步、两表输出合同和版式回归约束，并已生成 macOS arm64 三件标准产物及版本清单。Windows/x64 产物需目标机执行（CI 不再运行 Windows 构建）。
 
-当前版本 0.2.1 的 macOS arm64 测试包按 `target/release-dist/v0.2.1/` 独立交付；便携版、CLI 包和 SHA-256 见 [版本清单](manifest-v0.2.1.json)。本轮修复内容和验证见 [数值显示与目标来源修复](../engineering/numeric-display-v0.2.1.md)。历史 v0.2.0 目录及清单保留。GitHub Release 尚未发布，公开分发需产品验收后另行授权。
+上一版 v0.2.1 的 macOS arm64 测试包继续按 `target/release-dist/v0.2.1/` 独立保留；便携版、CLI 包和 SHA-256 见 [v0.2.1 版本清单](manifest-v0.2.1.json)，修复内容见 [数值显示与目标来源修复](../engineering/numeric-display-v0.2.1.md)。v0.2.0 目录及清单同样保留。v0.3.0 产物位于 `target/release-dist/v0.3.0/`，清单见 [manifest-v0.3.0.json](manifest-v0.3.0.json)；GitHub Release 尚未发布，公开分发需产品验收后另行授权。
+
+v0.3.0 两表版式、`two_tables_v1` 机器合同和打包前回归项见 [两表输出契约与发布准备](../engineering/two-tables-v0.3.0.md)。
 
 边界（必须遵守）：
 
@@ -119,7 +120,18 @@ Windows 部分按系统文档行为编写、待真机走查）。
 - 全部产物产出并 preflight PASS 后，由用户决定是否执行 GitHub Release；
   本工作包不执行发布、不持有发布凭据。
 
-## 当前覆盖状态（随 manifest 同步更新）
+## 覆盖状态
+
+### v0.3.0（当前准备版）
+
+| 产物 | 状态 |
+| --- | --- |
+| macOS arm64 DMG / portable / CLI | 已打包并通过包内版本、成员、哈希核验；详见 [v0.3.0 清单](manifest-v0.3.0.json) |
+| macOS x64 DMG / portable / CLI | 待目标机执行 |
+| Windows x64 MSI / portable / CLI | 待 Windows 宿主执行 |
+| Skill ZIP / 手册 | 归属其他工作包；manifest 生成时如实记录 |
+
+### v0.2.1（历史基线，随旧 manifest 同步）
 
 | 产物 | 状态 |
 | --- | --- |

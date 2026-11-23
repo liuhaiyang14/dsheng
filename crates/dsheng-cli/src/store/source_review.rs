@@ -150,7 +150,8 @@ pub fn file_review(
                 };
                 let values = fields("value_fields");
                 let dates = fields("date_fields");
-                let required_status = mapping["accepted_statuses"].as_array()
+                let required_status = mapping["accepted_statuses"]
+                    .as_array()
                     .filter(|statuses| !statuses.is_empty())
                     .and_then(|_| mapping["status_field"].as_str());
                 let missing: Vec<&str> = values
@@ -181,7 +182,9 @@ pub fn file_review(
     } else {
         "records"
     };
-    let column_overrides: Vec<Value> = entries.into_iter().flatten()
+    let column_overrides: Vec<Value> = entries
+        .into_iter()
+        .flatten()
         .filter(|entry| confirms_file(entry, file))
         .filter_map(|entry| {
             let (role, column) = entry.column_override()?;

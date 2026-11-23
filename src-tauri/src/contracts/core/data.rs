@@ -32,10 +32,8 @@ pub fn scan_with_profile(
         let db = env.db_arg()?;
         let mut conn = dsheng_cli::ctx::open_db(Some(&db))?;
         let workspace = dsheng_cli::ctx::resolve_workspace(&conn, Some(&workspace_id))?;
-        let profile = dsheng_cli::store::sources::resolve_source_profile(
-            source_profile.as_deref(),
-            generic,
-        )?;
+        let profile =
+            dsheng_cli::store::sources::resolve_source_profile(source_profile.as_deref(), generic)?;
         super::metric_defaults::ensure_defaults(&mut conn, workspace.workspace_id)?;
         dsheng_cli::store::sources::scan_summary_desktop_with_profile(
             &mut conn,
@@ -63,7 +61,8 @@ pub fn mapping_show(env: &DesktopEnv, workspace_id: String, run_id: String) -> V
         let db = env.db_arg()?;
         let conn = dsheng_cli::ctx::open_db(Some(&db))?;
         let workspace = dsheng_cli::ctx::resolve_workspace(&conn, Some(&workspace_id))?;
-        let mut result = dsheng_cli::store::sources::mapping_show(&conn, workspace.workspace_id, &run_id)?;
+        let mut result =
+            dsheng_cli::store::sources::mapping_show(&conn, workspace.workspace_id, &run_id)?;
         let metrics = dsheng_cli::store::sources::metric_list(&conn, workspace.workspace_id)?;
         result["mappings"] = mapping_display_rows(&result["mappings"], &metrics);
         Ok(result)
@@ -75,14 +74,25 @@ pub fn mapping_show(env: &DesktopEnv, workspace_id: String, run_id: String) -> V
 fn mapping_display_rows(snapshot: &Value, metrics: &[Value]) -> Value {
     let mut rows = std::collections::BTreeMap::new();
     for entry in snapshot.as_array().into_iter().flatten() {
-        let key = entry["metric_key"].as_str().or_else(|| entry["tool_field"].as_str()).unwrap_or_default();
-        let label = metrics.iter().find(|metric| metric["metric_key"].as_str() == Some(key))
+        let key = entry["metric_key"]
+            .as_str()
+            .or_else(|| entry["tool_field"].as_str())
+            .unwrap_or_default();
+        let label = metrics
+            .iter()
+            .find(|metric| metric["metric_key"].as_str() == Some(key))
             .and_then(|metric| metric["label"].as_str())
             .unwrap_or_else(|| if key.is_ascii() { "来源用途" } else { key });
-        let source = entry["source_label"].as_str().or_else(|| entry["source_id"].as_str()).unwrap_or("来源数据");
+        let source = entry["source_label"]
+            .as_str()
+            .or_else(|| entry["source_id"].as_str())
+            .unwrap_or("来源数据");
         let sheet = entry["sheet"].as_str().unwrap_or_default();
         let recognized = entry["recognized"].as_str().unwrap_or("已识别");
-        let usage = entry["usage"].as_str().map(str::to_owned).unwrap_or_else(|| format!("用于计算{label}；计算结果以经营分析为准"));
+        let usage = entry["usage"]
+            .as_str()
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("用于计算{label}；计算结果以经营分析为准"));
         rows.entry((source.to_owned(), sheet.to_owned(), key.to_owned())).or_insert_with(|| serde_json::json!({
             "tool_field": label, "source_label": if sheet.is_empty() { source.to_owned() } else { format!("{source} · {sheet}") },
             "recognized": recognized, "usage": usage,
@@ -101,7 +111,10 @@ mod mapping_display_tests {
             {"metric_key":"labor_cost", "source_id":"工资.xlsx", "sheet":"工资", "evidence_id":"A2"},
             {"metric_key":"labor_cost", "source_id":"工资.xlsx", "sheet":"工资", "evidence_id":"A3"}
         ]);
-        let rows = mapping_display_rows(&snapshot, &[json!({"metric_key":"labor_cost", "label":"人工费"})]);
+        let rows = mapping_display_rows(
+            &snapshot,
+            &[json!({"metric_key":"labor_cost", "label":"人工费"})],
+        );
         assert_eq!(rows.as_array().unwrap().len(), 1);
         assert_eq!(rows[0]["tool_field"], "人工费");
         assert_eq!(rows[0]["recognized"], "已识别");
@@ -252,10 +265,12 @@ pub fn export_tables(
                     crate::export::workbook::WorkbookKind::Accounting,
                     &data,
                 )
-                .map_err(|e| dsheng_cli::error::CliError::new(
-                    dsheng_core::contracts::cli::CliErrorCode::ExportFailed,
-                    e.to_string(),
-                ))?
+                .map_err(|e| {
+                    dsheng_cli::error::CliError::new(
+                        dsheng_core::contracts::cli::CliErrorCode::ExportFailed,
+                        e.to_string(),
+                    )
+                })?
                 .0,
                 "workbook",
             ),
@@ -264,19 +279,22 @@ pub fn export_tables(
                     crate::export::workbook::WorkbookKind::Trend,
                     &data,
                 )
-                .map_err(|e| dsheng_cli::error::CliError::new(
-                    dsheng_core::contracts::cli::CliErrorCode::ExportFailed,
-                    e.to_string(),
-                ))?
+                .map_err(|e| {
+                    dsheng_cli::error::CliError::new(
+                        dsheng_core::contracts::cli::CliErrorCode::ExportFailed,
+                        e.to_string(),
+                    )
+                })?
                 .0,
                 "workbook",
             ),
             "bundle" => (
-                crate::export::bundle::build_bundle(&data)
-                    .map_err(|e| dsheng_cli::error::CliError::new(
+                crate::export::bundle::build_bundle(&data).map_err(|e| {
+                    dsheng_cli::error::CliError::new(
                         dsheng_core::contracts::cli::CliErrorCode::ExportFailed,
                         e.to_string(),
-                    ))?,
+                    )
+                })?,
                 "bundle",
             ),
             _ => {

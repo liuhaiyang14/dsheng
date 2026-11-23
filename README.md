@@ -4,10 +4,15 @@ dsheng 是一款面向小型企业和经营团队的本地经营分析工具。�
 
 ## 当前版本
 
-当前版本为 **v0.2.0**，已在本机准备 macOS 13+ Apple Silicon（arm64）测试包：
+当前版本为 **v0.3.0**。本版已完成固定 `two_tables_v1` 两表版式合同，并已生成 macOS arm64 DMG、便携包和 CLI 包；上一版 macOS arm64 测试包继续保留：
 
-- `target/release-dist/v0.2.0/dsheng_0.2.0_macos_arm64.dmg`
-- [查看 v0.2.0 版本清单与校验值](docs/release/manifest-v0.2.0.json)
+- `target/release-dist/v0.3.0/dsheng_0.3.0_macos_arm64.dmg`
+- `target/release-dist/v0.3.0/dsheng_0.3.0_macos_arm64_portable.zip`
+- `target/release-dist/v0.3.0/dsheng-cli_0.3.0_macos_arm64.zip`
+- [查看 v0.3.0 版本清单与校验值](docs/release/manifest-v0.3.0.json)
+
+- `target/release-dist/v0.2.1/dsheng_0.2.1_macos_arm64.dmg`
+- [查看 v0.2.1 版本清单与校验值](docs/release/manifest-v0.2.1.json)
 
 GitHub Release 尚未发布；公开分发需产品验收后另行授权。
 

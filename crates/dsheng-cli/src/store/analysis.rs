@@ -8,9 +8,8 @@
 
 use crate::error::{CliError, CliResult};
 use crate::store::sources::{
-    mapping_draft_for_period, register_sources_with_profile,
-    FieldMappingEntry,
-    ScannedFile, SourceProfileBinding,
+    mapping_draft_for_period, register_sources_with_profile, FieldMappingEntry, ScannedFile,
+    SourceProfileBinding,
 };
 use chrono::NaiveDate;
 use dsheng_core::analysis::fingerprint::{
@@ -57,7 +56,9 @@ struct PendingActual {
 impl PendingActual {
     fn affects(&self, metric_id: &str, range: DateRange) -> bool {
         self.metric_id == metric_id
-            && self.period.map_or(true, |period| period.from <= range.to && period.to >= range.from)
+            && self.period.map_or(true, |period| {
+                period.from <= range.to && period.to >= range.from
+            })
     }
 }
 
@@ -209,7 +210,9 @@ fn load_metric_defs(conn: &Connection, workspace_id: Uuid) -> CliResult<Vec<Metr
             revenue_semantics: r.get::<_, i64>(8)? == 1,
             unit_json: r.get(9)?,
             semantic_type: r.get(10)?,
-            formula: r.get::<_, Option<String>>(11)?.and_then(|raw| serde_json::from_str(&raw).ok()),
+            formula: r
+                .get::<_, Option<String>>(11)?
+                .and_then(|raw| serde_json::from_str(&raw).ok()),
             scope: "全公司".into(),
         })
     })?;
@@ -519,11 +522,17 @@ pub(super) fn effective_generic_columns(
     sheet: &crate::store::sources::ScannedSheet,
     data: &dsheng_core::import::fileio::SheetData,
 ) -> Vec<(usize, String, String)> {
-    let mut columns = sheet.header.as_ref().map(|header| {
-        header.columns.iter().map(|(column, role)| {
-            (*column, (*role).to_string(), (*role).to_string())
-        }).collect::<Vec<_>>()
-    }).unwrap_or_default();
+    let mut columns = sheet
+        .header
+        .as_ref()
+        .map(|header| {
+            header
+                .columns
+                .iter()
+                .map(|(column, role)| (*column, (*role).to_string(), (*role).to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     for target in mapping_targets_for_sheet(entries, file, sheet, data) {
         columns.retain(|(_, role, _)| role != &target.1);
         columns.push(target);
@@ -549,31 +558,72 @@ fn extract_profile_records(
     mapping_rows: &mut Vec<Value>,
     pending_actuals: &mut Vec<PendingActual>,
 ) -> bool {
-    let Some(config) = profile.config.as_ref() else { return false };
-    let Some(mappings) = config.get("record_mappings").and_then(Value::as_array) else { return false };
+    let Some(config) = profile.config.as_ref() else {
+        return false;
+    };
+    let Some(mappings) = config.get("record_mappings").and_then(Value::as_array) else {
+        return false;
+    };
     let mut matched = false;
     for mapping in mappings {
-        if !super::source_review::matches(mapping, &file.file_label, sheet.sheet.as_deref().unwrap_or_default()) { continue; }
+        if !super::source_review::matches(
+            mapping,
+            &file.file_label,
+            sheet.sheet.as_deref().unwrap_or_default(),
+        ) {
+            continue;
+        }
         matched = true;
-        let Some(metric_key) = mapping.get("metric_key").and_then(Value::as_str) else { continue; };
-        let Some(def) = defs.iter().find(|d| d.metric_key == metric_key) else { continue; };
-        let value_fields: Vec<String> = mapping.get("value_fields").and_then(Value::as_array)
-            .map(|xs| xs.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
-        let date_fields: Vec<String> = mapping.get("date_fields").and_then(Value::as_array)
-            .map(|xs| xs.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+        let Some(metric_key) = mapping.get("metric_key").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(def) = defs.iter().find(|d| d.metric_key == metric_key) else {
+            continue;
+        };
+        let value_fields: Vec<String> = mapping
+            .get("value_fields")
+            .and_then(Value::as_array)
+            .map(|xs| {
+                xs.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let date_fields: Vec<String> = mapping
+            .get("date_fields")
+            .and_then(Value::as_array)
+            .map(|xs| {
+                xs.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
         let detail_key_fields: Vec<String> = config
             .get("row_rules")
             .and_then(|rules| rules.get("detail_key_fields"))
             .and_then(Value::as_array)
-            .map(|xs| xs.iter().filter_map(Value::as_str).map(str::to_string).collect())
+            .map(|xs| {
+                xs.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
             .unwrap_or_default();
         let same_content_dedupe = config
             .get("dedupe")
             .and_then(|dedupe| dedupe.get("same_content"))
             .and_then(Value::as_str)
             == Some("dedupe");
-        if value_fields.is_empty() || date_fields.is_empty() { continue; }
-        let max_header = config.get("row_rules").and_then(|r| r.get("header_rows_max")).and_then(Value::as_u64).unwrap_or(20) as usize;
+        if value_fields.is_empty() || date_fields.is_empty() {
+            continue;
+        }
+        let max_header = config
+            .get("row_rules")
+            .and_then(|r| r.get("header_rows_max"))
+            .and_then(Value::as_u64)
+            .unwrap_or(20) as usize;
         let norm = |v: &str| dsheng_core::import::headers::normalize_header(v);
         let mut header_row = None;
         let mut field_cols = BTreeMap::<String, usize>::new();
@@ -581,51 +631,112 @@ fn extract_profile_records(
             let mut found = BTreeMap::new();
             for (ci, cell) in row.iter().enumerate() {
                 let raw = norm(&cell.raw_text());
-                for field in value_fields.iter().chain(date_fields.iter()).chain(detail_key_fields.iter()) {
-                    if raw == norm(field) { found.insert(field.clone(), ci); }
+                for field in value_fields
+                    .iter()
+                    .chain(date_fields.iter())
+                    .chain(detail_key_fields.iter())
+                {
+                    if raw == norm(field) {
+                        found.insert(field.clone(), ci);
+                    }
                 }
                 if let Some(status) = mapping.get("status_field").and_then(Value::as_str) {
-                    if raw == norm(status) { found.insert(status.to_string(), ci); }
+                    if raw == norm(status) {
+                        found.insert(status.to_string(), ci);
+                    }
                 }
                 if let Some(scope_field) = mapping.get("scope_field").and_then(Value::as_str) {
-                    if raw == norm(scope_field) { found.insert(scope_field.to_string(), ci); }
+                    if raw == norm(scope_field) {
+                        found.insert(scope_field.to_string(), ci);
+                    }
                 }
             }
-            if found.len() >= 2 { header_row = Some(ri); field_cols = found; break; }
+            if found.len() >= 2 {
+                header_row = Some(ri);
+                field_cols = found;
+                break;
+            }
         }
-        let Some(header_row) = header_row else { continue; };
-        let date_kind = mapping.get("period_kind").and_then(Value::as_str).unwrap_or("date");
-        let status_col = mapping.get("status_field").and_then(Value::as_str).and_then(|f| field_cols.get(f)).copied();
-        let accepted: Vec<String> = mapping.get("accepted_statuses").and_then(Value::as_array)
-            .map(|xs| xs.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
-        let requires_confirmation = mapping.get("requires_confirmation").and_then(Value::as_bool) == Some(true);
-        let scope_col = mapping.get("scope_field").and_then(Value::as_str).and_then(|f| field_cols.get(f)).copied();
+        let Some(header_row) = header_row else {
+            continue;
+        };
+        let date_kind = mapping
+            .get("period_kind")
+            .and_then(Value::as_str)
+            .unwrap_or("date");
+        let status_col = mapping
+            .get("status_field")
+            .and_then(Value::as_str)
+            .and_then(|f| field_cols.get(f))
+            .copied();
+        let accepted: Vec<String> = mapping
+            .get("accepted_statuses")
+            .and_then(Value::as_array)
+            .map(|xs| {
+                xs.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let requires_confirmation = mapping
+            .get("requires_confirmation")
+            .and_then(Value::as_bool)
+            == Some(true);
+        let scope_col = mapping
+            .get("scope_field")
+            .and_then(Value::as_str)
+            .and_then(|f| field_cols.get(f))
+            .copied();
         let mut count = 0usize;
         let mut has_record = false;
         let mut seen_detail_content = BTreeMap::<String, String>::new();
         for (row_idx, row) in data.rows.iter().enumerate().skip(header_row + 1) {
-            let value = value_fields.iter().filter_map(|field| field_cols.get(field).and_then(|c| row.get(*c)).and_then(|c| cell_value(Some(c)))).next();
-            let Some(raw_value) = value else { continue; };
+            let value = value_fields
+                .iter()
+                .filter_map(|field| {
+                    field_cols
+                        .get(field)
+                        .and_then(|c| row.get(*c))
+                        .and_then(|c| cell_value(Some(c)))
+                })
+                .next();
+            let Some(raw_value) = value else {
+                continue;
+            };
             has_record = true;
             let period = profile_record_period(date_kind, &date_fields, &field_cols, row);
-            let status = status_col.and_then(|col| row.get(col)).map(CellValue::raw_text).unwrap_or_default();
+            let status = status_col
+                .and_then(|col| row.get(col))
+                .map(CellValue::raw_text)
+                .unwrap_or_default();
             // A required status column cannot silently become "all statuses".
             // Explicitly rejected/cancelled rows are excluded even if their date
             // is invalid; missing/empty status remains a dated pending actual.
-            if !accepted.is_empty() && !status.trim().is_empty() && !accepted.iter().any(|v| v == status.trim()) {
+            if !accepted.is_empty()
+                && !status.trim().is_empty()
+                && !accepted.iter().any(|v| v == status.trim())
+            {
                 if period.is_some_and(|p| p.from <= window.to && p.to >= window.from) {
-                    pending_reasons.entry(metric_key.to_string()).or_default().push("status_invalid_or_unconfirmed".into());
+                    pending_reasons
+                        .entry(metric_key.to_string())
+                        .or_default()
+                        .push("status_invalid_or_unconfirmed".into());
                 }
                 continue;
             }
-            let normalized_value = super::source_review::normalized_amount(profile, mapping, confirmation, raw_value);
+            let normalized_value =
+                super::source_review::normalized_amount(profile, mapping, confirmation, raw_value);
             let pending_reason = if !accepted.is_empty() && status.trim().is_empty() {
                 Some("status_missing_or_unconfirmed")
             } else if period.is_none() {
                 // Undated/time-only cells do not establish a business record's
                 // reporting period. Keep the diagnostic, as before, rather than
                 // allowing an unrelated malformed row to erase dated values.
-                pending_reasons.entry(metric_key.to_string()).or_default().push("period_missing_or_invalid".into());
+                pending_reasons
+                    .entry(metric_key.to_string())
+                    .or_default()
+                    .push("period_missing_or_invalid".into());
                 continue;
             } else if normalized_value.is_none() {
                 Some("configuration_required_tax_basis")
@@ -633,30 +744,59 @@ fn extract_profile_records(
                 None
             };
             if let Some(reason) = pending_reason {
-                pending_actuals.push(PendingActual { metric_id: def.metric_id.clone(), period, reason });
-                mapping_rows.push(json!({"mapping_id": mapping.get("mapping_id"), "metric_key": metric_key,
+                pending_actuals.push(PendingActual {
+                    metric_id: def.metric_id.clone(),
+                    period,
+                    reason,
+                });
+                mapping_rows.push(
+                    json!({"mapping_id": mapping.get("mapping_id"), "metric_key": metric_key,
                     "source_id": file.file_label, "sheet": sheet.sheet, "row": row_idx + 1,
-                    "period": period, "pending_reason": reason}));
+                    "period": period, "pending_reason": reason}),
+                );
                 continue;
             }
             let period = period.expect("validated record period");
             let value = normalized_value.expect("validated amount treatment");
-            let evidence_id = format!("cell:{}:{}:{}{}", file.file_label, sheet.sheet.clone().unwrap_or_default(), dsheng_core::import::headers::column_letter(value_fields.iter().find_map(|f| field_cols.get(f)).copied().unwrap_or(0)), row_idx + 1);
+            let evidence_id = format!(
+                "cell:{}:{}:{}{}",
+                file.file_label,
+                sheet.sheet.clone().unwrap_or_default(),
+                dsheng_core::import::headers::column_letter(
+                    value_fields
+                        .iter()
+                        .find_map(|f| field_cols.get(f))
+                        .copied()
+                        .unwrap_or(0)
+                ),
+                row_idx + 1
+            );
             let detail_key = detail_key_fields
                 .iter()
-                .filter_map(|field| field_cols.get(field).and_then(|col| row.get(*col)).map(|cell| cell.raw_text().trim().to_string()))
+                .filter_map(|field| {
+                    field_cols
+                        .get(field)
+                        .and_then(|col| row.get(*col))
+                        .map(|cell| cell.raw_text().trim().to_string())
+                })
                 .collect::<Vec<_>>()
                 .join("\u{1f}");
             let content_key = format!(
                 "{}|{}|{}",
                 value_fields
                     .iter()
-                    .filter_map(|field| field_cols.get(field).and_then(|col| row.get(*col)).map(|cell| cell.raw_text().trim().to_string()))
+                    .filter_map(|field| field_cols
+                        .get(field)
+                        .and_then(|col| row.get(*col))
+                        .map(|cell| cell.raw_text().trim().to_string()))
                     .collect::<Vec<_>>()
                     .join("\u{1f}"),
                 date_fields
                     .iter()
-                    .filter_map(|field| field_cols.get(field).and_then(|col| row.get(*col)).map(|cell| cell.raw_text().trim().to_string()))
+                    .filter_map(|field| field_cols
+                        .get(field)
+                        .and_then(|col| row.get(*col))
+                        .map(|cell| cell.raw_text().trim().to_string()))
                     .collect::<Vec<_>>()
                     .join("\u{1f}"),
                 status_col
@@ -679,29 +819,59 @@ fn extract_profile_records(
             if requires_confirmation {
                 // 费用分类/人工处理尚未确认时，保留映射证据但隔离金额，
                 // 防止待确认费用进入附加值和经营收益公式。
-                pending_reasons.entry(metric_key.to_string()).or_default().push("classification_confirmation_required".into());
+                pending_reasons
+                    .entry(metric_key.to_string())
+                    .or_default()
+                    .push("classification_confirmation_required".into());
                 mapping_rows.push(json!({"mapping_id": mapping.get("mapping_id"), "metric_key": metric_key, "source_id": file.file_label, "sheet": sheet.sheet, "evidence_id": evidence_id}));
                 continue;
             }
-            let base_scope = scope_col.and_then(|c| row.get(c)).map(|c| c.raw_text()).filter(|v| !v.trim().is_empty()).unwrap_or_else(|| scope.to_string());
+            let base_scope = scope_col
+                .and_then(|c| row.get(c))
+                .map(|c| c.raw_text())
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| scope.to_string());
             // 同一业务明细映射下的多行是可加总的明细，不应被通用
             // “同键不同值→冲突”规则误判为重复来源；把映射/行号纳入内部
             // scope，仍保留原 scope 文本作为前缀供审计查看。
             let row_scope = format!(
                 "{}|{}|{}",
                 base_scope,
-                mapping.get("mapping_id").and_then(Value::as_str).unwrap_or("record"),
-                if detail_key.is_empty() { row_idx.to_string() } else { detail_key },
+                mapping
+                    .get("mapping_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("record"),
+                if detail_key.is_empty() {
+                    row_idx.to_string()
+                } else {
+                    detail_key
+                },
             );
-            obs.push(Obs { metric_id: def.metric_id.clone(), unit: unit_display(&def.unit_json), role: MeasureRole::Actual, value, period, evidence_id: evidence_id.clone(), source_label: file.file_label.clone(), scope: row_scope, cumulative: false });
+            obs.push(Obs {
+                metric_id: def.metric_id.clone(),
+                unit: unit_display(&def.unit_json),
+                role: MeasureRole::Actual,
+                value,
+                period,
+                evidence_id: evidence_id.clone(),
+                source_label: file.file_label.clone(),
+                scope: row_scope,
+                cumulative: false,
+            });
             mapping_rows.push(json!({"mapping_id": mapping.get("mapping_id"), "metric_key": metric_key, "source_id": file.file_label, "sheet": sheet.sheet, "evidence_id": evidence_id, "source_amount": to_canonical_string(raw_value), "normalized_amount": to_canonical_string(value), "source_tax_basis": super::source_review::tax_basis(profile, mapping), "tax_treatment": confirmation.and_then(|c| c.tax_treatments.as_ref()).and_then(|t| t.get(metric_key))}));
             count += 1;
         }
         if requires_confirmation {
-            pending_reasons.entry(metric_key.to_string()).or_default().push("classification_confirmation_required".into());
+            pending_reasons
+                .entry(metric_key.to_string())
+                .or_default()
+                .push("classification_confirmation_required".into());
         }
         if count == 0 && !has_record {
-            pending_reasons.entry(metric_key.to_string()).or_default().push("source_value_missing".into());
+            pending_reasons
+                .entry(metric_key.to_string())
+                .or_default()
+                .push("source_value_missing".into());
         }
     }
     matched
@@ -716,22 +886,37 @@ pub(super) fn profile_record_period(
     row: &[CellValue],
 ) -> Option<DateRange> {
     let cell_text = |field: &str| {
-        field_cols.get(field).and_then(|col| row.get(*col)).map(CellValue::raw_text)
+        field_cols
+            .get(field)
+            .and_then(|col| row.get(*col))
+            .map(CellValue::raw_text)
     };
     if period_kind == "year_month" {
-        let year = cell_text(date_fields.first()?)?.trim().trim_end_matches('年').parse::<i32>().ok()?;
-        let month = cell_text(date_fields.get(1)?)?.trim().trim_end_matches('月').parse::<u32>().ok()?;
+        let year = cell_text(date_fields.first()?)?
+            .trim()
+            .trim_end_matches('年')
+            .parse::<i32>()
+            .ok()?;
+        let month = cell_text(date_fields.get(1)?)?
+            .trim()
+            .trim_end_matches('月')
+            .parse::<u32>()
+            .ok()?;
         let date = NaiveDate::from_ymd_opt(year, month, 1)?;
         Some(dsheng_core::analysis::periods::monthly_period_span(date, 1))
     } else {
-        date_fields.iter().find_map(|field| cell_text(field).and_then(|raw| profile_observation_period(&raw)))
+        date_fields
+            .iter()
+            .find_map(|field| cell_text(field).and_then(|raw| profile_observation_period(&raw)))
     }
 }
 
 fn profile_observation_period(raw: &str) -> Option<DateRange> {
     observation_period(raw).or_else(|| {
         let date = raw.trim().split([' ', 'T']).next()?;
-        NaiveDate::parse_from_str(date, "%Y-%m-%d").ok().map(|d| DateRange { from: d, to: d })
+        NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .ok()
+            .map(|d| DateRange { from: d, to: d })
     })
 }
 
@@ -771,7 +956,12 @@ fn extract_generic_sheet(
             fields
                 .iter()
                 .filter_map(Value::as_str)
-                .filter_map(|field| mappings.iter().find(|(_, role, _)| role == field).map(|(col, _, _)| *col))
+                .filter_map(|field| {
+                    mappings
+                        .iter()
+                        .find(|(_, role, _)| role == field)
+                        .map(|(col, _, _)| *col)
+                })
                 .collect()
         })
         .unwrap_or_default();
@@ -803,7 +993,13 @@ fn extract_generic_sheet(
         .and_then(|config| config.get("row_rules"))
         .and_then(|rules| rules.get("amount_fields"))
         .and_then(Value::as_array)
-        .map(|fields| fields.iter().filter_map(Value::as_str).map(str::to_string).collect())
+        .map(|fields| {
+            fields
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
         .unwrap_or_default();
     let status_col = mappings
         .iter()
@@ -821,20 +1017,34 @@ fn extract_generic_sheet(
             continue;
         };
         if let (Some(status_col), Some(status_map)) = (status_col, status_map) {
-            let raw_status = row.get(status_col).map(|cell| cell.raw_text()).unwrap_or_default();
-            let Some(normalized_status) = status_map.get(raw_status.trim()).and_then(Value::as_str) else {
-                pending_reasons.entry(def.metric_key.clone()).or_default().push("status_missing_or_unconfirmed".into());
+            let raw_status = row
+                .get(status_col)
+                .map(|cell| cell.raw_text())
+                .unwrap_or_default();
+            let Some(normalized_status) = status_map.get(raw_status.trim()).and_then(Value::as_str)
+            else {
+                pending_reasons
+                    .entry(def.metric_key.clone())
+                    .or_default()
+                    .push("status_missing_or_unconfirmed".into());
                 continue;
             };
             if normalized_status != "valid" {
-                pending_reasons.entry(def.metric_key.clone()).or_default().push("status_invalid_or_unconfirmed".into());
+                pending_reasons
+                    .entry(def.metric_key.clone())
+                    .or_default()
+                    .push("status_invalid_or_unconfirmed".into());
                 continue;
             }
         }
         if dedupe_same_content && !key_cols.is_empty() {
             let key = key_cols
                 .iter()
-                .map(|col| row.get(*col).map(|cell| cell.raw_text()).unwrap_or_default())
+                .map(|col| {
+                    row.get(*col)
+                        .map(|cell| cell.raw_text())
+                        .unwrap_or_default()
+                })
                 .collect::<Vec<_>>()
                 .join("\u{1f}");
             if !key.trim_matches('\u{1f}').is_empty() && !seen_detail_keys.insert(key) {
@@ -857,8 +1067,10 @@ fn extract_generic_sheet(
             continue;
         };
         for (col, role, _) in mappings.iter().filter(|(_, role, _)| {
-            matches!(role.as_str(), "actual" | "planned" | "plan" | "annual_month_plan")
-                || amount_fields.iter().any(|field| field == role)
+            matches!(
+                role.as_str(),
+                "actual" | "planned" | "plan" | "annual_month_plan"
+            ) || amount_fields.iter().any(|field| field == role)
         }) {
             let measure_role = match role.as_str() {
                 "planned" | "plan" => MeasureRole::Plan,
@@ -938,7 +1150,9 @@ fn extract_observations(
         mapping_rows.push(serde_json::to_value(entry).unwrap_or_else(|_| json!({})));
     }
     for file in files {
-        if super::source_review::reference_only(mapping_entries, file) { continue; }
+        if super::source_review::reference_only(mapping_entries, file) {
+            continue;
+        }
         for (sheet_data, sheet) in file.sheets.iter() {
             if sheet.role == "generated_output_input_not_allowed" {
                 // 核算表/推移表/差异分析/图表是输出层，绝不回灌观察。
@@ -946,12 +1160,32 @@ fn extract_observations(
             }
             // 生成结果在任何 profile 映射之前就被拒绝；否则一个 profile
             // 恰好匹配“核算表/推移表”字段时会绕过扫描层的禁止回灌规则。
-            if extract_profile_records(profile, super::source_review::confirmation(Some(mapping_entries), file), file, sheet, sheet_data, defs, window, scope, &mut obs, &mut pending_reasons, &mut mapping_rows, &mut pending_actuals) {
+            if extract_profile_records(
+                profile,
+                super::source_review::confirmation(Some(mapping_entries), file),
+                file,
+                sheet,
+                sheet_data,
+                defs,
+                window,
+                scope,
+                &mut obs,
+                &mut pending_reasons,
+                &mut mapping_rows,
+                &mut pending_actuals,
+            ) {
                 // 命中的明细适配器独占工作表，避免原值再次计入或绕过确认。
                 continue;
             }
             if sheet.role == "generic_table" {
-                if profile.config.as_ref().and_then(|c| c.get("normalization")).and_then(|n| n.get("tax_basis")).and_then(Value::as_str) == Some("confirm_at_runtime") {
+                if profile
+                    .config
+                    .as_ref()
+                    .and_then(|c| c.get("normalization"))
+                    .and_then(|n| n.get("tax_basis"))
+                    .and_then(Value::as_str)
+                    == Some("confirm_at_runtime")
+                {
                     // 未命中明细适配器的通用表也不能绕过模板的待确认税口径。
                     continue;
                 }
@@ -960,8 +1194,7 @@ fn extract_observations(
                     // 在扫描证据中，不得混入 normalized observations。
                     continue;
                 }
-                let manual =
-                    mapping_targets_for_sheet(mapping_entries, file, sheet, sheet_data);
+                let manual = mapping_targets_for_sheet(mapping_entries, file, sheet, sheet_data);
                 // A single manual column overrides only that field. Keep the
                 // other recognized fields so period/metric/amount stay together.
                 let mapped = effective_generic_columns(mapping_entries, file, sheet, sheet_data);
@@ -1307,8 +1540,14 @@ fn extract_observations(
         }
     }
     for def in defs {
-        for pending in pending_actuals.iter().filter(|p| p.affects(&def.metric_id, window)) {
-            pending_reasons.entry(def.metric_key.clone()).or_default().push(pending.reason.into());
+        for pending in pending_actuals
+            .iter()
+            .filter(|p| p.affects(&def.metric_id, window))
+        {
+            pending_reasons
+                .entry(def.metric_key.clone())
+                .or_default()
+                .push(pending.reason.into());
         }
     }
     // 手工输入（confirmed 的 actual/plan；period_key 匹配窗口）。
@@ -1429,7 +1668,15 @@ fn extract_observations(
         }
     }
     Ok((
-        (final_obs, conflicts, sources, mapping_rows, pending_metrics.len(), zero_filled, pending_actuals),
+        (
+            final_obs,
+            conflicts,
+            sources,
+            mapping_rows,
+            pending_metrics.len(),
+            zero_filled,
+            pending_actuals,
+        ),
         pending_reasons,
     ))
 }
@@ -1528,40 +1775,72 @@ fn evaluate_metric_formula(
     memo: &mut BTreeMap<String, Option<Decimal>>,
     visiting: &mut BTreeSet<String>,
 ) -> Option<Decimal> {
-    if let Some(value) = memo.get(key) { return *value; }
-    if !visiting.insert(key.to_string()) { return None; }
+    if let Some(value) = memo.get(key) {
+        return *value;
+    }
+    if !visiting.insert(key.to_string()) {
+        return None;
+    }
     let value = if let Some(def) = defs.iter().find(|d| d.metric_key == key) {
         if let Some(formula) = &def.formula {
             fn eval_node(
                 node: &dsheng_core::contracts::metrics::FormulaNode,
-                defs: &[MetricDefRow], direct: &BTreeMap<String, Option<Decimal>>,
-                memo: &mut BTreeMap<String, Option<Decimal>>, visiting: &mut BTreeSet<String>,
+                defs: &[MetricDefRow],
+                direct: &BTreeMap<String, Option<Decimal>>,
+                memo: &mut BTreeMap<String, Option<Decimal>>,
+                visiting: &mut BTreeSet<String>,
             ) -> Option<Decimal> {
                 use dsheng_core::contracts::metrics::FormulaNode;
                 match node {
-                    FormulaNode::Ref { metric_key } => evaluate_metric_formula(metric_key, defs, direct, memo, visiting),
-                    FormulaNode::Const { value } => rust_decimal::Decimal::from_str_exact(value).ok(),
-                    FormulaNode::Add { args } => Some(eval_node(&args[0], defs, direct, memo, visiting)? + eval_node(&args[1], defs, direct, memo, visiting)?),
-                    FormulaNode::Sub { args } => Some(eval_node(&args[0], defs, direct, memo, visiting)? - eval_node(&args[1], defs, direct, memo, visiting)?),
-                    FormulaNode::Mul { args } => Some(eval_node(&args[0], defs, direct, memo, visiting)? * eval_node(&args[1], defs, direct, memo, visiting)?),
-                    FormulaNode::Div { args } => dsheng_core::analysis::engine::positive_div(eval_node(&args[0], defs, direct, memo, visiting)?, eval_node(&args[1], defs, direct, memo, visiting)?).ok(),
+                    FormulaNode::Ref { metric_key } => {
+                        evaluate_metric_formula(metric_key, defs, direct, memo, visiting)
+                    }
+                    FormulaNode::Const { value } => {
+                        rust_decimal::Decimal::from_str_exact(value).ok()
+                    }
+                    FormulaNode::Add { args } => Some(
+                        eval_node(&args[0], defs, direct, memo, visiting)?
+                            + eval_node(&args[1], defs, direct, memo, visiting)?,
+                    ),
+                    FormulaNode::Sub { args } => Some(
+                        eval_node(&args[0], defs, direct, memo, visiting)?
+                            - eval_node(&args[1], defs, direct, memo, visiting)?,
+                    ),
+                    FormulaNode::Mul { args } => Some(
+                        eval_node(&args[0], defs, direct, memo, visiting)?
+                            * eval_node(&args[1], defs, direct, memo, visiting)?,
+                    ),
+                    FormulaNode::Div { args } => dsheng_core::analysis::engine::positive_div(
+                        eval_node(&args[0], defs, direct, memo, visiting)?,
+                        eval_node(&args[1], defs, direct, memo, visiting)?,
+                    )
+                    .ok(),
                 }
             }
             eval_node(formula, defs, direct, memo, visiting)
         } else {
             direct.get(key).copied().flatten()
         }
-    } else { None };
+    } else {
+        None
+    };
     visiting.remove(key);
     memo.insert(key.to_string(), value);
     value
 }
 
 fn profile_requires_confirmation(profile: &SourceProfileBinding, metric_key: &str) -> bool {
-    profile.config.as_ref()
+    profile
+        .config
+        .as_ref()
         .and_then(|c| c.get("record_mappings"))
         .and_then(Value::as_array)
-        .map(|xs| xs.iter().any(|m| m.get("metric_key").and_then(Value::as_str) == Some(metric_key) && m.get("requires_confirmation").and_then(Value::as_bool) == Some(true)))
+        .map(|xs| {
+            xs.iter().any(|m| {
+                m.get("metric_key").and_then(Value::as_str) == Some(metric_key)
+                    && m.get("requires_confirmation").and_then(Value::as_bool) == Some(true)
+            })
+        })
         .unwrap_or(false)
 }
 
@@ -1772,9 +2051,19 @@ pub fn run_analyze_with_profile(
     // 扫描快照落旁表（非空格＋布局）：生成载荷按相关行/列裁剪的确定性输入
     crate::store::sources::persist_source_snapshot(conn, workspace_id, &registered, &files)?;
     let mut defs = load_metric_defs(conn, workspace_id)?;
-    for mapping in profile.config.as_ref().and_then(|c| c.get("record_mappings")).and_then(Value::as_array).into_iter().flatten() {
+    for mapping in profile
+        .config
+        .as_ref()
+        .and_then(|c| c.get("record_mappings"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         if super::source_review::tax_basis(&profile, mapping) == "not_applicable" {
-            if let Some(def) = defs.iter_mut().find(|def| Some(def.metric_key.as_str()) == mapping["metric_key"].as_str()) {
+            if let Some(def) = defs
+                .iter_mut()
+                .find(|def| Some(def.metric_key.as_str()) == mapping["metric_key"].as_str())
+            {
                 if let Ok(mut unit) = serde_json::from_str::<Value>(&def.unit_json) {
                     unit["tax_basis"] = json!("not_applicable");
                     def.unit_json = unit.to_string();
@@ -1791,15 +2080,13 @@ pub fn run_analyze_with_profile(
     let generic_mapping_required = profile.mode == "generic"
         && files.iter().any(|file| {
             file.sheets.iter().any(|(_, sheet)| {
-                sheet.role == "generic_table" && sheet.header.is_some() && sheet.blocked_reason.is_none()
+                sheet.role == "generic_table"
+                    && sheet.header.is_some()
+                    && sheet.blocked_reason.is_none()
             })
         });
-    let confirmed_source_mapping = crate::store::sources::source_mapping_confirmed(
-        conn,
-        workspace_id,
-        dir,
-        &profile.hash,
-    )?;
+    let confirmed_source_mapping =
+        crate::store::sources::source_mapping_confirmed(conn, workspace_id, dir, &profile.hash)?;
     let profile_mapping_pending = if profile.mode == "profile" {
         files.iter().zip(registered.iter()).any(|(file, view)| {
             // Unsupported/blocked files already surface their own pending
@@ -1837,20 +2124,30 @@ pub fn run_analyze_with_profile(
             .map(|(_, entries)| entries)
             .unwrap_or_default()
     };
-    let ((obs, conflicts, mut sources, mapping_rows, mut pending_count, zero_filled, pending_actuals), mut pending_reasons) =
-        extract_observations(
-            conn,
-            workspace_id,
-            &defs,
-            &files,
-            window,
-            grain,
-            &period_key,
-            &scope,
-            &coverage,
-            &mapping_entries,
-            &profile,
-        )?;
+    let (
+        (
+            obs,
+            conflicts,
+            mut sources,
+            mapping_rows,
+            mut pending_count,
+            zero_filled,
+            pending_actuals,
+        ),
+        mut pending_reasons,
+    ) = extract_observations(
+        conn,
+        workspace_id,
+        &defs,
+        &files,
+        window,
+        grain,
+        &period_key,
+        &scope,
+        &coverage,
+        &mapping_entries,
+        &profile,
+    )?;
     if !pending_files.is_empty() {
         for pending in &pending_files {
             for def in &defs {
@@ -1930,27 +2227,42 @@ pub fn run_analyze_with_profile(
     let mut series_rows = Vec::new();
     let mut comparisons_obj = serde_json::Map::new();
     let mut base_refs_used: Vec<BaseRef> = Vec::new();
-    let direct_actuals: BTreeMap<String, Option<Decimal>> = defs.iter().map(|def| {
-        let values = obs_in(&obs, &pending_actuals, &def.metric_id, MeasureRole::Actual, window);
-        let value = flow_sum_window(&values);
-        let value = if profile_requires_confirmation(&profile, &def.metric_key) { None } else { value };
-        (def.metric_key.clone(), value)
-    }).collect();
+    let direct_actuals: BTreeMap<String, Option<Decimal>> = defs
+        .iter()
+        .map(|def| {
+            let values = obs_in(
+                &obs,
+                &pending_actuals,
+                &def.metric_id,
+                MeasureRole::Actual,
+                window,
+            );
+            let value = flow_sum_window(&values);
+            let value = if profile_requires_confirmation(&profile, &def.metric_key) {
+                None
+            } else {
+                value
+            };
+            (def.metric_key.clone(), value)
+        })
+        .collect();
     let mut formula_actuals = BTreeMap::new();
     // 目录将单位时间附加值定义为需确认的派生指标；没有企业确认的
     // formula/有效工时输入时，不能把来源中同名的一列当成最终结果。
-    let configuration_required = |def: &MetricDefRow| {
-        def.metric_key == "value_added_per_hour"
-            && def.formula.is_none()
-    };
+    let configuration_required =
+        |def: &MetricDefRow| def.metric_key == "value_added_per_hour" && def.formula.is_none();
     let mut series_period_keys: BTreeSet<String> = obs
         .iter()
         .filter(|o| o.period.from >= window.from && o.period.to <= window.to)
         .map(|o| o.period.to_period_string())
         .collect();
-    series_period_keys.extend(pending_actuals.iter().filter_map(|pending| pending.period)
-        .filter(|period| period.from >= window.from && period.to <= window.to)
-        .map(|period| period.to_period_string()));
+    series_period_keys.extend(
+        pending_actuals
+            .iter()
+            .filter_map(|pending| pending.period)
+            .filter(|period| period.from >= window.from && period.to <= window.to)
+            .map(|period| period.to_period_string()),
+    );
     if series_period_keys.is_empty() {
         series_period_keys.insert(window.to_period_string());
     }
@@ -1968,11 +2280,23 @@ pub fn run_analyze_with_profile(
         if relevant.is_empty() {
             pending_count += 1;
         }
-        let actual_observations = obs_in(&obs, &pending_actuals, &def.metric_id, MeasureRole::Actual, window);
+        let actual_observations = obs_in(
+            &obs,
+            &pending_actuals,
+            &def.metric_id,
+            MeasureRole::Actual,
+            window,
+        );
         let actual = if configuration_required(def) {
             None
         } else if def.formula.is_some() {
-            evaluate_metric_formula(&def.metric_key, &defs, &direct_actuals, &mut formula_actuals, &mut BTreeSet::new())
+            evaluate_metric_formula(
+                &def.metric_key,
+                &defs,
+                &direct_actuals,
+                &mut formula_actuals,
+                &mut BTreeSet::new(),
+            )
         } else {
             flow_sum_window(&actual_observations)
         };
@@ -1983,7 +2307,13 @@ pub fn run_analyze_with_profile(
         evidence_ids.sort();
         evidence_ids.dedup();
         diagnosis_evidence_by_metric.insert(def.metric_id.clone(), json!(evidence_ids));
-        let explicit = flow_sum_window(&obs_in(&obs, &pending_actuals, &def.metric_id, MeasureRole::Plan, window));
+        let explicit = flow_sum_window(&obs_in(
+            &obs,
+            &pending_actuals,
+            &def.metric_id,
+            MeasureRole::Plan,
+            window,
+        ));
         let annual = flow_sum_window(&obs_in(
             &obs,
             &pending_actuals,
@@ -1998,7 +2328,13 @@ pub fn run_analyze_with_profile(
         {
             let yoy_range = yoy_base(window, grain, &policy).ok().map(|b| b.range);
             let prior_year = yoy_range.and_then(|r| {
-                flow_sum_window(&obs_in(&obs, &pending_actuals, &def.metric_id, MeasureRole::Actual, r))
+                flow_sum_window(&obs_in(
+                    &obs,
+                    &pending_actuals,
+                    &def.metric_id,
+                    MeasureRole::Actual,
+                    r,
+                ))
             });
             let outcome = dsheng_core::analysis::targets::monthly_revenue_floor(
                 &dsheng_core::analysis::targets::MonthlyFloorInput {
@@ -2056,8 +2392,13 @@ pub fn run_analyze_with_profile(
             let Ok(base_period) = base_result else {
                 continue;
             };
-            let base_observations =
-                obs_in(&obs, &pending_actuals, &def.metric_id, MeasureRole::Actual, base_period.range);
+            let base_observations = obs_in(
+                &obs,
+                &pending_actuals,
+                &def.metric_id,
+                MeasureRole::Actual,
+                base_period.range,
+            );
             let base_value = flow_sum_window(&base_observations);
             let mut comparison_evidence: Vec<String> = actual_observations
                 .iter()
@@ -2104,11 +2445,16 @@ pub fn run_analyze_with_profile(
                 }
             }
         }
-        let mut pending_for_metric = pending_reasons.get(&def.metric_key).cloned().unwrap_or_default();
+        let mut pending_for_metric = pending_reasons
+            .get(&def.metric_key)
+            .cloned()
+            .unwrap_or_default();
         if configuration_required(def) {
             pending_for_metric.push("configuration_required".into());
         }
-        if actual.is_none() { pending_for_metric.push("actual_missing".into()); }
+        if actual.is_none() {
+            pending_for_metric.push("actual_missing".into());
+        }
         let observed_period_keys: BTreeSet<String> = relevant
             .iter()
             .map(|o| o.period.to_period_string())
@@ -2119,10 +2465,14 @@ pub fn run_analyze_with_profile(
         {
             pending_for_metric.push("period_bucket_missing".into());
         }
-        if target.is_none() { pending_for_metric.push("target_missing".into()); }
+        if target.is_none() {
+            pending_for_metric.push("target_missing".into());
+        }
         pending_for_metric.sort();
         pending_for_metric.dedup();
-        if !pending_for_metric.is_empty() { pending_count += 1; }
+        if !pending_for_metric.is_empty() {
+            pending_count += 1;
+        }
         metrics_rows.push(json!({
             "metric_id": def.metric_id,
             "metric_key": def.metric_key,
@@ -2145,7 +2495,10 @@ pub fn run_analyze_with_profile(
             let slot = buckets.entry(key).or_insert((None, None));
             match o.role {
                 MeasureRole::Actual => {
-                    if pending_actuals.iter().any(|pending| pending.affects(&def.metric_id, o.period)) {
+                    if pending_actuals
+                        .iter()
+                        .any(|pending| pending.affects(&def.metric_id, o.period))
+                    {
                         continue;
                     }
                     slot.0 = Some(match slot.0 {

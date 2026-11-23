@@ -154,9 +154,16 @@ fn accounting_workbook(path: &std::path::Path, junk_rows: usize, note_row: u32) 
     let sheet = book.add_worksheet();
     // 原始 source 表可由企业 profile 适配；生成层的“核算表”名称已禁止回灌。
     sheet.set_name("source").unwrap();
-    for (c, h) in ["科目", "单位", "月度预定", "月度实绩", "年度计划·当月目标", "期间"]
-        .iter()
-        .enumerate()
+    for (c, h) in [
+        "科目",
+        "单位",
+        "月度预定",
+        "月度实绩",
+        "年度计划·当月目标",
+        "期间",
+    ]
+    .iter()
+    .enumerate()
     {
         sheet.write_string(0, c as u16, *h).unwrap();
     }
@@ -272,7 +279,7 @@ fn user_evidence_rows_are_kept() {
         dsheng_core::contracts::provider::Framework::Why5,
         "销售额为何低于预定",
         &[],
-            &["cell:核算表模板.xlsx:source:A12".to_string()],
+        &["cell:核算表模板.xlsx:source:A12".to_string()],
         state,
         None,
         "销售额为何低于预定",

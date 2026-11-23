@@ -34,22 +34,9 @@ pub fn build_export_data(
     let revision = revision.unwrap_or(current);
     // 所有业务导出均以固定 two_tables_v1 为基础；没有完整物化登记时，
     // 不能写出空/半成品两表或带有误导性依据的会议包。
-    crate::store::sources::require_two_tables_materialized(
-        conn,
-        workspace_id,
-        run_id,
-        revision,
-    )?;
+    crate::store::sources::require_two_tables_materialized(conn, workspace_id, run_id, revision)?;
     let run_view = analysis_store::analysis_run_view(conn, workspace_id, run_id, revision)?;
-    let (
-        policy_raw,
-        sources_raw,
-        defs_raw,
-        base_refs_raw,
-        action_raw,
-        created_at,
-        fingerprint,
-    ): (
+    let (policy_raw, sources_raw, defs_raw, base_refs_raw, action_raw, created_at, fingerprint): (
         String,
         String,
         String,
@@ -106,10 +93,16 @@ pub fn build_export_data(
         }
         if let Some(unit) = def.get("unit_signature") {
             if currency.is_none() {
-                currency = unit.get("currency").and_then(Value::as_str).map(str::to_string);
+                currency = unit
+                    .get("currency")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
             }
             if tax_basis.is_none() {
-                tax_basis = unit.get("tax_basis").and_then(Value::as_str).map(str::to_string);
+                tax_basis = unit
+                    .get("tax_basis")
+                    .and_then(Value::as_str)
+                    .map(str::to_string);
             }
         }
     }
@@ -163,17 +156,22 @@ pub fn build_export_data(
             let mut task = views::task_view(conn, workspace_id, *id)?;
             // 只按稳定 metric_id 绑定所选 revision 的单位；标签相同不足以确认语义。
             if let Some(metric) = task["metric_id"].as_str().and_then(|metric_id| {
-                metrics.iter().find(|m| m["metric_id"].as_str() == Some(metric_id))
+                metrics
+                    .iter()
+                    .find(|m| m["metric_id"].as_str() == Some(metric_id))
             }) {
                 task["metric_key"] = metric["metric_key"].clone();
                 task["metric_label"] = metric["metric_label"].clone();
                 let signature = &metric["unit_signature"];
                 // 人工任务可能显式填写另一单位；有冲突时保留未知，不能强套指标格式。
-                let compatible = task["unit"].as_str().filter(|unit| !unit.is_empty()).is_none_or(|unit| {
-                    Some(unit) == metric["unit"].as_str()
-                        || Some(unit) == signature["base_unit"].as_str()
-                        || serde_json::from_str::<Value>(unit).ok().as_ref() == Some(signature)
-                });
+                let compatible = task["unit"]
+                    .as_str()
+                    .filter(|unit| !unit.is_empty())
+                    .is_none_or(|unit| {
+                        Some(unit) == metric["unit"].as_str()
+                            || Some(unit) == signature["base_unit"].as_str()
+                            || serde_json::from_str::<Value>(unit).ok().as_ref() == Some(signature)
+                    });
                 if signature.is_object() && compatible {
                     task["unit_signature"] = signature.clone();
                 }
@@ -447,40 +445,41 @@ pub fn template(action: cli::TemplateAction, _db: Option<&String>) -> CliResult<
             profile,
             out: out_path,
         } => {
-            let (bytes, package_name, entries): (Vec<u8>, &str, Vec<String>) = match package.as_str()
-            {
-                "output" => {
-                    if contract.as_deref() != Some("two_tables_v1") {
-                        return Err(CliError::invalid(
-                            "--package output 需要 --contract two_tables_v1",
+            let (bytes, package_name, entries): (Vec<u8>, &str, Vec<String>) =
+                match package.as_str() {
+                    "output" => {
+                        if contract.as_deref() != Some("two_tables_v1") {
+                            return Err(CliError::invalid(
+                                "--package output 需要 --contract two_tables_v1",
+                            )
+                            .with_field("--contract"));
+                        }
+                        (
+                            lib::template::build_two_tables_v1_zip().map_err(export_err)?,
+                            lib::template::OUTPUT_TEMPLATE_ZIP_NAME,
+                            vec![
+                                lib::template::TEMPLATE_ACCOUNTING.to_string(),
+                                lib::template::TEMPLATE_TREND.to_string(),
+                            ],
                         )
-                        .with_field("--contract"));
                     }
-                    (
-                        lib::template::build_two_tables_v1_zip().map_err(export_err)?,
-                        lib::template::OUTPUT_TEMPLATE_ZIP_NAME,
-                        vec![
-                            lib::template::TEMPLATE_ACCOUNTING.to_string(),
-                            lib::template::TEMPLATE_TREND.to_string(),
-                        ],
-                    )
-                }
-                "source" => {
-                    let profile_id = profile.as_deref().unwrap_or("generic");
-                    // 模板下载与 source 扫描使用同一 profile 解析规则：未知 ID
-                    // 必须在入口处失败，不能静默退回 generic 模板。
-                    crate::store::sources::resolve_source_profile(Some(profile_id), false)?;
-                    (
-                        lib::template::build_source_profile_zip(profile_id).map_err(export_err)?,
-                        lib::template::SOURCE_TEMPLATE_ZIP_NAME,
-                        lib::template::source_profile_template_files(profile_id),
-                    )
-                }
-                _ => {
-                    return Err(CliError::invalid("--package 仅支持 source|output")
-                        .with_field("--package"))
-                }
-            };
+                    "source" => {
+                        let profile_id = profile.as_deref().unwrap_or("generic");
+                        // 模板下载与 source 扫描使用同一 profile 解析规则：未知 ID
+                        // 必须在入口处失败，不能静默退回 generic 模板。
+                        crate::store::sources::resolve_source_profile(Some(profile_id), false)?;
+                        (
+                            lib::template::build_source_profile_zip(profile_id)
+                                .map_err(export_err)?,
+                            lib::template::SOURCE_TEMPLATE_ZIP_NAME,
+                            lib::template::source_profile_template_files(profile_id),
+                        )
+                    }
+                    _ => {
+                        return Err(CliError::invalid("--package 仅支持 source|output")
+                            .with_field("--package"))
+                    }
+                };
             let size = out::write_out_file(&out_path, &bytes)?;
             let mut written = out::export_written(&out_path, size);
             written["kind"] = json!("template");

@@ -150,8 +150,10 @@ fn excel_datetime_cell(dt: &calamine::ExcelDateTime) -> CellValue {
         return CellValue::Error("invalid_excel_date".into());
     }
     let (year, month, day, hour, minute, second, millis) = dt.to_ymd_hms_milli();
-    let datetime = chrono::NaiveDate::from_ymd_opt(year.into(), month.into(), day.into())
-        .and_then(|date| date.and_hms_milli_opt(hour.into(), minute.into(), second.into(), millis.into()));
+    let datetime =
+        chrono::NaiveDate::from_ymd_opt(year.into(), month.into(), day.into()).and_then(|date| {
+            date.and_hms_milli_opt(hour.into(), minute.into(), second.into(), millis.into())
+        });
     match datetime {
         Some(datetime) => CellValue::Text(datetime.format("%Y-%m-%d %H:%M:%S%.3f").to_string()),
         None => CellValue::Error("invalid_excel_date".into()),
@@ -318,8 +320,15 @@ mod tests {
     fn typed_excel_dates_preserve_both_epochs_and_timestamp() {
         use calamine::{ExcelDateTime, ExcelDateTimeType};
         for (serial, is_1904) in [(45943.5, false), (45943.5 - 1462.0, true)] {
-            let value = Data::DateTime(ExcelDateTime::new(serial, ExcelDateTimeType::DateTime, is_1904));
-            assert_eq!(convert_cell(Some(&value), None), CellValue::Text("2025-10-13 12:00:00.000".into()));
+            let value = Data::DateTime(ExcelDateTime::new(
+                serial,
+                ExcelDateTimeType::DateTime,
+                is_1904,
+            ));
+            assert_eq!(
+                convert_cell(Some(&value), None),
+                CellValue::Text("2025-10-13 12:00:00.000".into())
+            );
         }
     }
 
@@ -335,7 +344,10 @@ mod tests {
             (45943.5, ExcelDateTimeType::TimeDelta, false),
         ] {
             let value = Data::DateTime(ExcelDateTime::new(serial, kind, is_1904));
-            assert_eq!(convert_cell(Some(&value), None), CellValue::Error("invalid_excel_date".into()));
+            assert_eq!(
+                convert_cell(Some(&value), None),
+                CellValue::Error("invalid_excel_date".into())
+            );
         }
     }
 }

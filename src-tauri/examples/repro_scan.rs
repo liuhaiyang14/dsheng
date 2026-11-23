@@ -15,5 +15,13 @@ fn main() {
     let t = Instant::now();
     // 与 GUI 完全同一函数
     let result = core::data::scan(&env, ws, dir);
-    println!("[repro] scan returned in {:?}: {}", t.elapsed(), serde_json::to_string(&result).unwrap_or_default().chars().take(400).collect::<String>());
+    println!(
+        "[repro] scan returned in {:?}: {}",
+        t.elapsed(),
+        serde_json::to_string(&result)
+            .unwrap_or_default()
+            .chars()
+            .take(400)
+            .collect::<String>()
+    );
 }

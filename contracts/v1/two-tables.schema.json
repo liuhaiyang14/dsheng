@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "dsheng-two-tables-v1",
+  "title": "dsheng fixed two tables output v1",
+  "description": "Fixed logical and spreadsheet structure for two_tables_v1. Source profiles are adapters only; enterprise files, sample business values and source-specific columns must not enter this contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "contract_id", "template_reference", "metadata", "layout", "accounting", "trend", "charts"],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "contract_id": { "const": "two_tables_v1" },
+    "template_reference": { "$ref": "#/$defs/templateReference" },
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "layout": { "$ref": "#/$defs/layout" },
+    "accounting": { "$ref": "#/$defs/accountingTable" },
+    "trend": { "$ref": "#/$defs/trendTable" },
+    "charts": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "$ref": "#/$defs/chartRow" } }
+  },
+  "$defs": {
+    "decimalString": {
+      "type": ["string", "null"],
+      "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]*[1-9])?$",
+      "description": "Canonical Decimal string or null. Display rounding is presentation-only; missing and non-computable values stay null."
+    },
+    "date": { "type": "string", "format": "date" },
+    "dateTime": { "type": "string", "format": "date-time" },
+    "metricKey": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+    "templateReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contract_id", "accounting_workbook", "trend_workbook", "source_independent"],
+      "properties": {
+        "contract_id": { "const": "two_tables_v1" },
+        "accounting_workbook": { "const": "核算表模板.xlsx" },
+        "trend_workbook": { "const": "推移表模板.xlsx" },
+        "source_independent": { "const": true },
+        "reference_note": { "type": "string" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workspace_id", "run_id", "revision_no", "as_of", "source_from", "source_to", "grain", "coverage_status", "source_manifests", "metric_hashes"],
+      "properties": {
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "run_id": { "type": "string", "format": "uuid" },
+        "revision_no": { "type": "integer", "minimum": 1 },
+        "as_of": { "$ref": "#/$defs/dateTime" },
+        "source_from": { "$ref": "#/$defs/date" },
+        "source_to": { "$ref": "#/$defs/date" },
+        "target_from": { "anyOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }] },
+        "target_to": { "anyOf": [{ "$ref": "#/$defs/date" }, { "type": "null" }] },
+        "grain": { "enum": ["day", "week", "month", "quarter"] },
+        "coverage_status": { "enum": ["complete", "partial", "pending", "unavailable"] },
+        "policy_version": { "type": ["integer", "null"], "minimum": 1 },
+        "source_manifests": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_id", "file_label", "content_hash"],
+            "properties": {
+              "source_id": { "type": "string", "minLength": 1 },
+              "file_label": { "type": "string", "minLength": 1 },
+              "sheet": { "type": ["string", "null"] },
+              "selected_range": { "type": ["string", "null"] },
+              "content_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        },
+        "metric_hashes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["metric_key", "version", "semantic_hash"],
+            "properties": {
+              "metric_key": { "$ref": "#/$defs/metricKey" },
+              "version": { "type": "integer", "minimum": 1 },
+              "semantic_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["heading_rows", "header_row", "data_start_row", "metadata_sheet", "accounting", "trend", "chart"],
+      "properties": {
+        "heading_rows": { "const": { "title": 1, "description": 2, "blank": 3 } },
+        "header_row": { "const": 4 },
+        "data_start_row": { "const": 5 },
+        "metadata_sheet": { "const": "_metadata" },
+        "accounting": { "$ref": "#/$defs/accountingLayout" },
+        "trend": { "$ref": "#/$defs/trendLayout" },
+        "chart": { "$ref": "#/$defs/chartLayout" }
+      }
+    },
+    "accountingLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheet_name", "columns", "title_merged", "title_ranges", "freeze_panes"],
+      "properties": {
+        "sheet_name": { "const": "核算表" },
+        "columns": { "const": ["序号", "科目", "计算公式 / 取数来源", "本月MP", "年度计划·当月目标", "月度预定", "销售额占比(预定)", "月度实绩", "销售额占比(实绩)", "预实差异额", "实绩达成预定比", "实绩达成年度计划比"] },
+        "title_merged": { "const": true },
+        "title_ranges": { "const": ["A1:L1", "A2:L2"] },
+        "freeze_panes": { "const": { "enabled": true, "cell": "A5", "rows": 4, "columns": 0 } }
+      }
+    },
+    "trendLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheet_name", "columns", "period_axis", "period_order", "month_rows", "cumulative_row", "title_merged", "title_ranges", "freeze_panes"],
+      "properties": {
+        "sheet_name": { "const": "推移表" },
+        "columns": { "const": ["月份", "总销售额", "采购成本", "毛利额", "毛利率", "经营费用", "人工费", "结算收益", "利润率", "单位时间附加值", "费用构成比", "预定实绩差异额", "实绩达成预定比", "实绩达成年度计划比"] },
+        "period_axis": { "const": "rows" },
+        "period_order": { "const": "ascending" },
+        "month_rows": { "const": { "first": 5, "last": 20, "max": 16 } },
+        "cumulative_row": { "const": 21 },
+        "title_merged": { "const": true },
+        "title_ranges": { "const": ["A1:N1", "A2:N2"] },
+        "freeze_panes": { "const": { "enabled": true, "cell": "B5", "rows": 4, "columns": 1 } }
+      }
+    },
+    "chartLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheet_name", "native_chart_count", "chart_type", "title_merged", "title_ranges", "freeze_panes"],
+      "properties": {
+        "sheet_name": { "const": "图表" },
+        "native_chart_count": { "const": 4 },
+        "chart_type": { "const": "line" },
+        "title_merged": { "const": true },
+        "title_ranges": { "const": ["A1:H1", "A2:H2"] },
+        "freeze_panes": { "const": { "enabled": false, "cell": "A1", "rows": 0, "columns": 0 } }
+      }
+    },
+    "accountingTable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheet_name", "columns", "rows"],
+      "properties": {
+        "sheet_name": { "const": "核算表" },
+        "columns": { "const": ["序号", "科目", "计算公式 / 取数来源", "本月MP", "年度计划·当月目标", "月度预定", "销售额占比(预定)", "月度实绩", "销售额占比(实绩)", "预实差异额", "实绩达成预定比", "实绩达成年度计划比"] },
+        "rows": { "type": "array", "items": { "$ref": "#/$defs/accountingRow" } }
+      }
+    },
+    "accountingRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric_key", "sequence", "subject", "source_note", "mp", "annual_month_plan", "monthly_plan", "planned_share", "monthly_actual", "actual_share", "variance", "plan_attainment", "annual_attainment", "status", "pending_reasons", "evidence_ids"],
+      "properties": {
+        "metric_key": { "$ref": "#/$defs/metricKey" },
+        "sequence": { "type": "string", "minLength": 1 },
+        "subject": { "type": "string", "minLength": 1 },
+        "source_note": { "type": "string" },
+        "mp": { "type": ["string", "null"] },
+        "annual_month_plan": { "$ref": "#/$defs/decimalString" },
+        "monthly_plan": { "$ref": "#/$defs/decimalString" },
+        "planned_share": { "$ref": "#/$defs/decimalString" },
+        "monthly_actual": { "$ref": "#/$defs/decimalString" },
+        "actual_share": { "$ref": "#/$defs/decimalString" },
+        "variance": { "$ref": "#/$defs/decimalString" },
+        "plan_attainment": { "$ref": "#/$defs/decimalString" },
+        "annual_attainment": { "$ref": "#/$defs/decimalString" },
+        "status": { "enum": ["ready", "pending"] },
+        "pending_reasons": { "type": "array", "items": { "type": "string" } },
+        "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "trendTable": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheet_name", "columns", "months", "cumulative"],
+      "properties": {
+        "sheet_name": { "const": "推移表" },
+        "columns": { "const": ["月份", "总销售额", "采购成本", "毛利额", "毛利率", "经营费用", "人工费", "结算收益", "利润率", "单位时间附加值", "费用构成比", "预定实绩差异额", "实绩达成预定比", "实绩达成年度计划比"] },
+        "months": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/monthRow" } },
+        "cumulative": { "$ref": "#/$defs/cumulativeRow" }
+      }
+    },
+    "monthRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["month", "values", "status", "pending_reasons", "evidence_ids"],
+      "properties": {
+        "month": { "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$" },
+        "values": { "type": "array", "minItems": 13, "maxItems": 13, "prefixItems": [{ "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }, { "$ref": "#/$defs/decimalString" }] },
+        "status": { "enum": ["ready", "pending"] },
+        "pending_reasons": { "type": "array", "items": { "type": "string" } },
+        "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "cumulativeRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "values", "status", "pending_reasons", "evidence_ids"],
+      "properties": {
+        "label": { "type": "string", "pattern": "累计$" },
+        "values": { "type": "array", "minItems": 13, "maxItems": 13, "items": { "$ref": "#/$defs/decimalString" } },
+        "status": { "enum": ["ready", "pending"] },
+        "pending_reasons": { "type": "array", "items": { "type": "string" } },
+        "evidence_ids": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "chartRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chart_id", "chart_type", "metric_key", "from", "to", "grain", "source_refs"],
+      "properties": {
+        "chart_id": { "type": "string", "minLength": 1 },
+        "chart_type": { "const": "line" },
+        "metric_key": { "$ref": "#/$defs/metricKey" },
+        "from": { "$ref": "#/$defs/date" },
+        "to": { "$ref": "#/$defs/date" },
+        "grain": { "enum": ["day", "week", "month", "quarter"] },
+        "source_refs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  }
+}

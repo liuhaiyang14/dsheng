@@ -3,16 +3,16 @@
 //! 无样例金额/客户/人员；元数据键位固定、值空；列名按 §5 表；推移表空期间列
 //! 为“期间1（填写ISO期间）”等。任务单属于分析结果附加导出，不是 source 输入。
 
-use super::cells::{write_headers, write_text};
+use super::cells::write_headers;
 use super::workbook::{
     write_blank_metadata, ACCOUNTING_HEADERS, CHART_HEADERS, DIFF_HEADERS, EVIDENCE_HEADERS,
-    HEADER_ROW, TASK_PLAN_HEADERS, TASK_REVIEW_HEADERS,
+    HEADER_ROW, TASK_PLAN_HEADERS, TASK_REVIEW_HEADERS, TREND_HEADERS,
 };
 use super::{
     ExportError, ExportResult, SHEET_ACCOUNTING, SHEET_CHART, SHEET_DIFF, SHEET_TASK_EVIDENCE,
     SHEET_TREND,
 };
-use rust_xlsxwriter::Workbook;
+use rust_xlsxwriter::{Chart, ChartType, Format, FormatAlign, Workbook};
 use std::io::Write;
 
 /// 旧包名仅供历史导出兼容；当前 UI/CLI 不再把它当 source 输入。
@@ -25,13 +25,86 @@ pub const OUTPUT_TEMPLATE_ZIP_NAME: &str = "two-tables-output-v1.zip";
 pub const SOURCE_TEMPLATE_ZIP_NAME: &str = "source-profile-template-v1.zip";
 
 /// 推移表空期间列（§5：未填不能导成真实期间）。
-pub fn blank_trend_headers(period_columns: usize) -> Vec<String> {
-    let mut h: Vec<String> = vec!["科目".into(), "单位".into(), "取数来源".into()];
-    for i in 1..=period_columns {
-        h.push(format!("期间{i}（填写ISO期间）"));
+pub fn blank_trend_headers(_period_columns: usize) -> Vec<String> {
+    TREND_HEADERS
+        .iter()
+        .map(|header| (*header).to_string())
+        .collect()
+}
+
+fn blank_heading(
+    ws: &mut rust_xlsxwriter::Worksheet,
+    title: &str,
+    subtitle: &str,
+    last_col: u16,
+    freeze_col: u16,
+) -> ExportResult<()> {
+    let title_format = Format::new()
+        .set_bold()
+        .set_font_size(14)
+        .set_align(FormatAlign::Left);
+    ws.merge_range(0, 0, 0, last_col, title, &title_format)
+        .map_err(|e| ExportError(format!("合并标题失败: {e}")))?;
+    ws.merge_range(1, 0, 1, last_col, subtitle, &Format::new().set_text_wrap())
+        .map_err(|e| ExportError(format!("合并说明失败: {e}")))?;
+    ws.set_row_height(0, 24.0)
+        .map_err(|e| ExportError(e.to_string()))?;
+    ws.set_row_height(1, 36.0)
+        .map_err(|e| ExportError(e.to_string()))?;
+    ws.set_freeze_panes(4, freeze_col)
+        .map_err(|e| ExportError(e.to_string()))?;
+    Ok(())
+}
+
+fn blank_header_style(ws: &mut rust_xlsxwriter::Worksheet, last_col: u16) -> ExportResult<()> {
+    let format = Format::new()
+        .set_bold()
+        .set_font_color("FFFFFF")
+        .set_background_color("1F3864")
+        .set_align(FormatAlign::Center)
+        .set_text_wrap();
+    ws.set_range_format(HEADER_ROW, 0, HEADER_ROW, last_col, &format)
+        .map_err(|e| ExportError(e.to_string()))?;
+    Ok(())
+}
+
+fn blank_fixed_sections(ws: &mut rust_xlsxwriter::Worksheet, last_col: u16) -> ExportResult<()> {
+    let section_format = Format::new().set_bold().set_background_color("EAF2F8");
+    for (row, label) in [
+        (4, "【先行指标（未来经营信号）】"),
+        (9, "【收入部分】"),
+        (12, "【费用部分（根据企业特点自行添加）】"),
+        (21, "【时间部分】"),
+        (25, "【单位时间附加值部分】"),
+        (28, "【核算表栏外部分】"),
+        (34, "【表外参考（现金与往来）】"),
+    ] {
+        ws.merge_range(row, 0, row, last_col, label, &section_format)
+            .map_err(|e| ExportError(e.to_string()))?;
     }
-    h.push("累计".into());
-    h
+    for (offset, note) in [
+        "备注1：空单元格表示来源缺失或待补，不按 0 参与计算。",
+        "备注2：附加值（扣人工前）与经营收益（扣人工后）按企业 profile 分别保留。",
+        "备注3：目标、公式和来源写入对应列；未确认目标不会被当作已确认计划。",
+        "备注4：比例和差异仅在输入充分时计算。",
+        "备注5：重新导入或补录会保留旧 revision。",
+        "备注6：输出契约固定为 two_tables_v1。",
+        "备注7：企业类型和费用分类由版本化 profile 决定。",
+    ]
+    .iter()
+    .enumerate()
+    {
+        ws.merge_range(
+            41 + offset as u32,
+            0,
+            41 + offset as u32,
+            last_col,
+            *note,
+            &Format::new().set_text_wrap(),
+        )
+        .map_err(|e| ExportError(e.to_string()))?;
+    }
+    Ok(())
 }
 
 fn blank_accounting() -> ExportResult<Vec<u8>> {
@@ -39,20 +112,69 @@ fn blank_accounting() -> ExportResult<Vec<u8>> {
     let ws = book.add_worksheet();
     ws.set_name(SHEET_ACCOUNTING)
         .map_err(|e| ExportError(e.to_string()))?;
-    write_blank_metadata(ws)?;
+    blank_heading(
+        ws,
+        "工作区 — 整体核算表模板",
+        "请填写本期口径、来源期间与指标值；空单元格表示缺失。",
+        ACCOUNTING_HEADERS.len() as u16 - 1,
+        0,
+    )?;
     write_headers(ws, HEADER_ROW, &ACCOUNTING_HEADERS)?;
+    blank_header_style(ws, ACCOUNTING_HEADERS.len() as u16 - 1)?;
+    blank_fixed_sections(ws, ACCOUNTING_HEADERS.len() as u16 - 1)?;
     let ws = book.add_worksheet();
     ws.set_name(SHEET_TREND)
         .map_err(|e| ExportError(e.to_string()))?;
-    write_blank_metadata(ws)?;
-    let trend = blank_trend_headers(3);
-    let refs: Vec<&str> = trend.iter().map(String::as_str).collect();
-    write_headers(ws, HEADER_ROW, &refs)?;
+    blank_heading(
+        ws,
+        "工作区 — 月度推移表模板",
+        "月份按 ISO 日期填写；缺失值留空，不以 0 代替。",
+        TREND_HEADERS.len() as u16 - 1,
+        1,
+    )?;
+    write_headers(ws, HEADER_ROW, &TREND_HEADERS)?;
+    blank_header_style(ws, TREND_HEADERS.len() as u16 - 1)?;
+    for row in 20..=20u32 {
+        ws.write_string(row, 0, "累计")
+            .map_err(|e| ExportError(e.to_string()))?;
+    }
+    for (offset, note) in [
+        "备注1：月份按 ISO 日期归并并升序排列，月度数据按行展示。",
+        "备注2：缺失值留空，不以 0 代替；累计只汇总已有月份。",
+        "备注3：费用、人工和结算收益由 source profile 的覆盖范围决定。",
+        "备注4：附加值与经营收益沿用同一 revision 的核算口径。",
+        "备注5：预定、差异和达成率仅在输入充分时计算。",
+    ]
+    .iter()
+    .enumerate()
+    {
+        ws.merge_range(
+            22 + offset as u32,
+            0,
+            22 + offset as u32,
+            TREND_HEADERS.len() as u16 - 1,
+            *note,
+            &Format::new().set_text_wrap(),
+        )
+        .map_err(|e| ExportError(e.to_string()))?;
+    }
     let ws = book.add_worksheet();
     ws.set_name(SHEET_DIFF)
         .map_err(|e| ExportError(e.to_string()))?;
-    write_blank_metadata(ws)?;
+    blank_heading(
+        ws,
+        "工作区 — 预实差异分析模板",
+        "请填写目标、实绩、差异和说明。",
+        DIFF_HEADERS.len() as u16 - 1,
+        0,
+    )?;
     write_headers(ws, HEADER_ROW, &DIFF_HEADERS)?;
+    let metadata = book.add_worksheet();
+    metadata
+        .set_name("_metadata")
+        .map_err(|e| ExportError(e.to_string()))?;
+    metadata.set_hidden(true);
+    write_blank_metadata(metadata)?;
     book.save_to_buffer()
         .map_err(|e| ExportError(e.to_string()))
 }
@@ -62,16 +184,87 @@ fn blank_trend() -> ExportResult<Vec<u8>> {
     let ws = book.add_worksheet();
     ws.set_name(SHEET_TREND)
         .map_err(|e| ExportError(e.to_string()))?;
-    write_blank_metadata(ws)?;
-    let trend = blank_trend_headers(3);
-    let refs: Vec<&str> = trend.iter().map(String::as_str).collect();
-    write_headers(ws, HEADER_ROW, &refs)?;
+    blank_heading(
+        ws,
+        "工作区 — 月度推移表模板",
+        "月份按 ISO 日期填写；缺失值留空，不以 0 代替。",
+        TREND_HEADERS.len() as u16 - 1,
+        1,
+    )?;
+    write_headers(ws, HEADER_ROW, &TREND_HEADERS)?;
+    blank_header_style(ws, TREND_HEADERS.len() as u16 - 1)?;
+    ws.write_string(20, 0, "累计")
+        .map_err(|e| ExportError(e.to_string()))?;
+    for (offset, note) in [
+        "备注1：月份按 ISO 日期归并并升序排列，月度数据按行展示。",
+        "备注2：缺失值留空，不以 0 代替；累计只汇总已有月份。",
+        "备注3：费用、人工和结算收益由 source profile 的覆盖范围决定。",
+        "备注4：附加值与经营收益沿用同一 revision 的核算口径。",
+        "备注5：预定、差异和达成率仅在输入充分时计算。",
+    ]
+    .iter()
+    .enumerate()
+    {
+        ws.merge_range(
+            22 + offset as u32,
+            0,
+            22 + offset as u32,
+            TREND_HEADERS.len() as u16 - 1,
+            *note,
+            &Format::new().set_text_wrap(),
+        )
+        .map_err(|e| ExportError(e.to_string()))?;
+    }
     let ws = book.add_worksheet();
     ws.set_name(SHEET_CHART)
         .map_err(|e| ExportError(e.to_string()))?;
-    write_blank_metadata(ws)?;
-    write_headers(ws, HEADER_ROW, &CHART_HEADERS)?;
-    write_text(ws, HEADER_ROW + 1, 0, "")?;
+    ws.merge_range(
+        0,
+        0,
+        0,
+        7,
+        "工作区 — 推移表图表",
+        &Format::new().set_bold().set_font_size(14),
+    )
+    .map_err(|e| ExportError(e.to_string()))?;
+    ws.merge_range(
+        1,
+        0,
+        1,
+        7,
+        "图表将在导出时根据推移表数据生成。",
+        &Format::new().set_text_wrap(),
+    )
+    .map_err(|e| ExportError(e.to_string()))?;
+    for (position, (column, name)) in [
+        (1u16, "总销售额(元)"),
+        (7u16, "结算收益(元)"),
+        (8u16, "利润率"),
+        (9u16, "单位时间附加值(元/h)"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut chart = Chart::new(ChartType::Line);
+        chart.title().set_name(name);
+        chart.x_axis().set_name("月份");
+        chart.y_axis().set_name(name);
+        chart
+            .add_series()
+            .set_name(name)
+            .set_categories((SHEET_TREND, 4, 0, 19, 0))
+            .set_values((SHEET_TREND, 4, column, 19, column));
+        let row = if position < 2 { 3 } else { 21 };
+        let col = if position % 2 == 0 { 1 } else { 10 };
+        ws.insert_chart(row, col, &chart)
+            .map_err(|e| ExportError(e.to_string()))?;
+    }
+    let metadata = book.add_worksheet();
+    metadata
+        .set_name("_metadata")
+        .map_err(|e| ExportError(e.to_string()))?;
+    metadata.set_hidden(true);
+    write_blank_metadata(metadata)?;
     book.save_to_buffer()
         .map_err(|e| ExportError(e.to_string()))
 }
@@ -83,17 +276,17 @@ fn blank_task() -> ExportResult<Vec<u8>> {
         .map_err(|e| ExportError(e.to_string()))?;
     write_blank_metadata(ws)?;
     // 模板不含技术列（task_id/step_id 由导出产生；字段说明列出）
-    write_headers(ws, HEADER_ROW, &TASK_REVIEW_HEADERS[..14])?;
+    write_headers(ws, 5, &TASK_REVIEW_HEADERS[..14])?;
     let ws = book.add_worksheet();
     ws.set_name("下期任务单计划")
         .map_err(|e| ExportError(e.to_string()))?;
     write_blank_metadata(ws)?;
-    write_headers(ws, HEADER_ROW, &TASK_PLAN_HEADERS[..13])?;
+    write_headers(ws, 5, &TASK_PLAN_HEADERS[..13])?;
     let ws = book.add_worksheet();
     ws.set_name(SHEET_TASK_EVIDENCE)
         .map_err(|e| ExportError(e.to_string()))?;
     write_blank_metadata(ws)?;
-    write_headers(ws, HEADER_ROW, &EVIDENCE_HEADERS)?;
+    write_headers(ws, 5, &EVIDENCE_HEADERS)?;
     book.save_to_buffer()
         .map_err(|e| ExportError(e.to_string()))
 }
@@ -221,7 +414,11 @@ pub fn build_source_profile_zip(profile_id: &str) -> ExportResult<Vec<u8>> {
             ws.set_name(&sheet_name)
                 .map_err(|e| ExportError(e.to_string()))?;
             write_blank_metadata(ws)?;
-            write_headers(ws, HEADER_ROW, &headers.iter().map(String::as_str).collect::<Vec<_>>())?;
+            write_headers(
+                ws,
+                HEADER_ROW,
+                &headers.iter().map(String::as_str).collect::<Vec<_>>(),
+            )?;
             let workbook = book
                 .save_to_buffer()
                 .map_err(|e| ExportError(e.to_string()))?;
@@ -243,14 +440,23 @@ pub fn build_source_profile_zip(profile_id: &str) -> ExportResult<Vec<u8>> {
 /// 返回 source profile 模板包的实际文件清单，供 CLI/UI 结果摘要使用。
 pub fn source_profile_template_files(profile_id: &str) -> Vec<String> {
     let (files, _, _) = profile_template(profile_id);
-    files.into_iter().chain(std::iter::once(TEMPLATE_FIELDS_MD.to_string())).collect()
+    files
+        .into_iter()
+        .chain(std::iter::once(TEMPLATE_FIELDS_MD.to_string()))
+        .collect()
 }
 
 fn profile_template(profile_id: &str) -> (Vec<String>, String, Vec<String>) {
     let builtin = match profile_id {
-        "manufacturing_demo" | "manufacturing_erp_v1" => Some(include_str!("../../../contracts/v1/source-profiles/manufacturing_demo.json")),
-        "service_demo" => Some(include_str!("../../../contracts/v1/source-profiles/service_demo.json")),
-        "xsd_trade_v1" => Some(include_str!("../../../contracts/v1/source-profiles/xsd_trade_v1.json")),
+        "manufacturing_demo" | "manufacturing_erp_v1" => Some(include_str!(
+            "../../../contracts/v1/source-profiles/manufacturing_demo.json"
+        )),
+        "service_demo" => Some(include_str!(
+            "../../../contracts/v1/source-profiles/service_demo.json"
+        )),
+        "xsd_trade_v1" => Some(include_str!(
+            "../../../contracts/v1/source-profiles/xsd_trade_v1.json"
+        )),
         _ => None,
     };
     if let Some(bytes) = builtin {
@@ -259,16 +465,38 @@ fn profile_template(profile_id: &str) -> (Vec<String>, String, Vec<String>) {
                 let files = template
                     .get("files")
                     .and_then(|v| v.as_array())
-                    .map(|xs| xs.iter().filter_map(|v| v.as_str()).map(str::to_string).collect::<Vec<_>>())
+                    .map(|xs| {
+                        xs.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(str::to_string)
+                            .collect::<Vec<_>>()
+                    })
                     .filter(|xs| !xs.is_empty())
                     .unwrap_or_else(|| vec!["source-template.xlsx".into()]);
-                let sheet = template.get("sheet_name").and_then(|v| v.as_str()).unwrap_or("source").to_string();
+                let sheet = template
+                    .get("sheet_name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("source")
+                    .to_string();
                 let headers = template
                     .get("columns")
                     .and_then(|v| v.as_array())
-                    .map(|xs| xs.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>())
+                    .map(|xs| {
+                        xs.iter()
+                            .filter_map(|v| v.as_str().map(str::to_string))
+                            .collect::<Vec<_>>()
+                    })
                     .filter(|xs| xs.len() >= 2)
-                    .unwrap_or_else(|| vec!["期间".into(), "指标".into(), "单位".into(), "计划值".into(), "实际值".into(), "数据来源".into()]);
+                    .unwrap_or_else(|| {
+                        vec![
+                            "期间".into(),
+                            "指标".into(),
+                            "单位".into(),
+                            "计划值".into(),
+                            "实际值".into(),
+                            "数据来源".into(),
+                        ]
+                    });
                 return (files, sheet, headers);
             }
         }
@@ -283,7 +511,11 @@ fn profile_template(profile_id: &str) -> (Vec<String>, String, Vec<String>) {
                 .map(|xs| {
                     xs.iter()
                         .filter_map(|v| v.as_str())
-                        .filter_map(|v| std::path::Path::new(v).file_name().map(|n| n.to_string_lossy().to_string()))
+                        .filter_map(|v| {
+                            std::path::Path::new(v)
+                                .file_name()
+                                .map(|n| n.to_string_lossy().to_string())
+                        })
                         .filter(|v| !v.is_empty())
                         .collect::<Vec<_>>()
                 })
@@ -297,13 +529,37 @@ fn profile_template(profile_id: &str) -> (Vec<String>, String, Vec<String>) {
             let headers = template
                 .and_then(|v| v.get("columns"))
                 .and_then(|v| v.as_array())
-                .map(|xs| xs.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>())
+                .map(|xs| {
+                    xs.iter()
+                        .filter_map(|v| v.as_str().map(str::to_string))
+                        .collect::<Vec<_>>()
+                })
                 .filter(|xs| xs.len() >= 2)
-                .unwrap_or_else(|| vec!["期间".into(), "指标".into(), "单位".into(), "计划值".into(), "实际值".into(), "数据来源".into()]);
+                .unwrap_or_else(|| {
+                    vec![
+                        "期间".into(),
+                        "指标".into(),
+                        "单位".into(),
+                        "计划值".into(),
+                        "实际值".into(),
+                        "数据来源".into(),
+                    ]
+                });
             return (files, sheet, headers);
         }
     }
-    (vec!["source-template.xlsx".into()], "source".into(), vec!["期间".into(), "指标".into(), "单位".into(), "计划值".into(), "实际值".into(), "数据来源".into()])
+    (
+        vec!["source-template.xlsx".into()],
+        "source".into(),
+        vec![
+            "期间".into(),
+            "指标".into(),
+            "单位".into(),
+            "计划值".into(),
+            "实际值".into(),
+            "数据来源".into(),
+        ],
+    )
 }
 
 /// 构建模板 ZIP 字节。

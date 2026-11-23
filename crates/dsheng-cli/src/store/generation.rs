@@ -1386,7 +1386,9 @@ fn constrain_period_cells<'a>(
         if window.from == window.to || !current_source {
             // 无日期汇总不能声称属于某一天，旧日度分析须重新导入日期明确的来源。
             picked.retain(|row, cells| {
-                cells.iter().any(|cell| explicit_anchors.contains(&(*row, cell.col_no)))
+                cells
+                    .iter()
+                    .any(|cell| explicit_anchors.contains(&(*row, cell.col_no)))
             });
             return CellPeriods::new();
         }
@@ -1515,18 +1517,15 @@ fn revision_source_scope(
             params![workspace_id.to_string(), id, rev],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
-        .map_err(|e| {
-            match e {
-                rusqlite::Error::QueryReturnedNoRows => source_scope_unavailable(),
-                other => CliError::from(other),
-            }
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => source_scope_unavailable(),
+            other => CliError::from(other),
         })
     };
     let (current_sources, base_refs) = read_snapshot(run_id, revision)?;
     let mut snapshots = vec![current_sources];
-    let bases: Vec<BaseRevision> = serde_json::from_str(&base_refs).map_err(|_| {
-        source_scope_unavailable()
-    })?;
+    let bases: Vec<BaseRevision> =
+        serde_json::from_str(&base_refs).map_err(|_| source_scope_unavailable())?;
     for base in bases.into_iter().filter(|_| include_bases) {
         snapshots.push(read_snapshot(&base.run_id, base.revision_no)?.0);
     }
@@ -1539,9 +1538,7 @@ fn revision_source_scope(
     )?;
     for snapshot in snapshots {
         let selections: Vec<dsheng_core::analysis::fingerprint::SourceSelection> =
-            serde_json::from_str(&snapshot).map_err(|_| {
-                source_scope_unavailable()
-            })?;
+            serde_json::from_str(&snapshot).map_err(|_| source_scope_unavailable())?;
         // [] 是合法的纯手工输入分析；保持空来源白名单，绝不扩大到整个工作区。
         for selection in selections {
             if selection.content_hash.is_empty()
