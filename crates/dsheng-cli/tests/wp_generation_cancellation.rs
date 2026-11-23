@@ -355,12 +355,12 @@ fn task_schema_failure_persists_only_redacted_contract_summary() {
     let mut conn = Connection::open(&f.db).unwrap();
     let (_, material, confirmation) = preview(&mut conn, &f);
     let attempt = consume(&mut conn, confirmation);
-    let secret = "provider-secret-must-not-be-persisted";
+    let model_marker = "model-response-marker-must-not-be-persisted";
     let invalid = json!({
         "schema_version": "2",
-        "summary": secret,
+        "summary": model_marker,
         "tasks": [],
-        "unexpected_model_field": secret
+        "unexpected_model_field": model_marker
     });
     let error =
         gen::save_task_candidate(&mut conn, f.workspace, &material, attempt, &invalid, false)
@@ -374,7 +374,10 @@ fn task_schema_failure_persists_only_redacted_contract_summary() {
             |row| row.get(0),
         )
         .unwrap();
-    assert!(!details.contains(secret), "数据库不得保存模型原文或 secret");
+    assert!(
+        !details.contains(model_marker),
+        "数据库不得保存模型原文或模型标记"
+    );
     let details: Value = serde_json::from_str(&details).unwrap();
     assert_eq!(details["stage"], "task_save");
     assert_eq!(details["validation"], "task-output-v2");
