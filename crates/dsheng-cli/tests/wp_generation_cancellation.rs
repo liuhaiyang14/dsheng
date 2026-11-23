@@ -8,8 +8,8 @@ use dsheng_cli::store::generation::{
 };
 use dsheng_core::contracts::cli::CliErrorCode;
 use dsheng_core::contracts::provider::{
-    ChatCompletionsRequest, ChatCompletionsResponse, GenerationOperation, RequestStage,
-    TerminalState,
+    ChatCompletionsRequest, ChatCompletionsResponse, ExtractionOutcome, ExtractionStage,
+    GenerationOperation, RequestStage, TerminalState,
 };
 use dsheng_core::provider::confirm::{ConfirmationGate, GenerationStore};
 use fixture::Fixture;
@@ -347,6 +347,92 @@ fn task_candidate_and_success_commit_together_and_finished_cannot_be_cancelled()
         false
     );
     assert_eq!(status(&conn, &f, attempt)["terminal_state"], "success");
+}
+
+#[test]
+fn task_schema_failure_persists_only_redacted_contract_summary() {
+    let f = Fixture::new("task-schema-redacted");
+    let mut conn = Connection::open(&f.db).unwrap();
+    let (_, material, confirmation) = preview(&mut conn, &f);
+    let attempt = consume(&mut conn, confirmation);
+    let secret = "provider-secret-must-not-be-persisted";
+    let invalid = json!({
+        "schema_version": "2",
+        "summary": secret,
+        "tasks": [],
+        "unexpected_model_field": secret
+    });
+    let error =
+        gen::save_task_candidate(&mut conn, f.workspace, &material, attempt, &invalid, false)
+            .unwrap_err();
+    assert_eq!(error.code, CliErrorCode::SchemaValidationFailed);
+    assert_eq!(candidate_count(&conn), 0, "合同失败不得写入候选");
+    let details: String = conn
+        .query_row(
+            "SELECT error_details_json FROM generation_attempts WHERE attempt_id = ?1",
+            params![attempt.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!details.contains(secret), "数据库不得保存模型原文或 secret");
+    let details: Value = serde_json::from_str(&details).unwrap();
+    assert_eq!(details["stage"], "task_save");
+    assert_eq!(details["validation"], "task-output-v2");
+    assert_eq!(details["error_code"], "SCHEMA_VALIDATION_FAILED");
+    assert!(details["pointers"].is_array());
+    assert_eq!(details["summary"], "任务输出不符合 task-output-v2 合同");
+}
+
+#[test]
+fn task_extraction_path_keeps_local_wrapper_marker() {
+    let f = Fixture::new("task-wrapper-marker");
+    let mut conn = Connection::open(&f.db).unwrap();
+    let (_, material, confirmation) = preview(&mut conn, &f);
+    let attempt = consume(&mut conn, confirmation);
+    let extraction = ExtractionOutcome {
+        stage: ExtractionStage::WrappedBareTask,
+        object: Some(local_output()),
+        envelope_locally_reconstructed: true,
+    };
+    let candidate = gen::save_task_candidate_from_extraction(
+        &mut conn,
+        f.workspace,
+        &material,
+        attempt,
+        &extraction,
+    )
+    .unwrap();
+    let marker: i64 = conn
+        .query_row(
+            "SELECT envelope_locally_reconstructed FROM task_candidates WHERE candidate_generation_id = ?1",
+            params![candidate],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(marker, 1, "裸任务本地包装必须保留审计标记");
+}
+
+#[test]
+fn ambiguous_extraction_is_rejected_before_candidate_insert() {
+    let f = Fixture::new("task-extraction-rejected");
+    let mut conn = Connection::open(&f.db).unwrap();
+    let (_, material, confirmation) = preview(&mut conn, &f);
+    let attempt = consume(&mut conn, confirmation);
+    let extraction = ExtractionOutcome {
+        stage: ExtractionStage::AmbiguousBareTasks,
+        object: Some(local_output()),
+        envelope_locally_reconstructed: false,
+    };
+    let error = gen::save_task_candidate_from_extraction(
+        &mut conn,
+        f.workspace,
+        &material,
+        attempt,
+        &extraction,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, CliErrorCode::InvalidJson);
+    assert_eq!(candidate_count(&conn), 0, "提取失败不得写入候选");
 }
 
 #[test]

@@ -7,8 +7,11 @@ import './generation-dialog.css';
 
 function userFacingGenerationError(raw: string): string {
   const text = raw.replace(/^Error:\s*/i, '').trim();
-  if (/schema_version|required property|additional properties|unexpected|validation|json schema/i.test(text)) {
-    return '模型返回的内容格式不完整，未保存结果。请重新生成。';
+  if (/task-output-v2|schema_version|required property|additional properties|unexpected|validation|json schema/i.test(text)) {
+    return '模型已返回任务内容，但未满足任务单格式合同（必填字段、任务类别或行动步骤不完整），结果未保存。请重新生成。';
+  }
+  if (/任务候选未通过本地语义校验|SEMANTIC_VALIDATION_FAILED|TASK_CATEGORY_|DUPLICATE_CANDIDATE_KEY/i.test(text)) {
+    return '模型内容格式正确，但任务引用或期间口径未通过本地校验，结果未保存。请检查当前分析数据后重新生成。';
   }
   if (/PROVIDER_REQUIRED|API[_ ]?KEY|base.?url|provider/i.test(text)) {
     return '模型服务尚未配置完整，请到“Provider 设置”检查连接信息后重试。';

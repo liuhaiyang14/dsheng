@@ -36,6 +36,7 @@ export function TablesScreen() {
   const [tab, setTab] = useState<TableTab>('accounting');
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [regenerateOpen, setRegenerateOpen] = useState(false);
 
   const choosePath = async (title: string, defaultPath: string): Promise<string | null> => {
@@ -96,6 +97,7 @@ export function TablesScreen() {
   const regenerateTables = async () => {
     if (!detail || !app.client || !app.activeWorkspaceId || busy) return;
     setRegenerateOpen(false);
+    setRegenerating(true);
     setBusy(true);
     setNotice(null);
     try {
@@ -110,6 +112,7 @@ export function TablesScreen() {
     } catch (err) {
       setNotice(err instanceof Error ? err.message : String(err));
     } finally {
+      setRegenerating(false);
       setBusy(false);
     }
   };
@@ -145,7 +148,7 @@ export function TablesScreen() {
   );
 
   return (
-    <div data-testid="tables-screen">
+    <div data-testid="tables-screen" aria-busy={regenerating}>
       <div className="screen-head">
         <div>
           <div className="eyebrow">03 · 生成结果</div>
@@ -158,8 +161,8 @@ export function TablesScreen() {
           <button type="button" className="outline" onClick={() => void downloadOutputTemplate()} disabled={busy || !app.client}>
             下载输出模板
           </button>
-          <button type="button" className="outline" onClick={() => setRegenerateOpen(true)} disabled={busy || !app.client}>
-            重新生成两表
+          <button type="button" className="outline" onClick={() => setRegenerateOpen(true)} disabled={busy || !app.client} aria-busy={regenerating}>
+            {regenerating ? <><span className="generation-spinner inline-generation-spinner" aria-hidden="true" />正在生成两表…</> : '重新生成两表'}
           </button>
           <button type="button" className="outline" onClick={() => void download('bundle')} disabled={!ready || busy}>
             下载两表包
@@ -168,6 +171,16 @@ export function TablesScreen() {
       </div>
 
       {notice ? <div className="notice workspace-empty" role="status"><span>{notice}</span></div> : null}
+      {regenerating ? (
+        <div className="status-banner" role="status" aria-live="polite" aria-busy="true" data-testid="tables-regeneration-progress">
+          <span className="generation-spinner" aria-hidden="true" />
+          <div>
+            <strong>正在重新生成两表</strong>
+            <br />
+            <span>正在读取当前数据、本地计算并保存新 revision，请稍候…</span>
+          </div>
+        </div>
+      ) : null}
       {sourceChangedSinceAnalysis ? (
         <div className="notice warning" role="status" data-testid="tables-stale-source-notice">
           <strong>原始数据已重新扫描，当前两表仍是 revision {detail.analysis_revision_no}</strong>

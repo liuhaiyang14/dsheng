@@ -53,7 +53,12 @@ describe('两表展示/下载页', () => {
   it('重新导入后可在两表页确认并生成当前期间的新 revision，旧版本不覆盖', async () => {
     window.localStorage.setItem(`dsheng.source-directory.${DEMO_WORKSPACE_ID}`, '/tmp/source-after-reimport');
     const client = new FixtureClient();
-    const analyze = vi.spyOn(client, 'analyze');
+    const originalAnalyze = client.analyze.bind(client);
+    let release!: () => void;
+    const analyze = vi.spyOn(client, 'analyze').mockImplementation(async (input) => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return originalAnalyze(input);
+    });
     await openTables(client);
 
     fireEvent.click(screen.getByRole('button', { name: '重新生成两表' }));
@@ -62,6 +67,10 @@ describe('两表展示/下载页', () => {
     expect(modal).toHaveTextContent('旧 revision 不会被覆盖');
     fireEvent.click(within(modal).getByRole('button', { name: '生成新 revision' }));
     await waitFor(() => expect(analyze).toHaveBeenCalledOnce());
+    expect(screen.getByTestId('tables-regeneration-progress')).toHaveTextContent('正在重新生成两表');
+    expect(screen.getByRole('button', { name: '正在生成两表…' })).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.getByRole('button', { name: '重新生成两表' })).toBeEnabled());
     expect(analyze).toHaveBeenCalledWith(expect.objectContaining({
       workspace_id: DEMO_WORKSPACE_ID,
       from: '2026-10-01',

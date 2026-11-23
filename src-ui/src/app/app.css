@@ -631,6 +631,7 @@ tr:last-child td { border-bottom: 0; }
 .generation-stage strong { font-size: 1.125rem; }
 .generation-stage p { margin: 8px 0 0; line-height: 1.7; }
 .generation-spinner { flex: 0 0 24px; width: 24px; height: 24px; margin-top: 2px; border: 2px solid var(--line); border-top-color: var(--blue); border-radius: 50%; animation: generation-spin 1s linear infinite; }
+.inline-generation-spinner { display: inline-block; flex: 0 0 14px; width: 14px; height: 14px; margin: 0 6px 0 0; vertical-align: -2px; }
 .generation-terminal-mark { flex: 0 0 24px; color: var(--blue); font-size: 1.4rem; line-height: 1.2; }
 .generation-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 0 0 18px; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .generation-stats dt { color: var(--muted); font-size: .8125rem; margin-bottom: 9px; }

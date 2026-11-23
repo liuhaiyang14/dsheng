@@ -55,8 +55,11 @@ function friendlyError(err: unknown): string {
   if (/two_tables|核算表和推移表|两表/i.test(raw)) {
     return '请先完成当前期间的核算表和推移表，再生成任务单。';
   }
-  if (/schema_version|required property|additional properties|unexpected|validation|json schema/i.test(raw)) {
-    return '模型返回的内容格式不完整，未保存结果。请重新生成。';
+  if (/task-output-v2|schema_version|required property|additional properties|unexpected|validation|json schema/i.test(raw)) {
+    return '模型已返回任务内容，但未满足任务单格式合同（必填字段、任务类别或行动步骤不完整），结果未保存。请重新生成。';
+  }
+  if (/任务候选未通过本地语义校验|SEMANTIC_VALIDATION_FAILED|TASK_CATEGORY_|DUPLICATE_CANDIDATE_KEY/i.test(raw)) {
+    return '模型内容格式正确，但任务引用或期间口径未通过本地校验，结果未保存。请检查当前分析数据后重新生成。';
   }
   if (!raw.trim() || raw.length > 220 || /[{}]/.test(raw)) {
     return '请求未完成，结果没有保存。请检查当前数据后重试。';

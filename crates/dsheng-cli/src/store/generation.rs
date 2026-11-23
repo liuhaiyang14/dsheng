@@ -2612,7 +2612,10 @@ pub fn create_preview(
 
 /// 确认发送（双门禁之后）：重验 → 消费建 attempt → 派发（注入）→ 落库 → 终态。
 /// `on_progress`：发送阶段与流式进度；预览不触发。
-/// 返回 (attempt_id, 提取后的输出对象)；成功终态由后续保存事务提交。
+/// 返回 (attempt_id, 提取结果)；成功终态由后续保存事务提交。
+///
+/// 保留完整的 `ExtractionOutcome`，而不是只返回 JSON 对象：任务候选落库
+/// 需要继续执行 core 的候选解析/语义校验，并持久化 C 方案本地包装标记。
 #[allow(clippy::too_many_arguments)]
 pub fn send_confirmed(
     conn: &mut Connection,
@@ -2624,7 +2627,7 @@ pub fn send_confirmed(
     schema_version: &str,
     dispatcher: &mut dyn RequestDispatch,
     on_progress: &mut dyn FnMut(StreamProgressEvent),
-) -> CliResult<(Uuid, Value)> {
+) -> CliResult<(Uuid, dsheng_core::contracts::provider::ExtractionOutcome)> {
     ensure_current_report_binding(conn, workspace_id, material)?;
     let api_key = crate::store::settings::provider_api_key(conn, provider.provider_id)?
         .ok_or_else(|| {
@@ -2805,9 +2808,8 @@ pub fn send_confirmed(
         dsheng_core::provider::extract::ExtractPolicy::Adapt,
     )
     .to_extraction_outcome();
-    let output = extraction.object.clone();
-    match output {
-        Some(obj) => {
+    match extraction.object.as_ref() {
+        Some(_) => {
             // TS-22 提交门禁：发送期间分析被重做 → 迟到响应不提交，
             // attempt 置 failed(INPUT_REVISION_CHANGED)（不覆盖上一有效结果）
             commit_gate_before_save(
@@ -2832,7 +2834,7 @@ pub fn send_confirmed(
                 stage: "saving",
             });
             ensure_attempt_active(store.conn, workspace_id, attempt.attempt_id)?;
-            Ok((attempt.attempt_id, obj))
+            Ok((attempt.attempt_id, extraction))
         }
         None => {
             let error = CliError::new(
@@ -3111,6 +3113,15 @@ fn finish_attempt_error(
         | CliErrorCode::TotalTimeout => "timed_out",
         _ => "failed",
     };
+    // 错误详情可由保存层提供经过脱敏的结构化摘要；所有旧调用仍只
+    // 记录阶段。绝不把错误 message（可能包含 Provider 原文）写入数据库。
+    let mut details = match &error.details {
+        Value::Object(map) => Value::Object(map.clone()),
+        _ => json!({}),
+    };
+    if let Value::Object(map) = &mut details {
+        map.insert("stage".to_string(), Value::String(stage.to_string()));
+    }
     conn.execute(
         "UPDATE generation_attempts SET terminal_state = ?3, request_stage = 'terminal',
             error_code = ?4, error_details_json = ?5, finished_at = ?6
@@ -3120,7 +3131,7 @@ fn finish_attempt_error(
             workspace_id.to_string(),
             terminal,
             error.code.as_str(),
-            json!({"stage":stage}).to_string(),
+            details.to_string(),
             now_iso()
         ],
     )?;
@@ -3132,6 +3143,71 @@ pub fn tokens_of(system_bytes: u64, user_bytes: u64) -> u64 {
     conservative_input_tokens(system_bytes, user_bytes)
 }
 
+/// 将 schema 校验错误压缩为可供 UI/审计使用的摘要。
+///
+/// jsonschema 的错误文本可能回显实例值（例如模型生成的标题、备注或
+/// 误输出的凭据）。持久化层只保留合同名、错误码和 JSON Pointer，避免
+/// generation_attempts 变成模型原文/secret 的落点。
+fn redacted_schema_details(errors: &[String]) -> Value {
+    let pointers: Vec<String> = errors
+        .iter()
+        .filter_map(|error| error.split_once(':').map(|(pointer, _)| pointer.trim()))
+        .map(|pointer| {
+            if pointer.is_empty() {
+                "$".to_string()
+            } else {
+                pointer.to_string()
+            }
+        })
+        .take(10)
+        .collect();
+    json!({
+        "validation": "task-output-v2",
+        "error_code": CliErrorCode::SchemaValidationFailed.as_str(),
+        "error_count": errors.len(),
+        "pointers": pointers,
+        "summary": "任务输出不符合 task-output-v2 合同"
+    })
+}
+
+fn redacted_candidate_details(code: CliErrorCode) -> Value {
+    json!({
+        "validation": "task-candidate-local",
+        "error_code": code.as_str(),
+        "summary": "任务候选未通过本地语义校验，未保存候选"
+    })
+}
+
+fn task_candidate_error(
+    error: dsheng_core::generation::task_candidate::CandidateError,
+) -> CliError {
+    CliError::new(error.code, "任务候选未通过本地语义校验")
+        .with_details(redacted_candidate_details(error.code))
+}
+
+/// 从 C 方案提取结果执行完整的任务候选合同链路并落库。
+///
+/// 先 `parse_task_output`（合同 + 类别 exact 映射），再
+/// `validate_candidates`（证据域、指标关系、重复键、期间和月度下限）。
+/// 任一失败都在事务外返回，候选不会插入；attempt 仅记录脱敏摘要。
+pub fn save_task_candidate_from_extraction(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    material: &GenerationMaterial,
+    attempt_id: Uuid,
+    extraction: &dsheng_core::contracts::provider::ExtractionOutcome,
+) -> CliResult<String> {
+    let output = match extraction.object.as_ref() {
+        Some(output) => output,
+        None => {
+            let error = CliError::new(CliErrorCode::InvalidJson, "响应无可保存的任务输出对象");
+            finish_attempt_error(conn, workspace_id, attempt_id, &error, "task_save")?;
+            return Err(error);
+        }
+    };
+    save_task_candidate_internal(conn, workspace_id, material, attempt_id, extraction, output)
+}
+
 /// Save a validated task candidate and its success terminal in the same transaction.
 pub fn save_task_candidate(
     conn: &mut Connection,
@@ -3141,10 +3217,54 @@ pub fn save_task_candidate(
     output: &Value,
     envelope_locally_reconstructed: bool,
 ) -> CliResult<String> {
+    // 保留原有本地调用 API（测试/离线导入使用），生产发送路径使用
+    // `save_task_candidate_from_extraction` 传递真实 extraction stage。
+    let extraction = dsheng_core::contracts::provider::ExtractionOutcome {
+        stage: dsheng_core::contracts::provider::ExtractionStage::ContractMatched,
+        object: Some(output.clone()),
+        envelope_locally_reconstructed,
+    };
+    save_task_candidate_internal(
+        conn,
+        workspace_id,
+        material,
+        attempt_id,
+        &extraction,
+        output,
+    )
+}
+
+fn save_task_candidate_internal(
+    conn: &mut Connection,
+    workspace_id: Uuid,
+    material: &GenerationMaterial,
+    attempt_id: Uuid,
+    extraction: &dsheng_core::contracts::provider::ExtractionOutcome,
+    output: &Value,
+) -> CliResult<String> {
     let result = (|| {
-        dsheng_core::provider::schema::validate_task_output(output).map_err(|errors| {
-            CliError::new(CliErrorCode::SchemaValidationFailed, errors.join("; "))
-        })?;
+        if let Err(errors) = dsheng_core::provider::schema::validate_task_output(output) {
+            return Err(CliError::new(
+                CliErrorCode::SchemaValidationFailed,
+                "任务输出不符合 task-output-v2 合同",
+            )
+            .with_details(redacted_schema_details(&errors)));
+        }
+        let input: TaskInputProjection =
+            serde_json::from_str(&material.payload_json).map_err(|_| {
+                CliError::new(CliErrorCode::InputContractInvalid, "任务输入合同无法读取")
+            })?;
+        let set = dsheng_core::generation::task_candidate::parse_task_output(extraction)
+            .map_err(task_candidate_error)?;
+        let candidate_id = Uuid::new_v4();
+        let identity = dsheng_core::generation::task_candidate::CandidateIdentity {
+            candidate_generation_id: candidate_id,
+            candidate_revision_no: 1,
+            run_id: material.run_id.to_string(),
+            analysis_revision_no: material.analysis_revision_no,
+        };
+        dsheng_core::generation::task_candidate::validate_candidates(&set, &input, &identity)
+            .map_err(task_candidate_error)?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let matches: bool = tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM generation_attempts a
@@ -3198,7 +3318,7 @@ pub fn save_task_candidate(
                 &report_id.to_string(),
             )?;
         }
-        let candidate_id = Uuid::new_v4().to_string();
+        let candidate_id = candidate_id.to_string();
         tx.execute(
             "INSERT INTO task_candidates (candidate_generation_id, workspace_id, run_id,
                 analysis_revision_no, analysis_input_fingerprint, generation_input_fingerprint,
@@ -3214,7 +3334,7 @@ pub fn save_task_candidate(
                 material.input_hash,
                 attempt_id.to_string(),
                 serde_json::to_string(output).unwrap(),
-                envelope_locally_reconstructed as i64,
+                extraction.envelope_locally_reconstructed as i64,
                 now_iso()
             ],
         )

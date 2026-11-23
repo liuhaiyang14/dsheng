@@ -553,7 +553,7 @@ fn gate_and_run(
             let mut dispatcher = dispatcher;
             let mut sink = progress.unwrap_or_else(gen::ProgressSink::stderr);
             let mut on_progress = |event: gen::StreamProgressEvent| sink.on_event(event);
-            let (attempt_id, output) = gen::send_confirmed(
+            let (attempt_id, extraction) = gen::send_confirmed(
                 conn,
                 workspace_id,
                 &provider,
@@ -566,13 +566,12 @@ fn gate_and_run(
             )?;
             match output_kind {
                 OutputKind::Task => {
-                    let candidate = crate::store::generation::save_task_candidate(
+                    let candidate = crate::store::generation::save_task_candidate_from_extraction(
                         conn,
                         workspace_id,
                         &material,
                         attempt_id,
-                        &output,
-                        false,
+                        &extraction,
                     )?;
                     Ok(json!({
                         "attempt_id": attempt_id.to_string(),
@@ -581,14 +580,19 @@ fn gate_and_run(
                         "next": "task reconcile --dry-run 应用候选",
                     }))
                 }
-                OutputKind::Diagnosis { framework } => gen::save_diagnosis_output(
-                    conn,
-                    workspace_id,
-                    &material,
-                    framework,
-                    attempt_id,
-                    &output,
-                ),
+                OutputKind::Diagnosis { framework } => {
+                    let output = extraction.object.as_ref().ok_or_else(|| {
+                        CliError::new(CliErrorCode::InvalidJson, "响应无可保存的诊断输出对象")
+                    })?;
+                    gen::save_diagnosis_output(
+                        conn,
+                        workspace_id,
+                        &material,
+                        framework,
+                        attempt_id,
+                        output,
+                    )
+                }
             }
         }
     }
