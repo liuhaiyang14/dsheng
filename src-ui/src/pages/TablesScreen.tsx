@@ -18,6 +18,7 @@ export function TablesScreen() {
   const [tab, setTab] = useState<TableTab>('accounting');
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [regenerateOpen, setRegenerateOpen] = useState(false);
 
   const choosePath = async (title: string, defaultPath: string): Promise<string | null> => {
     const w = window as unknown as {
@@ -74,6 +75,27 @@ export function TablesScreen() {
     }
   };
 
+  const regenerateTables = async () => {
+    if (!detail || !app.client || !app.activeWorkspaceId || busy) return;
+    setRegenerateOpen(false);
+    setBusy(true);
+    setNotice(null);
+    try {
+      const saved = await app.runLocalAnalysis({
+        from: detail.period.from,
+        to: detail.period.to,
+        grain: detail.grain,
+      });
+      setNotice(saved
+        ? '已按当前数据重新生成两表，并保存为新的 revision；旧 revision 仍保留在历史记录中。'
+        : '本次未生成新 revision，请根据页面错误提示修正数据源后重试。');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!hasData || !detail) {
     return (
       <div>
@@ -96,6 +118,10 @@ export function TablesScreen() {
 
   const ready = detail.two_tables_ready === true;
   const activeSeries = detail.series;
+  const scan = app.data.scan;
+  const sourceChangedSinceAnalysis = Boolean(
+    scan?.scanned_at && detail.captured_at && scan.scanned_at > detail.captured_at,
+  );
 
   return (
     <div data-testid="tables-screen">
@@ -111,6 +137,9 @@ export function TablesScreen() {
           <button type="button" className="outline" onClick={() => void downloadOutputTemplate()} disabled={busy || !app.client}>
             下载输出模板
           </button>
+          <button type="button" className="outline" onClick={() => setRegenerateOpen(true)} disabled={busy || !app.client}>
+            重新生成两表
+          </button>
           <button type="button" className="outline" onClick={() => void download('bundle')} disabled={!ready || busy}>
             下载两表包
           </button>
@@ -118,6 +147,16 @@ export function TablesScreen() {
       </div>
 
       {notice ? <div className="notice workspace-empty" role="status"><span>{notice}</span></div> : null}
+      {sourceChangedSinceAnalysis ? (
+        <div className="notice warning" role="status" data-testid="tables-stale-source-notice">
+          <strong>原始数据已重新扫描，当前两表仍是 revision {detail.analysis_revision_no}</strong>
+          <span>
+            受影响期间：{detail.period.from} 至 {detail.period.to}；本次扫描覆盖：{scan?.coverage.from} 至 {scan?.coverage.to}。
+            {scan?.pending_inputs?.length ? ` 待补/待确认：${scan.pending_inputs.join('、')}。` : ''}
+            {' '}请点击“重新生成两表”保存新的 revision；旧版本仍可在历史查询中查看。
+          </span>
+        </div>
+      ) : null}
       <div className={`status-banner ${ready ? '' : 'warning'}`}>
         <span className="status-dot" />
         <div>
@@ -182,6 +221,22 @@ export function TablesScreen() {
           <div className="panel-actions"><button type="button" className="primary" onClick={() => void download('trend')} disabled={!ready || busy}>下载推移表</button></div>
         </div>
       )}
+      {regenerateOpen && detail ? (
+        <div className="modal-scrim" data-testid="tables-regenerate-confirmation">
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="tables-regenerate-title">
+            <div className="modal-head"><h3 id="tables-regenerate-title">重新生成当前期间的两表</h3></div>
+            <div className="modal-body">
+              <p>期间：{detail.period.from} 至 {detail.period.to}</p>
+              <p>系统会读取当前已扫描的数据，在本机重新计算核算表和推移表，并保存为新的 revision。</p>
+              <p className="panel-note">旧 revision 不会被覆盖，可在“历史查询”中继续查看。缺失字段仍会显示“待补”，不会按 0 计算。</p>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="outline" onClick={() => setRegenerateOpen(false)}>取消</button>
+              <button type="button" className="primary" onClick={() => void regenerateTables()} disabled={busy}>生成新 revision</button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,10 +1,13 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../app/App';
 import { FixtureClient } from '../api/fixtureClient';
 
+const DEMO_WORKSPACE_ID = '00000000-0000-4000-8000-0000000000a1';
+
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -45,6 +48,36 @@ describe('两表展示/下载页', () => {
     await waitFor(() => expect(templateSpy).toHaveBeenCalledWith(
       '/tmp/two-tables.xlsx', 'output', undefined, 'two_tables_v1',
     ));
+  });
+
+  it('重新导入后可在两表页确认并生成当前期间的新 revision，旧版本不覆盖', async () => {
+    window.localStorage.setItem(`dsheng.source-directory.${DEMO_WORKSPACE_ID}`, '/tmp/source-after-reimport');
+    const client = new FixtureClient();
+    const analyze = vi.spyOn(client, 'analyze');
+    await openTables(client);
+
+    fireEvent.click(screen.getByRole('button', { name: '重新生成两表' }));
+    const modal = screen.getByRole('dialog', { name: '重新生成当前期间的两表' });
+    expect(modal).toHaveTextContent('保存为新的 revision');
+    expect(modal).toHaveTextContent('旧 revision 不会被覆盖');
+    fireEvent.click(within(modal).getByRole('button', { name: '生成新 revision' }));
+    await waitFor(() => expect(analyze).toHaveBeenCalledOnce());
+    expect(analyze).toHaveBeenCalledWith(expect.objectContaining({
+      workspace_id: DEMO_WORKSPACE_ID,
+      from: '2026-10-01',
+      to: '2026-10-28',
+      grain: 'day',
+    }));
+  });
+
+  it('缺少数据目录时不把失败请求显示为已生成', async () => {
+    window.localStorage.removeItem(`dsheng.source-directory.${DEMO_WORKSPACE_ID}`);
+    await openTables(new FixtureClient());
+    fireEvent.click(screen.getByRole('button', { name: '重新生成两表' }));
+    const modal = screen.getByRole('dialog', { name: '重新生成当前期间的两表' });
+    fireEvent.click(within(modal).getByRole('button', { name: '生成新 revision' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('本次未生成新 revision'));
+    expect(screen.getByRole('status')).not.toHaveTextContent('已按当前数据重新生成两表');
   });
 
   it('两表未就绪时显式显示任务门禁并禁用生成按钮', async () => {

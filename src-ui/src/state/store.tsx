@@ -105,7 +105,8 @@ interface AppState {
   setContextLock: (reason: string | null) => void;
   rememberSourceDirectory: (path: string) => void;
   selectRun: (runId: string, revision?: number) => Promise<void>;
-  runLocalAnalysis: (period: { from: string; to: string; grain: Cadence }) => Promise<void>;
+  /** 返回是否已保存新分析 revision；失败时错误仍通过全局 error 展示。 */
+  runLocalAnalysis: (period: { from: string; to: string; grain: Cadence }) => Promise<boolean>;
   error: UiError | null;
   loading: boolean;
   setScreen: (screen: ScreenId) => void;
@@ -338,15 +339,15 @@ export function AppProvider({
 
   const runLocalAnalysis = useCallback(async (period: { from: string; to: string; grain: Cadence }) => {
     const workspaceId = activeWorkspaceId;
-    if (!client || !workspaceId || activeWorkspaceRef.current !== workspaceId || contextLockRef.current) return;
+    if (!client || !workspaceId || activeWorkspaceRef.current !== workspaceId || contextLockRef.current) return false;
     const directory = directoryRef.current[workspaceId] ?? savedSourceDirectory(workspaceId);
     if (!directory) {
       setError({ code: 'DIRECTORY_REQUIRED', message: '请先到数据源选择并成功扫描真实目录，再运行本地分析。' });
-      return;
+      return false;
     }
     if (!period.from || !period.to || period.from > period.to) {
       setError({ code: 'INVALID_PERIOD', message: '请填写有效的起止日期，开始日期不能晚于结束日期。' });
-      return;
+      return false;
     }
     const epoch = ++requestEpoch.current;
     setError(null);
@@ -362,11 +363,16 @@ export function AppProvider({
           : undefined,
         generic: !scannedProfile || scannedProfile.mode === 'generic',
       });
-      if (epoch !== requestEpoch.current || activeWorkspaceRef.current !== workspaceId) return;
+      if (epoch !== requestEpoch.current || activeWorkspaceRef.current !== workspaceId) return false;
       const loaded = await loadWorkspaceData(client, workspaceId, { runId: run.run_id }, dataRef.current[workspaceId]?.scan);
-      if (epoch === requestEpoch.current && activeWorkspaceRef.current === workspaceId) applyLoaded(workspaceId, loaded);
+      if (epoch === requestEpoch.current && activeWorkspaceRef.current === workspaceId) {
+        applyLoaded(workspaceId, loaded);
+        return true;
+      }
+      return false;
     } catch (err) {
       if (epoch === requestEpoch.current) setError(toUiError(err));
+      return false;
     } finally {
       if (epoch === requestEpoch.current) setLoading(false);
     }
