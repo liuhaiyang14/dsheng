@@ -439,6 +439,70 @@ fn ambiguous_extraction_is_rejected_before_candidate_insert() {
 }
 
 #[test]
+fn unknown_category_keeps_exact_contract_error_code() {
+    let f = Fixture::new("task-unknown-category");
+    let mut conn = Connection::open(&f.db).unwrap();
+    let (_, material, confirmation) = preview(&mut conn, &f);
+    let attempt = consume(&mut conn, confirmation);
+    let invalid = json!({
+        "schema_version": "2",
+        "summary": "unknown category",
+        "tasks": [{
+            "task_key": "t-1", "title": "synthetic", "summary": "synthetic",
+            "category": "not-a-contract-category", "metric_id": null,
+            "source_period": null, "target_period": null,
+            "baseline_value": null, "baseline_unit": null,
+            "target_value": null, "unit": null, "owner": null,
+            "planned_start": null, "due_date": null,
+            "steps": [{"step_id": "s-1", "action": "synthetic", "status": "not_started", "evidence_ids": []}],
+            "resource_need": null, "success_criteria": null, "evidence_ids": [],
+            "assumptions": [], "needs_review": [], "smart": {
+                "specific": "synthetic", "measurable": "synthetic", "achievable": "synthetic",
+                "relevant": "synthetic", "time_bound": "synthetic", "evidence_ids": []
+            }
+        }]
+    });
+    let extraction = ExtractionOutcome {
+        stage: ExtractionStage::RootShapeButInvalid,
+        object: Some(invalid),
+        envelope_locally_reconstructed: false,
+    };
+    let error = gen::save_task_candidate_from_extraction(
+        &mut conn,
+        f.workspace,
+        &material,
+        attempt,
+        &extraction,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, CliErrorCode::TaskCategoryUnrecognized);
+    assert_eq!(candidate_count(&conn), 0);
+}
+
+#[test]
+fn wrapped_bare_task_requires_local_envelope_marker() {
+    let f = Fixture::new("task-wrapper-marker-required");
+    let mut conn = Connection::open(&f.db).unwrap();
+    let (_, material, confirmation) = preview(&mut conn, &f);
+    let attempt = consume(&mut conn, confirmation);
+    let extraction = ExtractionOutcome {
+        stage: ExtractionStage::WrappedBareTask,
+        object: Some(local_output()),
+        envelope_locally_reconstructed: false,
+    };
+    let error = gen::save_task_candidate_from_extraction(
+        &mut conn,
+        f.workspace,
+        &material,
+        attempt,
+        &extraction,
+    )
+    .unwrap_err();
+    assert_eq!(error.code, CliErrorCode::InvalidJson);
+    assert_eq!(candidate_count(&conn), 0);
+}
+
+#[test]
 fn task_save_failure_rolls_back_candidate_and_marks_failed() {
     let f = Fixture::new("task-save-failure");
     let mut conn = Connection::open(&f.db).unwrap();

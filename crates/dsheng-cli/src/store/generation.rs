@@ -3243,19 +3243,29 @@ fn save_task_candidate_internal(
     output: &Value,
 ) -> CliResult<String> {
     let result = (|| {
-        if let Err(errors) = dsheng_core::provider::schema::validate_task_output(output) {
-            return Err(CliError::new(
-                CliErrorCode::SchemaValidationFailed,
-                "任务输出不符合 task-output-v2 合同",
-            )
-            .with_details(redacted_schema_details(&errors)));
-        }
         let input: TaskInputProjection =
             serde_json::from_str(&material.payload_json).map_err(|_| {
                 CliError::new(CliErrorCode::InputContractInvalid, "任务输入合同无法读取")
             })?;
-        let set = dsheng_core::generation::task_candidate::parse_task_output(extraction)
-            .map_err(task_candidate_error)?;
+        // 先走 C 方案提取语义：未知类别必须返回
+        // TASK_CATEGORY_UNRECOGNIZED，歧义裸任务必须返回 INVALID_JSON；不能被
+        // 根 schema 的通用失败码遮蔽。parse_task_output 内部随后执行
+        // task-output-v2 schema 校验。
+        let set = dsheng_core::generation::task_candidate::parse_task_output(extraction).map_err(
+            |error| {
+                if error.code == CliErrorCode::SchemaValidationFailed {
+                    let errors: Vec<String> =
+                        error.detail.split("; ").map(ToOwned::to_owned).collect();
+                    CliError::new(
+                        CliErrorCode::SchemaValidationFailed,
+                        "任务输出不符合 task-output-v2 合同",
+                    )
+                    .with_details(redacted_schema_details(&errors))
+                } else {
+                    task_candidate_error(error)
+                }
+            },
+        )?;
         let candidate_id = Uuid::new_v4();
         let identity = dsheng_core::generation::task_candidate::CandidateIdentity {
             candidate_generation_id: candidate_id,

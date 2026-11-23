@@ -121,7 +121,15 @@ pub fn parse_task_output(
         ExtractionStage::ContractMatched | ExtractionStage::RootShapeButInvalid => {
             extraction.object.as_ref()
         }
-        ExtractionStage::WrappedBareTask => extraction.object.as_ref(),
+        ExtractionStage::WrappedBareTask => {
+            if !extraction.envelope_locally_reconstructed {
+                return Err(error(
+                    CliErrorCode::InvalidJson,
+                    "裸任务未标记为本地包装，拒绝保存",
+                ));
+            }
+            extraction.object.as_ref()
+        }
         ExtractionStage::AmbiguousBareTasks => {
             return Err(error(
                 CliErrorCode::InvalidJson,
