@@ -123,9 +123,9 @@ Windows 部分按系统文档行为编写、待真机走查）。
 
 | 产物 | 状态 |
 | --- | --- |
-| dsheng_0.2.1_macos_arm64.dmg | 本轮构建待验证（2026-11-20） |
-| dsheng_0.2.1_macos_arm64_portable.zip | 本轮构建待验证（2026-11-20） |
-| dsheng-cli_0.2.1_macos_arm64.zip | 本轮构建待验证（2026-11-20） |
+| dsheng_0.2.1_macos_arm64.dmg | 已构建并通过包内版本/可执行核验；SHA-256 `e9efce13fc8e8c418a60a65177a86dfbd38e2cd2a6de19cb55c43431abd63766` |
+| dsheng_0.2.1_macos_arm64_portable.zip | 已构建并通过成员/禁止文件核验；SHA-256 `815f936b8fec4e0fff5960ca5de294769507716471b71695d3842cbb58cdb414` |
+| dsheng-cli_0.2.1_macos_arm64.zip | 已构建并通过成员/版本核验；SHA-256 `0146d4f35cf427279ed7f1e391d7f97b9d826edd25826bd26b24b53eb1dfc66d` |
 | macOS x64 两件 | 脚本支持 `--target x86_64-apple-darwin`；未执行（需 rust target + Intel 验证机） |
 | Windows x64 msi/portable/cli | 打包在 Windows 宿主执行（CI 已移除 Windows 构建）；未执行 |
 | Skill ZIP / 手册 | 归属其他工作包；manifest coverage 记 missing |
