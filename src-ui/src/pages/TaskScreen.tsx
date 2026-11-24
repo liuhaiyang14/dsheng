@@ -43,6 +43,9 @@ function cycleRoleOf(task: TaskView, periodEnd: string): 'review' | 'plan' {
 
 function friendlyError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
+  if (/RATE_LIMITED|HTTP\s*429|\b429\b/i.test(raw)) {
+    return '模型服务暂时限流（HTTP 429），请稍后重试；本次未保存结果。';
+  }
   if (raw.includes('所选诊断报告引用的证据不在本次可发送范围')) {
     return '所选报告的部分证据不在本次可发送范围，无法引用。请取消勾选“引用本期已保存的诊断报告”后继续，或选择其他可用报告。';
   }

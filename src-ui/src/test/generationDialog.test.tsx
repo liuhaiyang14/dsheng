@@ -99,6 +99,23 @@ it('仅呈现本次事件的思考文本及正文计数，发送失败保留内�
   expect(confirm).toHaveBeenCalledOnce();
 });
 
+it('Provider 返回 HTTP 429 时提示限流并保留失败终态', async () => {
+  events();
+  const client = new FixtureClient();
+  const pending = deferred<DiagnosisGenerationReceipt>();
+  const confirm = vi.spyOn(client, 'diagnosisGenerateConfirm').mockReturnValue(pending.promise);
+  await diagnosisPreview(client);
+  fireEvent.click(screen.getByTestId('preview-confirm'));
+  await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  await act(async () => pending.reject(new Error('HTTP 429')));
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).getByTestId('generation-progress-stage')).toHaveTextContent('生成失败');
+  expect(within(dialog).getByRole('alert')).toHaveTextContent('限流');
+  expect(within(dialog).getByRole('alert')).toHaveTextContent('稍后');
+  expect(within(dialog).getByRole('alert')).toHaveTextContent('HTTP 429');
+  expect(within(dialog).getByRole('button', { name: '关闭' })).toBeEnabled();
+});
+
 it('思考增量去重并隔离其他请求，正文按后端字符计数，关闭后新请求清空', async () => {
   const emit = events();
   const client = new FixtureClient();

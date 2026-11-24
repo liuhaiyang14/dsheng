@@ -7,6 +7,9 @@ import './generation-dialog.css';
 
 function userFacingGenerationError(raw: string): string {
   const text = raw.replace(/^Error:\s*/i, '').trim();
+  if (/RATE_LIMITED|HTTP\s*429|\b429\b/i.test(text)) {
+    return '模型服务暂时限流（HTTP 429），请稍后重试；本次未保存结果。';
+  }
   if (/task-output-v2|schema_version|required property|additional properties|unexpected|validation|json schema/i.test(text)) {
     return '模型已返回任务内容，但未满足任务单格式合同（必填字段、任务类别或行动步骤不完整），结果未保存。请重新生成。';
   }
